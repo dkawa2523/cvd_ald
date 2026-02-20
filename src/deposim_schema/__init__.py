@@ -1,0 +1,52 @@
+"""Schema package for deposition simulation contracts."""
+
+__version__ = "0.1.0"
+
+from .sim_config import (
+    CONFIG_ROOTS,
+    OPT_CONFIG_ROOT,
+    SIM_CONFIG_ROOT,
+    ComputeSpec,
+    DomainSpec,
+    DriversSpec,
+    InputsSpec,
+    KpiSpec,
+    MeasurementSpec,
+    ModelSpec,
+    OutputSpec,
+    PluginCompatibilitySpec,
+    ReferencePlaneSpec,
+    RunSpec,
+    SolverSpec,
+    TimeSpec,
+    ValidatorSpec,
+    compose_and_save_sim_config,
+    compose_sim_config,
+    register_sim_schema,
+    resolve_config_root,
+)
+
+__all__ = [
+    "__version__",
+    "CONFIG_ROOTS",
+    "SIM_CONFIG_ROOT",
+    "OPT_CONFIG_ROOT",
+    "DomainSpec",
+    "ReferencePlaneSpec",
+    "TimeSpec",
+    "InputsSpec",
+    "DriversSpec",
+    "PluginCompatibilitySpec",
+    "ModelSpec",
+    "SolverSpec",
+    "ComputeSpec",
+    "OutputSpec",
+    "MeasurementSpec",
+    "KpiSpec",
+    "ValidatorSpec",
+    "RunSpec",
+    "resolve_config_root",
+    "register_sim_schema",
+    "compose_sim_config",
+    "compose_and_save_sim_config",
+]

@@ -1,0 +1,9 @@
+defaults:
+  - smoke
+  - _self_
+
+run_name: multiz_synthetic
+
+reference_plane:
+  z_ref_mm: 5.0
+  z_ref_mm_list: [3.0, 5.0, 7.0]

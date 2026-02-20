@@ -1,0 +1,7 @@
+runs/
+results/
+__pycache__/
+.pytest_cache/
+._*
+.DS_Store
+*.zip

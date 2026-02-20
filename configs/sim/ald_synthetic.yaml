@@ -1,0 +1,31 @@
+defaults:
+  - smoke
+  - _self_
+
+run_name: ald_synthetic
+
+time:
+  mode: ald_cycle
+  process_time_s: 1.0
+  phases:
+    - name: dose
+      duration_s: 0.2
+      scalar_overrides:
+        precursor_scale: 1.0
+        react_scale: 1.0
+    - name: purge
+      duration_s: 0.2
+      scalar_overrides:
+        precursor_scale: 0.0
+        react_scale: 0.0
+    - name: dose2
+      duration_s: 0.2
+      scalar_overrides:
+        precursor_scale: 1.0
+        react_scale: 1.0
+
+model:
+  state_params:
+    sticking_coeff: 0.4
+    desorption_rate_s: 0.08
+    growth_rate_nm_s: 1.1

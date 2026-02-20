@@ -1,0 +1,60 @@
+# Traceability
+This table maps each requirement ID to at least one task ID in `tasks/tasks.json`.
+100% coverage is required.
+
+| Requirement | Tasks |
+|---|---|
+| MUST-001 | P0-006, P0-007 |
+| MUST-002 | P0-002, P1-002 |
+| MUST-003 | P0-002, P2-003 |
+| MUST-004 | P0-007, P0-008 |
+| MUST-005 | P0-004, P0-007 |
+| MUST-006 | P0-004 |
+| MUST-007 | P0-005 |
+| MUST-008 | P0-005 |
+| MUST-009 | P0-007, P0-008 |
+| MUST-010 | P0-006, P0-007, P2-003 |
+| MUST-011 | P0-006 |
+| MUST-012 | P0-006 |
+| MUST-013 | P0-006 |
+| MUST-014 | P0-010 |
+| MUST-015 | P0-002, P1-005 |
+| MUST-016 | P0-007 |
+| MUST-017 | P0-002, P0-009 |
+| MUST-018 | P0-002, P2-003 |
+| MUST-019 | P0-002, P2-001 |
+| MUST-020 | P0-001, P2-001 |
+| MUST-021 | P0-004, P0-005, P1-003 |
+| MUST-022 | P0-002, P1-006 |
+| MUST-023 | P0-010, P0-011 |
+| MUST-024 | P0-008 |
+| MUST-025 | P1-001, P2-006 |
+| MUST-026 | P0-008 |
+| MUST-027 | P0-006, P0-008 |
+| MUST-028 | P0-001, P0-011 |
+| SHOULD-029 | P1-001 |
+| SHOULD-030 | P1-006 |
+| SHOULD-031 | P1-003 |
+| SHOULD-032 | P1-003 |
+| SHOULD-033 | P1-002 |
+| SHOULD-034 | P0-002 |
+| SHOULD-035 | P2-006 |
+| SHOULD-036 | P1-004, P2-002 |
+| COULD-037 | P2-001, P2-002 |
+| COULD-038 | P1-005, P2-001 |
+| COULD-039 | P2-003 |
+| COULD-040 | P2-007 |
+| COULD-041 | P2-004 |
+| COULD-042 | P2-005 |
+| COULD-043 | P1-005 |
+| COULD-044 | P1-001, P1-006 |
+| COULD-045 | P0-006, P2-007 |
+| MUST-046 | P0-000 |
+| MUST-047 | P0-000 |
+| MUST-048 | P0-000 |
+| MUST-049 | P0-000 |
+| MUST-050 | P0-000, P0-011, P2-999 |
+| MUST-051 | P0-009, P0-010 |
+| MUST-052 | P0-003, P0-006, P1-001, P2-001 |
+| SHOULD-053 | P1-001, P1-006 |
+| COULD-054 | P1-005, P1-006 |

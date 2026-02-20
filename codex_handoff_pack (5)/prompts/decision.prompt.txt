@@ -1,0 +1,35 @@
+You are Codex CLI handling a DECISION task. This task is expected to STOP autorun after completion.
+
+# Absolute rules
+- Obey POLICY_LOCK.
+- Do NOT guess. If a decision is required, document options and tradeoffs.
+- Record decisions as ADRs under docs/adr/.
+- If user input is required, write a clear question list in docs/GAPS.md and reference it.
+
+# Task
+- task_id: {task_id}
+- title: {title}
+- milestone: {milestone}
+- type: {type}
+
+## Description
+{description}
+
+## Scope limits
+- max_changed_files: {max_changed_files}
+- max_diff_lines: {max_diff_lines}
+- allowed_dirs:
+{allowed_dirs}
+
+## Acceptance criteria
+{acceptance}
+
+## Verification commands
+{verification}
+
+# Output required
+- Create/update an ADR capturing the decision context/options.
+- Update docs/GAPS.md if user input is required.
+- Provide a short "Decision needed" summary.
+
+Proceed and then stop.

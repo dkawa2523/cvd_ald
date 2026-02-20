@@ -1,0 +1,33 @@
+defaults:
+  - example_cvd
+  - _self_
+
+run_name: smoke_synthetic
+random_seed: 42
+
+domain:
+  nr: 32
+  ntheta: 64
+
+time:
+  process_time_s: 30.0
+
+inputs:
+  synthetic_case: radial_gradient
+  source_kind: synthetic
+  field_path: ""
+  c_ref_mol_m3: 1.8
+  temperature_k: 710.0
+  pressure_pa: 1400.0
+  omega_rad_s: 0.0
+
+model:
+  mass_transfer_name: stagnant_film
+  mass_transfer_params:
+    k_m_m_s: 0.02
+  kinetics_params:
+    k0: 1.0
+    order: 1.0
+
+output:
+  run_dir_name: smoke

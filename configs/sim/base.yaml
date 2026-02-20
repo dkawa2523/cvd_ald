@@ -1,0 +1,94 @@
+run_name: base_cvd
+random_seed: 0
+
+domain:
+  kind: wafer_2d_polar
+  wafer_radius_mm: 150.0
+  nr: 64
+  ntheta: 180
+  nx: 128
+  ny: 128
+  edge_exclusion_mm: 3.0
+
+reference_plane:
+  z_ref_mm: 5.0
+  z_ref_mm_list: []
+  species:
+    - precursor
+  c_ref_unit: mol_m3
+
+time:
+  mode: cvd_steady
+  process_time_s: 60.0
+  dt_s: 0.1
+  ald_cycles: 1
+
+inputs:
+  synthetic_case: radial_gradient
+  io_loader_name: npz
+  source_kind: synthetic
+  field_path: ""
+  c_ref_mol_m3: 1.5
+  temperature_k: 700.0
+  pressure_pa: 1333.0
+  omega_rad_s: 0.0
+
+drivers:
+  enable_time_driver: false
+  enable_spatial_driver: false
+  scalar_schedule: {}
+  notes: ""
+
+model:
+  mass_transfer_name: stagnant_film
+  kinetics_name: power_law
+  state_name: none
+  net_name: deposition_only
+  mass_transfer_params:
+    k_m_m_s: 0.02
+  kinetics_params:
+    k0: 0.8
+    order: 1.0
+  net_params: {}
+  state_params: {}
+
+solver:
+  root_solver_name: bisection
+  max_iter: 80
+  rtol: 1.0e-6
+  atol: 1.0e-12
+  monotonicity_check: true
+
+compute:
+  engine: numpy
+  device: cpu
+  dtype: float64
+  batch_size: 0
+
+output:
+  project_dir: results
+  run_dir_name: example_cvd
+  resolved_config_filename: config_resolved.yaml
+  array_store: npz
+  write_report: true
+
+measurement:
+  enabled: false
+  path: ""
+  format: npz
+  dx_mm: 0.0
+  dy_mm: 0.0
+  rotation_deg: 0.0
+  scale: 1.0
+  edge_exclusion_mm: 0.0
+  interpolation: nearest
+
+kpi:
+  enabled: true
+  spec_min: null
+  spec_max: null
+  ring_count: 5
+
+validator:
+  enabled: true
+  strict: true

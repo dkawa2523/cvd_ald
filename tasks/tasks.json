@@ -1,0 +1,1327 @@
+{
+  "tasks": [
+    {
+      "task_id": "P0-000",
+      "title": "Handoff scaffolding self-audit (POLICY_LOCK + scripts + docs)",
+      "milestone": "P0",
+      "type": "review",
+      "stop_after": false,
+      "estimated_minutes": 45,
+      "description": "Review the handoff pack files already present in the repo and ensure:\n- POLICY_LOCK is consistent across docs and scripts\n- scripts paths and commands are correct\n- tasks.json verification commands reference scripts/commands.sh and env.sh\nIf any mismatch is found, fix it within scope. Otherwise, no-op changes.",
+      "acceptance_criteria": [
+        "No contradictions between POLICY_LOCK (ADR) and scripts/commands.sh",
+        "tasks/tasks.json verification_commands reference scripts/commands.sh (no raw python/python3)",
+        "No extra checkpoints beyond P0-999"
+      ],
+      "depends_on": [],
+      "scope_limits": {
+        "max_changed_files": 3,
+        "max_diff_lines": 200,
+        "allowed_dirs": [
+          "docs/",
+          "scripts/",
+          "tasks/",
+          "README_HANDOFF.md",
+          "AGENTS.md"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P0-000'"
+      ]
+    },
+    {
+      "task_id": "P0-001",
+      "title": "Scaffold Python project (pyproject + src layout packages)",
+      "milestone": "P0",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 90,
+      "description": "Create the initial Python project scaffold with src-layout and top-level packages:\n- deposim_schema\n- deposim_sim\n- deposim_report\n\nInclude minimal __init__.py and versioning, and a basic tests skeleton.\nKeep file count minimal and avoid adding optional heavy dependencies.",
+      "acceptance_criteria": [
+        "src/ contains deposim_schema, deposim_sim, deposim_report packages with __init__.py",
+        "pyproject.toml exists and supports editable install",
+        "Basic import test exists under tests/"
+      ],
+      "depends_on": [],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 350,
+        "allowed_dirs": [
+          "pyproject.toml",
+          "src/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P0-001'"
+      ]
+    },
+    {
+      "task_id": "P0-002",
+      "title": "Implement deposim_schema: structured configs + YAML/Hydra composition for sim",
+      "milestone": "P0",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Implement the simulation configuration schema in deposim_schema, using dataclasses\n(Hydra Structured Config) with validation and clear defaults.\n\nRequirements:\n- YAML-based configuration for sim, composed by Hydra.\n- Separate config roots for sim/ and opt/ (opt may remain stub for now).\n- Include DomainSpec, ReferencePlaneSpec, TimeSpec, InputsSpec, DriversSpec, ModelSpec,\n  SolverSpec, ComputeSpec, OutputSpec, and RunSpec.\n\nProvide an example sim config under configs/sim/ that can run on synthetic inputs later.",
+      "acceptance_criteria": [
+        "Structured config dataclasses exist for sim config, importable from deposim_schema",
+        "configs/sim/example_cvd.yaml exists (or equivalent) with clear parameters",
+        "Config can be composed and saved as resolved YAML"
+      ],
+      "depends_on": [
+        "P0-001"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 380,
+        "allowed_dirs": [
+          "src/deposim_schema/",
+          "configs/sim/",
+          "src/deposim_sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P0-002'"
+      ]
+    },
+    {
+      "task_id": "P0-003",
+      "title": "Implement domain grids and masks (wafer_2d_polar + wafer_1d_radial)",
+      "milestone": "P0",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 90,
+      "description": "Implement domain/grid generation for:\n- wafer_2d_polar (r, theta)\n- wafer_1d_radial (r)\n\nInclude:\n- coordinate arrays, spacing, area weights if needed\n- edge exclusion mask support\n- mapping utilities needed for report (radial profile)\n\nKeep implementation minimal and numeric-library agnostic (NumPy first).",
+      "acceptance_criteria": [
+        "DomainSpec can generate a grid object with r/theta arrays",
+        "Masking supports edge exclusion in mm",
+        "Unit tests cover basic grid shape and mask behavior"
+      ],
+      "depends_on": [
+        "P0-002"
+      ],
+      "scope_limits": {
+        "max_changed_files": 5,
+        "max_diff_lines": 350,
+        "allowed_dirs": [
+          "src/deposim_sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P0-003'"
+      ]
+    },
+    {
+      "task_id": "P0-004",
+      "title": "Model registry + mass transfer models (stagnant film, rotating disk w/ omega guard)",
+      "milestone": "P0",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Implement model registry for mass transfer models and provide at least:\n- stagnant_film: km = D / delta_eff\n- rotating_disk (Levich-like scaling): km ~ Ck * D^(2/3) * omega^(1/2) * nu^(-1/6)\n\nAdd omega=0 guard behavior:\n- configurable: error OR fallback to stagnant_film\n\nkm must accept scalar or spatial fields and return km aligned to domain grid.",
+      "acceptance_criteria": [
+        "Mass transfer registry resolves model by name from config",
+        "rotating_disk guard on omega=0 is implemented (error/fallback configurable)",
+        "km output shape matches domain grid"
+      ],
+      "depends_on": [
+        "P0-003"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 380,
+        "allowed_dirs": [
+          "src/deposim_sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P0-004'"
+      ]
+    },
+    {
+      "task_id": "P0-005",
+      "title": "Rate laws (powerlaw + saturation/inhibition) with apparent order diagnostics",
+      "milestone": "P0",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Implement rate law models in registry:\n- powerlaw: r = k(T) * \u03a0 Cs_i^n_i (allow negative/fractional n)\n- saturation_inhibition: denominator form enabling order transitions and inhibition\n\nImplement:\n- stable log evaluation\n- apparent order computation n_app = d ln r / d ln C (analytical if possible)\n\nEnsure rate laws accept Cs dict + state + T arrays.",
+      "acceptance_criteria": [
+        "Rate law registry resolves model by name from config",
+        "powerlaw supports negative/fractional orders robustly",
+        "apparent_orders returns maps consistent with analytical expectations for these models"
+      ],
+      "depends_on": [
+        "P0-004"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 380,
+        "allowed_dirs": [
+          "src/deposim_sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P0-005'"
+      ]
+    },
+    {
+      "task_id": "P0-006",
+      "title": "Transport\u2013reaction coupling solver: vectorized bisection on progress variable R",
+      "milestone": "P0",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Implement the core coupled solver for the single-dominant-reaction case:\n\n- Reduce to scalar root solve F(R)=0 with physical bracket [0, R_max]\n- Provide vectorized bisection solver (NumPy baseline)\n- Track iteration counts and status flags per grid point\n\nAdd monotonicity/shape check for F(R):\n- detect potential non-monotonic cases (sample points)\n- define fallback behavior (warn + optional interval split OR controlled failure)\n\nEnsure C_s is computed from R and clipped/guarded to nonnegative values for forward sim.",
+      "acceptance_criteria": [
+        "solve_progress_R returns R, Cs, iteration_count, status_map",
+        "Nonnegativity constraints are enforced (Cs>=0, R within bracket)",
+        "Monotonicity check exists and produces an explicit status/warning"
+      ],
+      "depends_on": [
+        "P0-005"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 400,
+        "allowed_dirs": [
+          "src/deposim_sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P0-006'"
+      ]
+    },
+    {
+      "task_id": "P0-007",
+      "title": "CVD steady simulator: thickness + diagnostics (Cs/Cref, Da proxy, n_app)",
+      "milestone": "P0",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Implement a CVD steady forward simulator that:\n- accepts FieldBundle (C_ref species, U, T, scalars like P, omega)\n- builds km via mass-transfer model\n- solves for Cs via TCRSK solver (progress-variable root)\n- computes deposition rate and thickness for process_time\n\nMust output standard diagnostics:\n- thickness map\n- Cs/Cref map(s)\n- Da proxy (define and document)\n- apparent order maps (from RateLaw)\n- root iteration counts/status",
+      "acceptance_criteria": [
+        "run_cvd_steady returns thickness + diagnostics as arrays aligned with domain grid",
+        "Diagnostics include Cs/Cref, Da proxy, apparent orders, solver health",
+        "Sign conventions documented (deposit positive)"
+      ],
+      "depends_on": [
+        "P0-006"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 400,
+        "allowed_dirs": [
+          "src/deposim_sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P0-007'"
+      ]
+    },
+    {
+      "task_id": "P0-008",
+      "title": "RunManager + outputs + plots + HTML report with fixed results/index.html entrypoint",
+      "milestone": "P0",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Implement output management:\n- create results/ with fixed entrypoint results/index.html\n- create run_id subdir with:\n  - config_resolved.yaml\n  - outputs/ (arrays; NPZ baseline is acceptable for P0)\n  - plots/ (matplotlib images)\n  - report.html (links + summary)\n\nAdd standard plots:\n- thickness map\n- radial profile\n- Cs/Cref map\n- Da proxy map\n- apparent order map(s)\n- solver iteration/status map\n\nAlso record summary.json with key metrics.",
+      "acceptance_criteria": [
+        "results/index.html exists and links to latest run report",
+        "Run directory contains resolved config, arrays, plots, report.html",
+        "No file explosion; outputs are organized deterministically"
+      ],
+      "depends_on": [
+        "P0-007"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 400,
+        "allowed_dirs": [
+          "src/deposim_report/",
+          "src/deposim_sim/",
+          "results/",
+          "scripts/",
+          "docs/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P0-008'"
+      ]
+    },
+    {
+      "task_id": "P0-009",
+      "title": "Synthetic input generator + smoke entrypoint (Hydra config) used by scripts/commands.sh",
+      "milestone": "P0",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 90,
+      "description": "Create a deterministic smoke run path that does not require real CFD input formats:\n\n- synthetic FieldBundle generator with configurable patterns (e.g., radial gradients)\n- a module entrypoint `python -m deposim_sim.smoke` (or equivalent) that:\n  - composes config via Hydra\n  - runs CVD steady simulation on synthetic inputs\n  - writes outputs via RunManager\n\nEnsure scripts/commands.sh smoke uses this entrypoint.",
+      "acceptance_criteria": [
+        "Running ./scripts/commands.sh smoke produces a new run under results/runs/<run_id>",
+        "Synthetic input is deterministic for reproducibility",
+        "Smoke run uses Hydra-composed YAML config"
+      ],
+      "depends_on": [
+        "P0-008"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 350,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "configs/sim/",
+          "scripts/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P0-009'"
+      ]
+    },
+    {
+      "task_id": "P0-010",
+      "title": "Unit tests + P0 verify gate wiring (import_check, smoke, tests)",
+      "milestone": "P0",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Add unit tests (use stdlib unittest to avoid extra dependencies) covering:\n\n- root bracket and nonnegativity: Cs>=0, R in [0,Rmax]\n- regime limits: transport-limited vs reaction-limited sanity\n- rotating-disk omega=0 guard behavior (error/fallback)\n\nWire scripts/commands.sh:\n- import_check\n- test\n- verify_p0 (import_check + smoke + test)\n\nMake sure docs/EVAL_PROTOCOL.md matches commands.",
+      "acceptance_criteria": [
+        "./scripts/commands.sh verify_p0 passes",
+        "Tests are deterministic and fast",
+        "EVAL_PROTOCOL commands are accurate"
+      ],
+      "depends_on": [
+        "P0-009"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 400,
+        "allowed_dirs": [
+          "tests/",
+          "scripts/",
+          "src/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P0-010'"
+      ]
+    },
+    {
+      "task_id": "P0-011",
+      "title": "Repo-wide consistency sweep (commands, docs, old names) [review]",
+      "milestone": "P0",
+      "type": "review",
+      "stop_after": false,
+      "estimated_minutes": 45,
+      "description": "Review the entire repo for consistency:\n- no stale package names\n- commands.sh is the only source of run/test commands\n- docs reference correct commands\n- no unintended extra checkpoints\n- ensure results/ and runs/ are gitignored\n\nFix minor inconsistencies within scope.",
+      "acceptance_criteria": [
+        "No stale run/test commands outside scripts/commands.sh",
+        "Docs match actual code entrypoints",
+        ".gitignore includes runs/ and results/"
+      ],
+      "depends_on": [
+        "P0-010"
+      ],
+      "scope_limits": {
+        "max_changed_files": 5,
+        "max_diff_lines": 250,
+        "allowed_dirs": [
+          "docs/",
+          "scripts/",
+          "tasks/",
+          "src/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P0-011'"
+      ]
+    },
+    {
+      "task_id": "P0-999",
+      "title": "P0 CHECKPOINT: run verify_p0, summarize status, stop",
+      "milestone": "P0",
+      "type": "checkpoint",
+      "stop_after": true,
+      "estimated_minutes": 30,
+      "description": "Run the P0 verification gate and summarize:\n\n- commands run and results\n- what features are implemented (vs planned)\n- next P1 tasks readiness\n- any known limitations\n\nWrite summary to a markdown file under runs/ (or docs/) and stop.",
+      "acceptance_criteria": [
+        "verify_p0 passes",
+        "A checkpoint summary is written",
+        "Autorun stops with exit code 42 after this task"
+      ],
+      "depends_on": [
+        "P0-011"
+      ],
+      "scope_limits": {
+        "max_changed_files": 3,
+        "max_diff_lines": 200,
+        "allowed_dirs": [
+          "docs/",
+          "runs/",
+          "results/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P0-999'"
+      ]
+    },
+    {
+      "task_id": "P1-001",
+      "title": "XY domain runtime support (wafer_2d_xy grid + radial profiling)",
+      "milestone": "P1",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 90,
+      "description": "Implement production runtime support for wafer_2d_xy in domain/grid utilities. Include shape-safe masks and radial profile extraction for XY grids so downstream report/diagnostics can reuse existing interfaces.",
+      "acceptance_criteria": [
+        "DomainSpec.kind=wafer_2d_xy builds a valid DomainGrid",
+        "Edge exclusion mask works on XY grid",
+        "radial_profile works for XY grids and returns stable values"
+      ],
+      "depends_on": [
+        "P0-999"
+      ],
+      "scope_limits": {
+        "max_changed_files": 6,
+        "max_diff_lines": 360,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_schema/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P1-001'"
+      ]
+    },
+    {
+      "task_id": "P1-002",
+      "title": "Registry metadata foundation (requires/excludes/time_modes/governing_class)",
+      "milestone": "P1",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 90,
+      "description": "Add registry metadata contracts shared by model registries to encode compatibility constraints. Metadata must support requires/excludes/time_modes/governing_class and remain backwards compatible with existing model selection by name.",
+      "acceptance_criteria": [
+        "Mass-transfer and rate-law registries expose metadata lookups",
+        "Metadata schema supports requires/excludes/time_modes/governing_class",
+        "Existing YAML model selection keeps working"
+      ],
+      "depends_on": [
+        "P1-001"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 380,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_schema/",
+          "configs/sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P1-002'"
+      ]
+    },
+    {
+      "task_id": "P1-003",
+      "title": "Compatibility validator (preflight/runtime guard)",
+      "milestone": "P1",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Implement compatibility validation using registry metadata before simulation execution. Guard representative invalid combinations, including omega=0 with strict rotating_disk guard and time/state incompatibilities.",
+      "acceptance_criteria": [
+        "Invalid model combinations fail with explicit error",
+        "Valid baseline smoke config passes validation",
+        "Validator is callable from scripts/commands verification path"
+      ],
+      "depends_on": [
+        "P1-002"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 380,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "scripts/",
+          "configs/sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P1-003'"
+      ]
+    },
+    {
+      "task_id": "P1-004",
+      "title": "MeasurementAdapter implementation (alignment/mask/resample)",
+      "milestone": "P1",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Implement MeasurementAdapter with deterministic alignment and resampling between measurement map and simulation grid. Include dx/dy shift, rotation, scale, edge exclusion mask, and reproducibility-focused tests.",
+      "acceptance_criteria": [
+        "MeasurementAdapter aligns/masks 2D map deterministically",
+        "Resampling to simulation grid is available",
+        "Unit tests cover alignment, masking, and reproducibility"
+      ],
+      "depends_on": [
+        "P1-003"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 390,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_schema/",
+          "src/deposim_report/",
+          "configs/sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P1-004'"
+      ]
+    },
+    {
+      "task_id": "P1-005",
+      "title": "KPI metrics (NU%, center-edge, ring stats, out-of-spec area)",
+      "milestone": "P1",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 90,
+      "description": "Add KPI metric calculations and persist them in run summary outputs. Include normalized uniformity (NU%), center-edge delta, ring-wise statistics, and out-of-spec area fraction.",
+      "acceptance_criteria": [
+        "summary.json includes KPI metrics",
+        "KPI metrics are deterministic for same inputs",
+        "Metrics are reusable for single-run and DOE reports"
+      ],
+      "depends_on": [
+        "P1-004"
+      ],
+      "scope_limits": {
+        "max_changed_files": 6,
+        "max_diff_lines": 320,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_report/",
+          "configs/sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P1-005'"
+      ]
+    },
+    {
+      "task_id": "P1-006",
+      "title": "Comparison report extension (sim-vs-meas maps + error stats)",
+      "milestone": "P1",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 90,
+      "description": "Extend HTML report to include simulation-vs-measurement comparison figures and error statistics while preserving fixed results/index.html entrypoint behavior.",
+      "acceptance_criteria": [
+        "report.html includes comparison plots when measurement input exists",
+        "Error statistics are summarized in report and summary artifacts",
+        "Plot generation remains deterministic and headless-safe"
+      ],
+      "depends_on": [
+        "P1-005"
+      ],
+      "scope_limits": {
+        "max_changed_files": 6,
+        "max_diff_lines": 320,
+        "allowed_dirs": [
+          "src/deposim_report/",
+          "src/deposim_sim/",
+          "configs/sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P1-006'"
+      ]
+    },
+    {
+      "task_id": "P1-007",
+      "title": "DOE runner with case-dimension outputs and KPI ranking",
+      "milestone": "P1",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Implement DOE execution with grid/random sampling and case-dimension output storage to avoid directory explosion. Generate summary metrics and ranking views from KPI outputs.",
+      "acceptance_criteria": [
+        "DOE run outputs a single run directory with case-dimension arrays",
+        "No deep per-case directory explosion",
+        "KPI ranking/report for DOE cases is produced"
+      ],
+      "depends_on": [
+        "P1-006"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 400,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_report/",
+          "configs/sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P1-007'"
+      ]
+    },
+    {
+      "task_id": "P1-008",
+      "title": "z_ref sensitivity workflow (DOE factor + report)",
+      "milestone": "P1",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 90,
+      "description": "Add standardized z_ref sensitivity analysis using DOE factors and report plots/metrics to make reference-plane fragility explicit in routine workflows.",
+      "acceptance_criteria": [
+        "Config supports z_ref sweeps",
+        "Report includes z_ref sensitivity metrics and plots"
+      ],
+      "depends_on": [
+        "P1-007"
+      ],
+      "scope_limits": {
+        "max_changed_files": 6,
+        "max_diff_lines": 320,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_report/",
+          "configs/sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P1-008'"
+      ]
+    },
+    {
+      "task_id": "P1-009",
+      "title": "Additional kinetics + net models (competition/LHHW + dep-etch-loss)",
+      "milestone": "P1",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Extend rate and net model registry with competition/LHHW-like kinetics and dep-etch-loss multi-channel composition, preserving sign conventions and diagnostics.",
+      "acceptance_criteria": [
+        "New kinetics/net models selectable via YAML",
+        "Sign conventions remain consistent for net thickness",
+        "Diagnostics remain available with new models"
+      ],
+      "depends_on": [
+        "P1-008"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 400,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "configs/sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P1-009'"
+      ]
+    },
+    {
+      "task_id": "P1-010",
+      "title": "Time.phases and driver extension",
+      "milestone": "P1",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Implement phased time execution and driver support for per-phase input variation. Keep CVD steady path intact while adding ALD-capable phased scheduling.",
+      "acceptance_criteria": [
+        "Time mode phases can run synthetic scenario",
+        "Driver modifications are reflected in phase execution",
+        "Input preview output exists for phase-driven inputs"
+      ],
+      "depends_on": [
+        "P1-009"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 420,
+        "allowed_dirs": [
+          "src/deposim_schema/",
+          "src/deposim_sim/",
+          "configs/sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P1-010'"
+      ]
+    },
+    {
+      "task_id": "P1-011",
+      "title": "State closure modes (dynamic_ode / steady_state) + sticking_flux",
+      "milestone": "P1",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Add state-model closure modes and sticking_flux kinetics path to support ALD-like self-limiting behavior in both dynamic and steady-state closures.",
+      "acceptance_criteria": [
+        "Coverage state remains within [0,1]",
+        "dynamic_ode and steady_state closure modes are selectable",
+        "sticking_flux model runs via YAML selection"
+      ],
+      "depends_on": [
+        "P1-010"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 420,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_schema/",
+          "configs/sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P1-011'"
+      ]
+    },
+    {
+      "task_id": "P1-012",
+      "title": "Bosanquet diffusivity bridge + pattern loading S(x,y)",
+      "milestone": "P1",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Implement Bosanquet effective diffusivity option and pattern loading factor S(x,y) in transport-reaction coupling. Keep defaults backwards compatible (S=1 when absent).",
+      "acceptance_criteria": [
+        "Bosanquet diffusivity selectable in km path",
+        "Pattern loading S(x,y) can be applied and disabled",
+        "Baseline behavior remains unchanged when feature is off"
+      ],
+      "depends_on": [
+        "P1-011"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 420,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "configs/sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P1-012'"
+      ]
+    },
+    {
+      "task_id": "P1-013",
+      "title": "Identifiability diagnostics (finite-difference sensitivity + correlation)",
+      "milestone": "P1",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 90,
+      "description": "Add first-pass identifiability diagnostics for calibration readiness using finite-difference sensitivities and parameter correlation/degeneracy indicators.",
+      "acceptance_criteria": [
+        "Sensitivity diagnostics are generated for selected parameters",
+        "Correlation/degeneracy warning is reported",
+        "Report artifacts include identifiability section"
+      ],
+      "depends_on": [
+        "P1-012"
+      ],
+      "scope_limits": {
+        "max_changed_files": 6,
+        "max_diff_lines": 320,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_report/",
+          "configs/sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P1-013'"
+      ]
+    },
+    {
+      "task_id": "P1-014",
+      "title": "Optional JAX path (extras-based, no core hard dependency)",
+      "milestone": "P1",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Add optional JAX path as extras-only dependency. Keep NumPy as baseline and ensure explicit user selection governs engine behavior.",
+      "acceptance_criteria": [
+        "JAX path runs smoke when extras installed",
+        "NumPy remains baseline without JAX installed",
+        "Engine selection respects YAML choice"
+      ],
+      "depends_on": [
+        "P1-013"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 400,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "pyproject.toml",
+          "docs/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P1-014'"
+      ]
+    },
+    {
+      "task_id": "P1-015",
+      "title": "Benchmark helper (user-choice preserving)",
+      "milestone": "P1",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 60,
+      "description": "Provide benchmark helper across available engines/devices without overriding user-selected compute settings.",
+      "acceptance_criteria": [
+        "Benchmark report includes throughput/timing summaries",
+        "No automatic override of compute policy"
+      ],
+      "depends_on": [
+        "P1-014"
+      ],
+      "scope_limits": {
+        "max_changed_files": 5,
+        "max_diff_lines": 260,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_report/",
+          "configs/sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P1-015'"
+      ]
+    },
+    {
+      "task_id": "P2-001",
+      "title": "Create deposim_opt package scaffold (configs/opt split) with parameter transforms",
+      "milestone": "P2",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Create deposim_opt as a separate package for assimilation/optimization. Include opt schema and parameter transforms while keeping deposim_sim independent.",
+      "acceptance_criteria": [
+        "deposim_opt imports successfully (when installed)",
+        "Opt config is separate from sim config"
+      ],
+      "depends_on": [
+        "P1-015"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 380,
+        "allowed_dirs": [
+          "src/deposim_opt/",
+          "configs/opt/",
+          "pyproject.toml",
+          "docs/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P2-001'"
+      ]
+    },
+    {
+      "task_id": "P2-002",
+      "title": "Assimilation minimal loop on synthetic data (CPU) [no heavy deps required]",
+      "milestone": "P2",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Implement minimal parameter assimilation loop on synthetic data with robust objective and constraint-safe transforms.",
+      "acceptance_criteria": [
+        "Synthetic assimilation reduces loss from initial guess",
+        "Results and fitted params are saved to results/ with report"
+      ],
+      "depends_on": [
+        "P2-001"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 400,
+        "allowed_dirs": [
+          "src/deposim_opt/",
+          "src/deposim_sim/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P2-002'"
+      ]
+    },
+    {
+      "task_id": "P2-003",
+      "title": "ALD phases + state model skeleton (coverage) with stiff-safe solver choices",
+      "milestone": "P2",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Add ALD support with phased schedule and bounded coverage dynamics in stable solver skeleton.",
+      "acceptance_criteria": [
+        "ALD phases mode runs a synthetic example",
+        "Coverage stays within [0,1]"
+      ],
+      "depends_on": [
+        "P2-002"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 400,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "configs/sim/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P2-003'"
+      ]
+    },
+    {
+      "task_id": "P2-004",
+      "title": "ClearML integration as optional leaf package (no core dependency)",
+      "milestone": "P2",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 90,
+      "description": "Add optional ClearML integration package and keep core simulation import path independent from tracking dependencies.",
+      "acceptance_criteria": [
+        "Core simulation imports without ClearML installed",
+        "ClearML integration is optional and documented"
+      ],
+      "depends_on": [
+        "P2-003"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 300,
+        "allowed_dirs": [
+          "src/deposim_tracking_clearml/",
+          "pyproject.toml",
+          "docs/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P2-004'"
+      ]
+    },
+    {
+      "task_id": "P2-005",
+      "title": "IO plugin system for CFD fields and measurement maps (CSV/NPZ baseline)",
+      "milestone": "P2",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Implement IO plugins for field/measurement ingestion with baseline NPZ/CSV loaders and schema-level validation.",
+      "acceptance_criteria": [
+        "Config can select an IO loader by name",
+        "Basic loaders work on simple sample files"
+      ],
+      "depends_on": [
+        "P2-004"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 400,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_schema/",
+          "docs/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P2-005'"
+      ]
+    },
+    {
+      "task_id": "P2-006",
+      "title": "Zarr output option for large DOE (keep NPZ fallback)",
+      "milestone": "P2",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 90,
+      "description": "Add optional Zarr output backend for large DOE while keeping NPZ fallback as default baseline.",
+      "acceptance_criteria": [
+        "Zarr output works when dependency installed",
+        "NPZ remains default/fallback"
+      ],
+      "depends_on": [
+        "P2-005"
+      ],
+      "scope_limits": {
+        "max_changed_files": 5,
+        "max_diff_lines": 300,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_report/",
+          "pyproject.toml"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P2-006'"
+      ]
+    },
+    {
+      "task_id": "P2-007",
+      "title": "Multi-z reference-plane support (optional) + diagnostics",
+      "milestone": "P2",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Add optional multi-z reference-plane support and diagnostics while preserving single-plane backward compatibility.",
+      "acceptance_criteria": [
+        "Single-plane mode remains unchanged",
+        "Multi-plane mode runs on synthetic example and outputs diagnostics"
+      ],
+      "depends_on": [
+        "P2-006"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 400,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "configs/sim/",
+          "docs/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P2-007'"
+      ]
+    },
+    {
+      "task_id": "P2-999",
+      "title": "Final consistency sweep (docs/commands/tasks) [review]",
+      "milestone": "P2",
+      "type": "review",
+      "stop_after": false,
+      "estimated_minutes": 45,
+      "description": "Review the repo for consistency across all milestones: docs vs code vs commands, traceability completeness, stale name checks, and optional dependency boundaries.",
+      "acceptance_criteria": [
+        "Repo is internally consistent and traceability remains 100%"
+      ],
+      "depends_on": [
+        "P2-007"
+      ],
+      "scope_limits": {
+        "max_changed_files": 5,
+        "max_diff_lines": 250,
+        "allowed_dirs": [
+          "docs/",
+          "scripts/",
+          "tasks/",
+          "src/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P2-999'"
+      ]
+    },
+    {
+      "task_id": "D-001",
+      "title": "Decision: adopt/defer Stefan flow correction (MS-14)",
+      "milestone": "POST",
+      "type": "decision",
+      "stop_after": false,
+      "estimated_minutes": 30,
+      "description": "Decide whether to adopt Stefan flow correction as a formal requirement. If adopted, add requirement IDs, traceability links, and an ADR before implementation.",
+      "acceptance_criteria": [
+        "Decision is recorded with ADOPT/DEFERRED/ADR_REQUIRED classification",
+        "MODEL_GAP references D-001 and decision outcome"
+      ],
+      "depends_on": [
+        "P2-999"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 180,
+        "allowed_dirs": [
+          "docs/",
+          "tasks/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task D-001'"
+      ]
+    },
+    {
+      "task_id": "D-002",
+      "title": "Decision: adopt/defer smoothing PDE postprocess (MS-15)",
+      "milestone": "POST",
+      "type": "decision",
+      "stop_after": false,
+      "estimated_minutes": 30,
+      "description": "Decide whether morphology smoothing PDE should become a requirement and under which constraints. Record ADR if promoted.",
+      "acceptance_criteria": [
+        "Decision is recorded with ADOPT/DEFERRED/ADR_REQUIRED classification",
+        "MODEL_GAP references D-002 and decision outcome"
+      ],
+      "depends_on": [
+        "D-001"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 180,
+        "allowed_dirs": [
+          "docs/",
+          "tasks/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task D-002'"
+      ]
+    },
+    {
+      "task_id": "D-003",
+      "title": "Decision: purge_decay driver contract standardization",
+      "milestone": "POST",
+      "type": "decision",
+      "stop_after": false,
+      "estimated_minutes": 30,
+      "description": "Define whether purge residual behavior is represented via explicit purge_decay driver contract or deferred. If adopted, requirements and validator rules must be updated first.",
+      "acceptance_criteria": [
+        "Decision is recorded with ADOPT/DEFERRED/ADR_REQUIRED classification",
+        "MODEL_GAP references D-003 and decision outcome"
+      ],
+      "depends_on": [
+        "D-002"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 180,
+        "allowed_dirs": [
+          "docs/",
+          "tasks/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task D-003'"
+      ]
+    },
+    {
+      "task_id": "D-004",
+      "title": "Decision: incubation/poisoning state model promotion",
+      "milestone": "POST",
+      "type": "decision",
+      "stop_after": false,
+      "estimated_minutes": 30,
+      "description": "Decide promotion policy for incubation and poisoning state models from theory notes to requirement-level implementation scope.",
+      "acceptance_criteria": [
+        "Decision is recorded with ADOPT/DEFERRED/ADR_REQUIRED classification",
+        "MODEL_GAP references D-004 and decision outcome"
+      ],
+      "depends_on": [
+        "D-003"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 180,
+        "allowed_dirs": [
+          "docs/",
+          "tasks/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task D-004'"
+      ]
+    },
+    {
+      "task_id": "D-005",
+      "title": "Decision: chamber seasoning model inclusion policy",
+      "milestone": "POST",
+      "type": "decision",
+      "stop_after": false,
+      "estimated_minutes": 30,
+      "description": "Decide if chamber seasoning/drift should be introduced as a formal model track and document acceptance boundaries before implementation.",
+      "acceptance_criteria": [
+        "Decision is recorded with ADOPT/DEFERRED/ADR_REQUIRED classification",
+        "MODEL_GAP references D-005 and decision outcome"
+      ],
+      "depends_on": [
+        "D-004"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 180,
+        "allowed_dirs": [
+          "docs/",
+          "tasks/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task D-005'"
+      ]
+    }
+  ]
+}
