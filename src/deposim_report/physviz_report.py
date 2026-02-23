@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from deposim_sim.domain import DomainGrid
+from deposim_sim.common.render_tri import render_unstructured_map
+from .plot_catalog import sanitize_plot_token
 
 try:  # pragma: no cover
     import numpy as np
@@ -47,7 +49,29 @@ def _centers_to_edges(values: np.ndarray) -> np.ndarray:
     return edges
 
 
-def _draw_map(ax: Any, grid: DomainGrid, value: Any, *, cmap: str = "viridis") -> Any:
+def _draw_map(
+    ax: Any,
+    grid: DomainGrid,
+    value: Any,
+    *,
+    cmap: str = "viridis",
+    xy_mm: np.ndarray | None = None,
+    discrete: bool = False,
+) -> Any:
+    if grid.kind == "from_fluent_xy":
+        if xy_mm is None and grid.x_grid_mm is not None and grid.y_grid_mm is not None:
+            xy_mm = np.stack([np.asarray(grid.x_grid_mm, dtype=float), np.asarray(grid.y_grid_mm, dtype=float)], axis=1)
+        if xy_mm is None:
+            raise ValueError("xy_mm is required for from_fluent_xy physviz rendering")
+        valid_mask = np.asarray(grid.edge_mask, dtype=bool)
+        return render_unstructured_map(
+            ax,
+            xy_mm=np.asarray(xy_mm, dtype=float),
+            values=np.asarray(value, dtype=float),
+            valid_mask=valid_mask,
+            cmap=cmap,
+            discrete=discrete,
+        )
     data = _map2d(value)
     if grid.kind == "wafer_2d_polar" and grid.theta_edges_rad is not None and data.shape == grid.shape:
         r_edges = np.asarray(grid.r_edges_mm, dtype=float)
@@ -82,24 +106,23 @@ def _draw_map(ax: Any, grid: DomainGrid, value: Any, *, cmap: str = "viridis") -
     return mesh
 
 
-def _save_map(path: Path, grid: DomainGrid, value: Any, title: str, cmap: str = "viridis") -> None:
+def _save_map(
+    path: Path,
+    grid: DomainGrid,
+    value: Any,
+    title: str,
+    cmap: str = "viridis",
+    *,
+    xy_mm: np.ndarray | None = None,
+    discrete: bool = False,
+) -> None:
     fig, ax = plt.subplots(figsize=(6, 4))
-    mesh = _draw_map(ax, grid, value, cmap=cmap)
+    mesh = _draw_map(ax, grid, value, cmap=cmap, xy_mm=xy_mm, discrete=discrete)
     ax.set_title(title)
     fig.colorbar(mesh, ax=ax, shrink=0.9)
     fig.tight_layout()
     fig.savefig(path, dpi=140)
     plt.close(fig)
-
-
-def _sanitize(name: str) -> str:
-    safe = []
-    for ch in str(name):
-        if ch.isalnum() or ch in {"_", "-", "."}:
-            safe.append(ch)
-        else:
-            safe.append("_")
-    return "".join(safe)
 
 
 def write_physviz_report(
@@ -113,9 +136,11 @@ def write_physviz_report(
     plots_dir = run_dir / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
     plot_paths: list[str] = []
+    xy_mm = physviz_data.get("xy_mm")
+    xy_arr = None if xy_mm is None else np.asarray(xy_mm, dtype=float)
 
     def add(filename: str, value: Any, title: str, cmap: str = "viridis") -> None:
-        _save_map(plots_dir / filename, grid, value, title, cmap)
+        _save_map(plots_dir / filename, grid, value, title, cmap, xy_mm=xy_arr)
         plot_paths.append(f"plots/{filename}")
 
     cvd_snap = physviz_data.get("cvd_snapshots")
@@ -151,7 +176,7 @@ def write_physviz_report(
                 arr = np.asarray(series, dtype=float)
                 if arr.ndim < 3 or arr.shape[0] != len(fractions):
                     continue
-                tag = _sanitize(str(species))
+                tag = sanitize_plot_token(str(species))
                 for idx, frac in enumerate(fractions):
                     pct = int(round(float(frac) * 100.0))
                     add(
@@ -205,7 +230,7 @@ def write_physviz_report(
                 if not str(map_name).startswith(key):
                     continue
                 species = str(map_name).split("__", 1)[1]
-                filename = f"physviz_{key[:-2]}_{_sanitize(species)}.png"
+                filename = f"physviz_{key[:-2]}_{sanitize_plot_token(species)}.png"
                 add(filename, value, f"{title} [{species}]", cmap=cmap)
 
     reaction = physviz_data.get("reaction_importance")
@@ -214,7 +239,7 @@ def write_physviz_report(
         if isinstance(sens_maps, Mapping):
             for term, value in sorted(sens_maps.items()):
                 add(
-                    f"physviz_reaction_sensitivity_{_sanitize(term)}.png",
+                    f"physviz_reaction_sensitivity_{sanitize_plot_token(term)}.png",
                     value,
                     f"Reaction Sensitivity [{term}]",
                     cmap="coolwarm",
@@ -223,7 +248,7 @@ def write_physviz_report(
         if isinstance(abla_maps, Mapping):
             for term, value in sorted(abla_maps.items()):
                 add(
-                    f"physviz_reaction_ablation_{_sanitize(term)}.png",
+                    f"physviz_reaction_ablation_{sanitize_plot_token(term)}.png",
                     value,
                     f"Reaction Ablation [{term}]",
                     cmap="coolwarm",

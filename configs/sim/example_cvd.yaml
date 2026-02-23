@@ -1,27 +1,8 @@
+# Deprecated compatibility config. Use cvd_steady_min.yaml directly.
 defaults:
-  - base
+  - cvd_steady_min
   - _self_
 
-run_name: example_cvd_synthetic
-
-time:
-  process_time_s: 120.0
-
-inputs:
-  synthetic_case: edge_depleted
-  c_ref_mol_m3: 2.2
-  temperature_k: 725.0
-  pressure_pa: 1500.0
-  omega_rad_s: 25.0
-
-model:
-  mass_transfer_name: rotating_disk
-  mass_transfer_params:
-    sh_prefactor: 0.62
-    diffusivity_m2_s: 1.0e-4
-  kinetics_params:
-    k0: 1.2
-    order: 0.85
-
-output:
-  run_dir_name: example_cvd
+sim:
+  output:
+    run_name: example_cvd

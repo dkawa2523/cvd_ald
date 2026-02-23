@@ -171,4 +171,57 @@ def align_measurement_to_grid(
     return aligned, valid
 
 
-__all__ = ["MeasurementMap", "align_measurement_to_grid"]
+def align_point_measurement_to_points(
+    *,
+    values: np.ndarray,
+    source_xy_mm: np.ndarray,
+    target_xy_mm: np.ndarray,
+    shift_mm: tuple[float, float] = (0.0, 0.0),
+    rotation_deg: float = 0.0,
+    scale: float = 1.0,
+    mask_radius_mm: float | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Align and nearest-resample unstructured point measurements to target points."""
+
+    _require_numpy()
+    if scale <= 0.0:
+        raise ValueError(f"scale must be > 0, got {scale}")
+
+    src_xy = np.asarray(source_xy_mm, dtype=float)
+    tgt_xy = np.asarray(target_xy_mm, dtype=float)
+    vals = np.asarray(values, dtype=float).reshape(-1)
+
+    if src_xy.ndim != 2 or src_xy.shape[1] != 2:
+        raise ValueError(f"source_xy_mm must be shape [n,2], got {src_xy.shape}")
+    if tgt_xy.ndim != 2 or tgt_xy.shape[1] != 2:
+        raise ValueError(f"target_xy_mm must be shape [m,2], got {tgt_xy.shape}")
+    if vals.shape[0] != src_xy.shape[0]:
+        raise ValueError("values length must match source_xy_mm length")
+    if src_xy.shape[0] == 0:
+        raise ValueError("source_xy_mm must contain at least one point")
+
+    dx_mm, dy_mm = float(shift_mm[0]), float(shift_mm[1])
+    theta = np.deg2rad(float(rotation_deg))
+    cos_t = float(np.cos(theta))
+    sin_t = float(np.sin(theta))
+
+    x_local = (tgt_xy[:, 0] - dx_mm) / float(scale)
+    y_local = (tgt_xy[:, 1] - dy_mm) / float(scale)
+    x_query = cos_t * x_local + sin_t * y_local
+    y_query = -sin_t * x_local + cos_t * y_local
+    query = np.stack([x_query, y_query], axis=1)
+
+    delta = query[:, None, :] - src_xy[None, :, :]
+    dist2 = np.sum(delta * delta, axis=2)
+    nearest = np.argmin(dist2, axis=1)
+
+    aligned = vals[nearest].astype(float, copy=True)
+    valid = np.isfinite(aligned)
+    if mask_radius_mm is not None:
+        radius = np.sqrt(np.sum(np.square(tgt_xy), axis=1))
+        valid &= radius <= (float(mask_radius_mm) + 1.0e-12)
+    aligned[~valid] = np.nan
+    return aligned, valid
+
+
+__all__ = ["MeasurementMap", "align_measurement_to_grid", "align_point_measurement_to_points"]

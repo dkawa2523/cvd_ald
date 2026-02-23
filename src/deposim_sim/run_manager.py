@@ -1,20 +1,19 @@
-"""Run output management with deterministic layout and fixed entrypoint."""
+"""Run output management for AIB simulation outputs."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from datetime import datetime, timezone
 import json
 from pathlib import Path
 from typing import Any
 
 from deposim_report import write_run_report
-from deposim_schema import RunSpec, compose_and_save_sim_config
+from deposim_schema import compose_and_save_sim_config
 
-from .domain import DomainGrid, radial_profile
 from .metrics import compute_kpi_metrics
+from .output_manifest import artifact_paths, build_manifest, write_manifest
 from .results_index import next_run_dir, update_project_files
-from .zarr_output import save_array_store
 
 try:  # pragma: no cover
     import numpy as np
@@ -22,178 +21,141 @@ except ModuleNotFoundError:  # pragma: no cover
     np = None  # type: ignore[assignment]
 
 
-def _collect_npz_arrays(prefix: str, value: Any, out: dict[str, np.ndarray]) -> None:
-    if isinstance(value, Mapping):
-        for key in sorted(value):
-            child = f"{prefix}__{key}" if prefix else str(key)
-            _collect_npz_arrays(child, value[key], out)
-        return
-    try:
-        arr = np.asarray(value)
-    except Exception:
-        return
-    if arr.dtype.kind in {"U", "S", "O"}:
-        return
-    out[prefix] = arr
+def _require_numpy() -> None:
+    if np is None:
+        raise RuntimeError("NumPy is required for run output management")
 
 
-def _run_summary(
-    run_id: str,
-    thickness: np.ndarray,
-    diagnostics: Mapping[str, Any],
-    grid: DomainGrid,
-    *,
-    kpi_config: Any | None = None,
-) -> dict[str, Any]:
-    r_mm, profile = radial_profile(thickness, grid)
-    valid = np.isfinite(profile)
-    center = float(profile[valid][0]) if np.any(valid) else float("nan")
-    edge = float(profile[valid][-1]) if np.any(valid) else float("nan")
-    status = np.asarray(diagnostics.get("root_status_map", np.zeros_like(thickness, dtype=int)))
-    failures = np.asarray(diagnostics.get("root_failure_mask", np.zeros_like(thickness, dtype=bool)))
-    iters = np.asarray(diagnostics.get("root_iteration_count", np.zeros_like(thickness, dtype=int)))
-    failure_fraction = diagnostics.get("root_failure_fraction")
-    if failure_fraction is None:
-        failure_fraction = float(np.mean(failures))
-    spec_min = getattr(kpi_config, "spec_min", None) if kpi_config is not None else None
-    spec_max = getattr(kpi_config, "spec_max", None) if kpi_config is not None else None
-    ring_count = getattr(kpi_config, "ring_count", 5) if kpi_config is not None else 5
-    kpis = compute_kpi_metrics(
-        thickness,
-        grid,
-        spec_min=spec_min,
-        spec_max=spec_max,
-        ring_count=int(ring_count),
-    )
-    return {
-        "run_id": run_id,
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "engine_requested": diagnostics.get("engine_requested"),
-        "engine_selected": diagnostics.get("engine_selected"),
-        "engine_execution_backend": diagnostics.get("engine_execution_backend"),
-        "grid_shape": list(thickness.shape),
-        "thickness_min": float(np.nanmin(thickness)),
-        "thickness_mean": float(np.nanmean(thickness)),
-        "thickness_max": float(np.nanmax(thickness)),
-        "center_thickness": center,
-        "edge_thickness": edge,
-        "center_edge_delta": edge - center,
-        "root_failure_fraction": float(failure_fraction),
-        "root_failure_count": int(np.sum(failures)),
-        "root_status_nonzero_fraction": float(np.mean(status != 0)),
-        "root_iteration_max": int(np.max(iters)),
-        "radial_profile_points": int(np.sum(valid)),
-        "radial_profile_r_mm_min": float(np.nanmin(r_mm[valid])) if np.any(valid) else None,
-        "radial_profile_r_mm_max": float(np.nanmax(r_mm[valid])) if np.any(valid) else None,
-        "kpi": kpis,
-    }
+def _normalize_field_names(raw: Any) -> list[str]:
+    if isinstance(raw, str):
+        text = raw.strip()
+        if text.startswith("[") and text.endswith("]"):
+            return [tok.strip().strip("'\"") for tok in text[1:-1].split(",") if tok.strip()]
+        if text:
+            return [text]
+        return []
+    if isinstance(raw, Sequence):
+        return [str(name) for name in raw]
+    return []
 
 
 def save_run_outputs(
     *,
-    run_spec: RunSpec,
+    run_spec: Any,
     config_name: str,
     config_overrides: Sequence[str] | None,
-    grid: DomainGrid,
     result: Any,
 ) -> Path:
-    """Persist run artifacts under `results/runs/<run_id>` and update results index."""
+    """Persist run artifacts and update project index files."""
 
-    if np is None:
-        raise RuntimeError("NumPy is required for run output management.")
-    project_dir = Path(run_spec.output.project_dir)
+    _require_numpy()
+    sim = getattr(run_spec, "sim", run_spec)
+
+    root_dir = Path(sim.output.root_dir)
+    project_dir = root_dir / sim.output.project
     project_dir.mkdir(parents=True, exist_ok=True)
-    run_id = ""
-    run_dir = project_dir / "runs"
-    for _ in range(5):
-        run_id, run_dir = next_run_dir(project_dir, run_spec.output.run_dir_name)
-        try:
-            run_dir.mkdir(parents=True, exist_ok=False)
-            break
-        except FileExistsError:
-            continue
-    else:
-        raise RuntimeError("Failed to allocate a unique run directory after multiple attempts.")
-    outputs_dir = run_dir / "outputs"
-    outputs_dir.mkdir(parents=True, exist_ok=True)
+
+    run_id, run_dir = next_run_dir(project_dir, sim.output.run_name)
+    run_dir.mkdir(parents=True, exist_ok=False)
 
     compose_and_save_sim_config(
-        run_dir / run_spec.output.resolved_config_filename,
+        run_dir / "config_resolved.yaml",
         config_name=config_name,
         overrides=config_overrides,
     )
 
-    thickness = np.asarray(result.thickness, dtype=float)
-    store_requested = str(run_spec.output.array_store)
-    thickness_store = save_array_store(
-        base_path=outputs_dir / "thickness",
-        arrays={
-            "thickness": thickness,
-            "deposition_rate": np.asarray(result.deposition_rate, dtype=float),
-            "R": np.asarray(result.R, dtype=float),
+    outputs_dir = run_dir / "outputs"
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+
+    fields_path = outputs_dir / "fields.npz"
+    requested_fields = _normalize_field_names(getattr(sim.output, "save_fields", []))
+    if requested_fields:
+        payload = {k: np.asarray(result.fields[k]) for k in requested_fields if k in result.fields}
+    else:
+        payload = {k: np.asarray(v) for k, v in result.fields.items()}
+    np.savez(fields_path, **payload)
+
+    kpi = compute_kpi_metrics(np.asarray(result.thickness, dtype=float), result.grid)
+    timestamp_utc = datetime.now(timezone.utc).isoformat()
+    metrics = {
+        "timestamp_utc": timestamp_utc,
+        "run_id": run_id,
+        "dispatch_mode": result.diagnostics.get("dispatch_mode"),
+        "non_bracketed_total": int(result.diagnostics.get("non_bracketed_total", 0)),
+        "kpi": kpi,
+    }
+    metrics_path = outputs_dir / "metrics.json"
+    metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+
+    report_enabled = bool(sim.output.report.get("enabled", True))
+    artifact_rows = [
+        {"id": "config", "path": "config_resolved.yaml", "kind": "yaml", "required": True},
+        {"id": "summary", "path": "summary.json", "kind": "json", "required": True},
+        {"id": "manifest", "path": "outputs/manifest.json", "kind": "json", "required": True},
+        {"id": "fields", "path": "outputs/fields.npz", "kind": "npz", "required": True},
+        {"id": "metrics", "path": "outputs/metrics.json", "kind": "json", "required": True},
+    ]
+    if report_enabled:
+        artifact_rows.append({"id": "report", "path": "report.html", "kind": "html", "required": True})
+    provisional_manifest = build_manifest(
+        run_id=run_id,
+        mode="simulation",
+        created_at_utc=timestamp_utc,
+        artifacts=artifact_rows,
+        plots=[],
+        metadata={
+            "dispatch_mode": result.diagnostics.get("dispatch_mode"),
+            "non_bracketed_total": int(result.diagnostics.get("non_bracketed_total", 0)),
         },
-        store=store_requested,
     )
-    cs_store = save_array_store(
-        base_path=outputs_dir / "cs_fields",
-        arrays={f"Cs__{k}": np.asarray(v, dtype=float) for k, v in sorted(result.Cs.items())},
-        store=store_requested,
-    )
-
-    diag_arrays: dict[str, np.ndarray] = {}
-    _collect_npz_arrays("", result.diagnostics, diag_arrays)
-    diagnostics_store = save_array_store(
-        base_path=outputs_dir / "diagnostics",
-        arrays=diag_arrays,
-        store=store_requested,
-    )
-
-    r_mm, profile = radial_profile(thickness, grid)
-    radial_store = save_array_store(
-        base_path=outputs_dir / "radial_profile",
-        arrays={"r_mm": r_mm, "thickness_radial": profile},
-        store=store_requested,
-    )
-
-    summary = _run_summary(
-        run_id,
-        thickness,
-        result.diagnostics,
-        grid,
-        kpi_config=getattr(run_spec, "kpi", None),
-    )
-    summary["array_store_requested"] = store_requested
-    summary["artifact_store"] = {
-        "thickness": thickness_store["store_used"],
-        "cs_fields": cs_store["store_used"],
-        "diagnostics": diagnostics_store["store_used"],
-        "radial_profile": radial_store["store_used"],
-    }
-    summary["artifact_paths"] = {
-        "thickness": Path(thickness_store["path"]).relative_to(run_dir).as_posix(),
-        "cs_fields": Path(cs_store["path"]).relative_to(run_dir).as_posix(),
-        "diagnostics": Path(diagnostics_store["path"]).relative_to(run_dir).as_posix(),
-        "radial_profile": Path(radial_store["path"]).relative_to(run_dir).as_posix(),
-    }
-    (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-
-    if run_spec.output.write_report:
-        write_run_report(
+    plot_records: list[dict[str, Any]] = []
+    if report_enabled:
+        report_diagnostics = dict(result.diagnostics)
+        report_threshold = float(sim.output.report.get("solver_warning_non_bracketed_threshold", 0))
+        report_diagnostics["solver_warning_non_bracketed_threshold"] = report_threshold
+        plot_records = write_run_report(
             run_dir=run_dir,
             run_id=run_id,
-            grid=grid,
-            thickness=thickness,
-            diagnostics=result.diagnostics,
-            summary=summary,
-            output_links=[
-                summary["artifact_paths"]["thickness"],
-                summary["artifact_paths"]["cs_fields"],
-                summary["artifact_paths"]["diagnostics"],
-                summary["artifact_paths"]["radial_profile"],
-                "summary.json",
-                run_spec.output.resolved_config_filename,
-            ],
+            grid=result.grid,
+            thickness=result.thickness,
+            diagnostics=report_diagnostics,
+            summary={
+                "run_id": run_id,
+                "timestamp_utc": timestamp_utc,
+                "thickness_min": float(np.nanmin(result.thickness)),
+                "thickness_mean": float(np.nanmean(result.thickness)),
+                "thickness_max": float(np.nanmax(result.thickness)),
+                "kpi": kpi,
+            },
+            manifest=provisional_manifest,
         )
+
+    manifest = build_manifest(
+        run_id=run_id,
+        mode="simulation",
+        created_at_utc=timestamp_utc,
+        artifacts=artifact_rows,
+        plots=plot_records,
+        metadata={
+            "dispatch_mode": result.diagnostics.get("dispatch_mode"),
+            "non_bracketed_total": int(result.diagnostics.get("non_bracketed_total", 0)),
+        },
+    )
+    artifact_map = artifact_paths(manifest)
+    summary = {
+        "run_id": run_id,
+        "timestamp_utc": timestamp_utc,
+        "mode": "simulation",
+        "thickness_min": float(np.nanmin(result.thickness)),
+        "thickness_mean": float(np.nanmean(result.thickness)),
+        "thickness_max": float(np.nanmax(result.thickness)),
+        "kpi": kpi,
+        "manifest_path": "outputs/manifest.json",
+        "artifact_paths": artifact_map,
+    }
+    (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    write_manifest(run_dir, manifest)
+
     update_project_files(project_dir, summary)
     return run_dir
 

@@ -4,81 +4,99 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-import numpy as np
+try:
+    import numpy as np
+except ModuleNotFoundError:  # pragma: no cover
+    np = None  # type: ignore[assignment]
 
 from deposim_schema import compose_sim_config
 
-from .input_builder import build_field_bundle
-from .smoke import main as smoke_main
-from .domain import build_domain_grid
-from .io_plugins import available_io_loaders, load_inputs_from_run_spec, load_with_io_loader
+from .io_plugins import (
+    available_io_loaders,
+    load_fluent_from_run_spec,
+    load_fluent_input,
+    load_measurement_from_run_spec,
+    load_measurement_input,
+)
 
 
+@unittest.skipIf(np is None, "NumPy is required for io plugin tests")
 class TestIOPlugins(unittest.TestCase):
-    def test_builtin_loader_registry_contains_npz_and_csv(self) -> None:
+    def test_loader_registry_contains_npz_and_csv(self) -> None:
         loaders = available_io_loaders()
         self.assertIn("npz", loaders)
         self.assertIn("csv", loaders)
 
-    def test_npz_loader_reads_simple_file(self) -> None:
+    def test_npz_fluent_loader_reads_aib_contract(self) -> None:
         with TemporaryDirectory() as tmp:
-            path = Path(tmp) / "sample.npz"
-            np.savez(path, a=np.array([1.0, 2.0]), b=np.array([[3.0, 4.0]]))
-            loaded = load_with_io_loader("npz", path)
-            self.assertIn("a", loaded)
-            self.assertIn("b", loaded)
-            np.testing.assert_allclose(loaded["a"], np.array([1.0, 2.0]))
+            path = Path(tmp) / "fluent.npz"
+            xy = np.array([[0.0, 0.0], [10.0, 0.0]], dtype=float)
+            cref = np.array([[1.0, 0.1], [0.8, 0.2]], dtype=float)
+            np.savez(path, xy=xy, cref=cref)
 
-    def test_csv_loader_is_selectable_from_config(self) -> None:
-        with TemporaryDirectory() as tmp:
-            path = Path(tmp) / "sample.csv"
-            np.savetxt(path, np.array([[1.0, 2.0], [3.0, 4.0]]), delimiter=",")
-            run_spec = compose_sim_config("smoke", overrides=["inputs.io_loader_name=csv"])
-            loaded = load_inputs_from_run_spec(run_spec, path)
-            self.assertIn("array", loaded)
-            np.testing.assert_allclose(loaded["array"], np.array([[1.0, 2.0], [3.0, 4.0]]))
-
-    def test_file_input_smoke_path_works_with_csv_loader(self) -> None:
-        with TemporaryDirectory() as tmp:
-            csv_path = Path(tmp) / "fields.csv"
-            csv_path.write_text("C_ref__precursor,T\n1.8,710.0\n", encoding="utf-8")
-            project_dir = Path(tmp) / "out"
-            rc = smoke_main(
-                [
-                    "--config-name",
-                    "smoke",
-                    "domain.nr=4",
-                    "domain.ntheta=8",
-                    "time.process_time_s=1.0",
-                    "inputs.source_kind=file",
-                    "inputs.io_loader_name=csv",
-                    f"inputs.field_path={csv_path}",
-                    f"output.project_dir={project_dir}",
-                    "output.run_dir_name=io_file_smoke",
-                ]
+            out = load_fluent_input(
+                loader_name="npz",
+                path=path,
+                mode="steady",
+                species=["s0", "s1"],
+                keys={"xy": "xy", "cref": "cref"},
             )
-            self.assertEqual(rc, 0)
-            runs = sorted([p for p in (project_dir / "runs").iterdir() if p.is_dir()])
-            self.assertGreaterEqual(len(runs), 1)
-            latest = runs[-1]
-            self.assertTrue((latest / "outputs" / "thickness.npz").exists())
-            self.assertTrue((latest / "report.html").exists())
+            self.assertEqual(out.mode, "steady")
+            np.testing.assert_allclose(out.xy, xy)
+            np.testing.assert_allclose(out.cref, cref)
 
-    def test_invalid_file_input_contract_fails(self) -> None:
+    def test_csv_fluent_loader_reads_aib_contract(self) -> None:
         with TemporaryDirectory() as tmp:
-            npz_path = Path(tmp) / "bad.npz"
-            np.savez(npz_path, T=np.array([700.0]))
-            run_spec = compose_sim_config(
-                "smoke",
+            path = Path(tmp) / "fluent.csv"
+            path.write_text("x,y,s0,s1\n0.0,0.0,1.0,0.1\n10.0,0.0,0.8,0.2\n", encoding="utf-8")
+            out = load_fluent_input(
+                loader_name="csv",
+                path=path,
+                mode="steady",
+                species=["s0", "s1"],
+                keys={"x": "x", "y": "y"},
+            )
+            self.assertEqual(out.cref.shape, (2, 2))
+            self.assertEqual(out.xy.shape, (2, 2))
+
+    def test_measurement_loader_supports_npz_and_csv(self) -> None:
+        with TemporaryDirectory() as tmp:
+            npz_path = Path(tmp) / "meas.npz"
+            csv_path = Path(tmp) / "meas.csv"
+            xy = np.array([[0.0, 0.0], [10.0, 0.0]], dtype=float)
+            h = np.array([1.2, 1.0], dtype=float)
+            np.savez(npz_path, xy=xy, h_nm=h)
+            csv_path.write_text("x,y,h_nm\n0.0,0.0,1.2\n10.0,0.0,1.0\n", encoding="utf-8")
+
+            npz_out = load_measurement_input(loader_name="npz", path=npz_path, keys={"xy": "xy", "h": "h_nm"})
+            csv_out = load_measurement_input(loader_name="csv", path=csv_path, keys={"x": "x", "y": "y", "h": "h_nm"})
+            np.testing.assert_allclose(npz_out.xy, xy)
+            np.testing.assert_allclose(npz_out.h, h)
+            np.testing.assert_allclose(csv_out.xy, xy)
+            np.testing.assert_allclose(csv_out.h, h)
+
+    def test_run_spec_helpers_resolve_loader_from_suffix(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fluent_path = root / "fluent.csv"
+            meas_path = root / "meas.csv"
+            fluent_path.write_text("x,y,s0,s1,s2,s3\n0,0,1.0,0.2,0.1,0.0\n10,0,0.8,0.2,0.1,0.0\n", encoding="utf-8")
+            meas_path.write_text("x,y,h_nm\n0,0,1.0\n10,0,0.8\n", encoding="utf-8")
+
+            spec = compose_sim_config(
+                "cvd_steady_min",
                 overrides=[
-                    "inputs.source_kind=file",
-                    "inputs.io_loader_name=npz",
-                    f"inputs.field_path={npz_path}",
+                    f"sim.inputs.fluent.file={fluent_path}",
+                    "sim.measurement.enabled=true",
+                    f"sim.measurement.file={meas_path}",
                 ],
             )
-            grid = build_domain_grid(run_spec.domain)
-            with self.assertRaisesRegex(ValueError, "C_ref__<species>"):
-                build_field_bundle(run_spec, grid)
+            fluent = load_fluent_from_run_spec(spec)
+            meas = load_measurement_from_run_spec(spec)
+            self.assertEqual(fluent.xy.shape, (2, 2))
+            self.assertEqual(fluent.cref.shape, (2, 4))
+            self.assertEqual(meas.xy.shape, (2, 2))
+            self.assertEqual(meas.h.shape, (2,))
 
 
 if __name__ == "__main__":

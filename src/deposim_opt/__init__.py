@@ -1,7 +1,12 @@
 """Optimization/assimilation package (separate from deposim_sim)."""
 
+from .class_compare import build_class_compare
+from .enumerate_orders import enumerate_orders
+from .enumerate_roles import RoleCandidate, class_id_from_roles, enumerate_roles
+from .fit_optuna import fit_candidate_with_optuna
+from .objective import evaluate_candidate_score
 from .assimilate import run_synthetic_assimilation
-from .schema import ObjectiveSpec, OptRunSpec, ParameterSpec, load_opt_run_spec
+from .run_fit import run_fit
 from .transforms import (
     inverse_transform_value,
     positive_to_unconstrained,
@@ -12,11 +17,15 @@ from .transforms import (
 )
 
 __all__ = [
-    "ObjectiveSpec",
-    "OptRunSpec",
-    "ParameterSpec",
+    "RoleCandidate",
+    "build_class_compare",
+    "class_id_from_roles",
+    "enumerate_orders",
+    "enumerate_roles",
+    "evaluate_candidate_score",
+    "fit_candidate_with_optuna",
     "inverse_transform_value",
-    "load_opt_run_spec",
+    "run_fit",
     "run_synthetic_assimilation",
     "positive_to_unconstrained",
     "transform_value",

@@ -1,9 +1,10 @@
+# Deprecated compatibility config. Use cvd_steady_min.yaml directly.
 defaults:
-  - smoke
+  - cvd_steady_min
   - _self_
 
-run_name: multiz_synthetic
-
-reference_plane:
-  z_ref_mm: 5.0
-  z_ref_mm_list: [3.0, 5.0, 7.0]
+sim:
+  reference_plane:
+    z_ref_mm: 5.0
+  output:
+    run_name: multiz

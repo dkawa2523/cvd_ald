@@ -1,15 +1,13 @@
-"""Unified field input builder for synthetic/file input sources."""
+"""Input loading and role mapping for AIB simulation path."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
+import warnings
 
 from .domain import DomainGrid
-from .io_plugins import load_inputs_from_run_spec
-from .physics.cvd_steady import FieldBundle
-from .synthetic_inputs import build_synthetic_field_bundle
 
 try:  # pragma: no cover
     import numpy as np
@@ -19,81 +17,178 @@ except ModuleNotFoundError:  # pragma: no cover
 
 def _require_numpy() -> None:
     if np is None:
-        raise RuntimeError("NumPy is required for field input building.")
+        raise RuntimeError("NumPy is required for deposim_sim.input_builder")
 
 
-def _grid_align(value: Any, shape: tuple[int, ...], name: str, *, nonnegative: bool = False) -> np.ndarray:
-    arr = np.asarray(value, dtype=float)
-    if arr.ndim == 0:
-        out = np.full(shape, float(arr), dtype=float)
+@dataclass(frozen=True)
+class FluentData:
+    mode: str
+    cref: np.ndarray
+    xy: np.ndarray
+    time: np.ndarray | None
+    species: tuple[str, ...]
+
+
+def _validate_fluent_shapes(mode: str, cref: np.ndarray, xy: np.ndarray, time: np.ndarray | None, species: Sequence[str]) -> None:
+    if xy.ndim != 2 or xy.shape[1] != 2:
+        raise ValueError(f"fluent xy must be shape [n_pts,2], got {xy.shape}")
+    n_pts = int(xy.shape[0])
+    n_species = len(species)
+    if mode == "steady":
+        if cref.ndim != 2:
+            raise ValueError(f"steady cref must be shape [n_pts,n_species], got {cref.shape}")
+        if cref.shape != (n_pts, n_species):
+            raise ValueError(
+                f"steady cref shape mismatch: expected {(n_pts, n_species)} from xy/species, got {cref.shape}"
+            )
+        if time is not None:
+            raise ValueError("steady fluent input must not include time array")
+    elif mode == "transient":
+        if cref.ndim != 3:
+            raise ValueError(f"transient cref must be shape [n_t,n_pts,n_species], got {cref.shape}")
+        if cref.shape[1] != n_pts or cref.shape[2] != n_species:
+            raise ValueError(
+                "transient cref shape mismatch: expected [n_t,n_pts,n_species] aligned to xy/species"
+            )
+        if time is None:
+            raise ValueError("transient fluent input requires time array")
+        if time.ndim != 1:
+            raise ValueError(f"transient time must be 1D, got {time.shape}")
+        if time.shape[0] != cref.shape[0]:
+            raise ValueError("transient time length must match cref first axis")
     else:
-        try:
-            out = np.broadcast_to(arr, shape).astype(float, copy=True)
-        except ValueError as exc:
-            raise ValueError(f"{name} with shape {arr.shape} cannot broadcast to grid shape {shape}") from exc
-    if nonnegative and bool(np.any(out < 0.0)):
-        raise ValueError(f"{name} must be >= 0 everywhere")
-    return out
+        raise ValueError("fluent mode must be steady|transient")
 
 
-def _extract_c_ref(payload: Mapping[str, Any]) -> dict[str, Any]:
-    c_ref: dict[str, Any] = {}
-    raw_c_ref = payload.get("C_ref")
-    if isinstance(raw_c_ref, Mapping):
-        for species, value in raw_c_ref.items():
-            c_ref[str(species)] = value
-    for key, value in payload.items():
-        if str(key).startswith("C_ref__"):
-            species = str(key).split("__", 1)[1]
-            if species:
-                c_ref[species] = value
-    return c_ref
-
-
-def build_field_bundle(run_spec: Any, grid: DomainGrid) -> FieldBundle:
-    """Build field bundle from run_spec.inputs using one canonical entrypoint."""
+def load_fluent_npz_v2(
+    *,
+    path: str | Path,
+    mode: str,
+    keys: Any,
+    species: Sequence[str],
+) -> FluentData:
+    """Load Fluent NPZ and validate shape contract for AIB simulation."""
 
     _require_numpy()
-    source_kind = str(getattr(run_spec.inputs, "source_kind", "synthetic")).strip().lower()
-    if source_kind == "synthetic":
-        return build_synthetic_field_bundle(run_spec, grid)
+    resolved = Path(path)
+    if not resolved.exists():
+        raise FileNotFoundError(f"Fluent NPZ not found: {resolved}")
 
-    if source_kind != "file":
-        raise ValueError(f"Unsupported inputs.source_kind: {source_kind!r}")
+    with np.load(resolved, allow_pickle=False) as data:
+        cref = np.asarray(data[getattr(keys, "cref", "cref")], dtype=float)
+        xy = np.asarray(data[getattr(keys, "xy", "xy")], dtype=float)
+        time = None
+        if mode == "transient":
+            time = np.asarray(data[getattr(keys, "time", "time")], dtype=float)
 
-    field_path = str(getattr(run_spec.inputs, "field_path", "")).strip()
-    if not field_path:
-        raise ValueError("inputs.field_path must be set when inputs.source_kind='file'")
-    payload = load_inputs_from_run_spec(run_spec, Path(field_path))
-    if not isinstance(payload, Mapping):
-        raise ValueError("IO loader output must be a mapping")
+    if np.any(cref < 0.0):
+        warnings.warn("Negative Fluent concentration values were clipped to zero.", RuntimeWarning, stacklevel=2)
+        cref = np.clip(cref, 0.0, np.inf)
 
-    c_ref_raw = _extract_c_ref(payload)
-    if not c_ref_raw:
-        raise ValueError("file input must include at least one 'C_ref__<species>' field (or C_ref mapping).")
+    _validate_fluent_shapes(mode, cref, xy, time, species)
+    return FluentData(mode=mode, cref=cref, xy=xy, time=time, species=tuple(str(s) for s in species))
 
-    declared_species = [str(name) for name in getattr(run_spec.reference_plane, "species", [])]
-    missing = [name for name in declared_species if name not in c_ref_raw]
-    if missing:
-        missing_txt = ", ".join(missing)
-        raise ValueError(f"file input is missing declared species: {missing_txt}")
 
-    c_ref = {species: _grid_align(value, grid.shape, f"C_ref[{species}]", nonnegative=True) for species, value in c_ref_raw.items()}
-    temperature = _grid_align(payload.get("T", payload.get("temperature_k", run_spec.inputs.temperature_k)), grid.shape, "T")
+def build_domain_from_fluent_xy(
+    *,
+    xy: np.ndarray,
+    xy_unit: str,
+    wafer_radius_mm: float,
+) -> DomainGrid:
+    """Materialize a lightweight DomainGrid from Fluent XY points."""
 
-    scalars: dict[str, Any] = {}
-    scalars["omega_rad_s"] = float(getattr(run_spec.inputs, "omega_rad_s", 0.0))
-    for key, value in payload.items():
-        if str(key).startswith("scalar__"):
-            scalar_name = str(key).split("__", 1)[1]
-            scalars[scalar_name] = value
+    _require_numpy()
+    if xy.ndim != 2 or xy.shape[1] != 2:
+        raise ValueError("xy must be [n_pts,2]")
+    if wafer_radius_mm <= 0.0:
+        raise ValueError("wafer_radius_mm must be > 0")
 
-    return FieldBundle(
-        C_ref=c_ref,
-        U=payload.get("U"),
-        T=temperature,
-        scalars=scalars,
+    xy_arr = np.asarray(xy, dtype=float)
+    if xy_unit == "m":
+        xy_mm = xy_arr * 1000.0
+    elif xy_unit == "mm":
+        xy_mm = xy_arr
+    else:
+        raise ValueError("xy_unit must be mm|m")
+
+    x_mm = xy_mm[:, 0]
+    y_mm = xy_mm[:, 1]
+    r_mm = np.sqrt(x_mm**2 + y_mm**2)
+    n_pts = int(r_mm.shape[0])
+
+    if n_pts < 1:
+        raise ValueError("xy must contain at least one point")
+
+    order = np.argsort(r_mm)
+    r_sorted = r_mm[order]
+    r_edges = np.zeros(n_pts + 1, dtype=float)
+    if n_pts == 1:
+        r_edges[0] = 0.0
+        r_edges[1] = max(float(r_sorted[0]), 1.0e-9)
+    else:
+        r_edges[1:-1] = 0.5 * (r_sorted[:-1] + r_sorted[1:])
+        r_edges[0] = 0.0
+        r_edges[-1] = max(float(wafer_radius_mm), float(r_sorted[-1]))
+
+    area_each = np.pi * float(wafer_radius_mm) ** 2 / float(n_pts)
+    area_weights = np.full((n_pts,), area_each, dtype=float)
+    edge_mask = r_mm <= (float(wafer_radius_mm) + 1.0e-12)
+
+    return DomainGrid(
+        kind="from_fluent_xy",
+        wafer_radius_mm=float(wafer_radius_mm),
+        r_mm=r_mm,
+        r_edges_mm=r_edges,
+        dr_mm=np.diff(r_edges),
+        r_grid_mm=r_mm,
+        area_weights_mm2=area_weights,
+        edge_mask=edge_mask,
+        x_mm=x_mm,
+        y_mm=y_mm,
+        x_grid_mm=x_mm,
+        y_grid_mm=y_mm,
     )
 
 
-__all__ = ["build_field_bundle"]
+def _species_index_map(species: Sequence[str]) -> dict[str, int]:
+    return {str(name): idx for idx, name in enumerate(species)}
+
+
+def apply_roles(
+    *,
+    cref: np.ndarray,
+    species: Sequence[str],
+    role_a: str,
+    role_i: str | None,
+    role_b: str | None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Map species-major concentration tensor to A/I/B arrays."""
+
+    _require_numpy()
+    idx = _species_index_map(species)
+    if role_a not in idx:
+        raise ValueError(f"role A species {role_a!r} is not in species list")
+    if role_i is not None and role_i not in idx:
+        raise ValueError(f"role I species {role_i!r} is not in species list")
+    if role_b is not None and role_b not in idx:
+        raise ValueError(f"role B species {role_b!r} is not in species list")
+
+    if len({x for x in (role_a, role_i, role_b) if x is not None}) != len([x for x in (role_a, role_i, role_b) if x is not None]):
+        raise ValueError("Roles A/I/B must be disjoint")
+
+    cref_arr = np.asarray(cref, dtype=float)
+    if cref_arr.ndim not in {2, 3}:
+        raise ValueError(f"cref must be 2D or 3D, got {cref_arr.shape}")
+
+    c_a = cref_arr[..., idx[role_a]]
+    c_i = np.zeros_like(c_a, dtype=float) if role_i is None else cref_arr[..., idx[role_i]]
+    c_b = np.zeros_like(c_a, dtype=float) if role_b is None else cref_arr[..., idx[role_b]]
+    return c_a, c_i, c_b
+
+
+__all__ = [
+    "FluentData",
+    "load_fluent_npz_v2",
+    "build_domain_from_fluent_xy",
+    "apply_roles",
+]

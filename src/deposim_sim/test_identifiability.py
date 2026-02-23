@@ -9,22 +9,32 @@ import numpy as np
 from deposim_report import write_run_report
 from deposim_schema import compose_sim_config
 
-from .domain import build_domain_grid
 from .identifiability import compute_identifiability_diagnostics
-from .physics.cvd_steady import run_cvd_steady
-from .synthetic_inputs import build_synthetic_field_bundle
+from .pipeline import run_aib_from_spec
 
 
 class TestIdentifiability(unittest.TestCase):
     def _run_spec(self):
+        tmp = TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        fluent = Path(tmp.name) / "fluent.npz"
+        xy = np.array([[-10.0, -10.0], [0.0, 0.0], [20.0, 10.0], [30.0, -10.0]], dtype=float)
+        cref = np.array(
+            [
+                [1.0, 0.4, 0.1, 0.0],
+                [0.9, 0.3, 0.1, 0.0],
+                [0.8, 0.3, 0.1, 0.0],
+                [0.7, 0.2, 0.1, 0.0],
+            ],
+            dtype=float,
+        )
+        np.savez(fluent, xy=xy, cref=cref)
         return compose_sim_config(
-            "smoke",
+            "cvd_steady_min",
             overrides=[
-                "domain.nr=6",
-                "domain.ntheta=12",
-                "time.process_time_s=3.0",
-                "model.kinetics_params.k0=1.2",
-                "model.mass_transfer_params.k_m_m_s=0.02",
+                f"sim.inputs.fluent.file={fluent}",
+                "sim.model.params.kinetics.k_rxn=0.012",
+                "sim.model.params.transport.km_A=0.02",
             ],
         )
 
@@ -33,23 +43,23 @@ class TestIdentifiability(unittest.TestCase):
         out = compute_identifiability_diagnostics(
             run_spec,
             parameter_paths=[
-                "model.kinetics_params.k0",
-                "model.mass_transfer_params.k_m_m_s",
+                "model.params.kinetics.k_rxn",
+                "model.params.transport.km_A",
             ],
         )
         self.assertEqual(len(out["parameter_paths"]), 2)
         self.assertEqual(np.asarray(out["correlation_matrix"]).shape, (2, 2))
-        self.assertIn("model.kinetics_params.k0", out["sensitivity_norms"])
-        self.assertIn("model.mass_transfer_params.k_m_m_s", out["sensitivity_norms"])
-        self.assertTrue(np.isfinite(out["sensitivity_norms"]["model.kinetics_params.k0"]))
+        self.assertIn("model.params.kinetics.k_rxn", out["sensitivity_norms"])
+        self.assertIn("model.params.transport.km_A", out["sensitivity_norms"])
+        self.assertTrue(np.isfinite(out["sensitivity_norms"]["model.params.kinetics.k_rxn"]))
 
     def test_degeneracy_warning_is_reported(self) -> None:
         run_spec = self._run_spec()
         out = compute_identifiability_diagnostics(
             run_spec,
             parameter_paths=[
-                "model.kinetics_params.k0",
-                "model.mass_transfer_params.k_m_m_s",
+                "model.params.kinetics.k_rxn",
+                "model.params.transport.km_A",
             ],
             low_sensitivity_threshold=1.0e8,
         )
@@ -58,20 +68,12 @@ class TestIdentifiability(unittest.TestCase):
 
     def test_report_includes_identifiability_section(self) -> None:
         run_spec = self._run_spec()
-        grid = build_domain_grid(run_spec.domain)
-        fields = build_synthetic_field_bundle(run_spec, grid)
-        result = run_cvd_steady(
-            grid=grid,
-            fields=fields,
-            model_config=run_spec.model,
-            process_time_s=run_spec.time.process_time_s,
-            solver_config=run_spec.solver,
-        )
+        result = run_aib_from_spec(run_spec)
         ident = compute_identifiability_diagnostics(
             run_spec,
             parameter_paths=[
-                "model.kinetics_params.k0",
-                "model.mass_transfer_params.k_m_m_s",
+                "model.params.kinetics.k_rxn",
+                "model.params.transport.km_A",
             ],
         )
         diagnostics = dict(result.diagnostics)
@@ -83,7 +85,7 @@ class TestIdentifiability(unittest.TestCase):
             write_run_report(
                 run_dir=run_dir,
                 run_id="ident_test",
-                grid=grid,
+                grid=result.grid,
                 thickness=result.thickness,
                 diagnostics=diagnostics,
                 summary=summary,

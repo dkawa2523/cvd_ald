@@ -1,4 +1,4 @@
-"""Minimal synthetic assimilation loop on CPU."""
+"""Minimal synthetic assimilation loop on CPU (AIB path)."""
 
 from __future__ import annotations
 
@@ -8,9 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from deposim_schema import compose_sim_config
-from deposim_sim.domain import build_domain_grid
-from deposim_sim.physics.cvd_steady import run_cvd_steady
-from deposim_sim.synthetic_inputs import build_synthetic_field_bundle
+from deposim_sim.pipeline import run_aib_from_spec
 
 try:  # pragma: no cover
     import numpy as np
@@ -23,17 +21,20 @@ def _require_numpy() -> None:
         raise RuntimeError("NumPy is required for assimilation.")
 
 
+def _normalize_overrides(overrides: Sequence[str]) -> list[str]:
+    out: list[str] = []
+    for item in overrides:
+        text = str(item)
+        if text.startswith("sim."):
+            out.append(text)
+        else:
+            out.append(f"sim.{text}")
+    return out
+
+
 def _simulate_thickness(config_name: str, overrides: Sequence[str]) -> np.ndarray:
-    run_spec = compose_sim_config(config_name, overrides=list(overrides))
-    grid = build_domain_grid(run_spec.domain)
-    fields = build_synthetic_field_bundle(run_spec, grid)
-    result = run_cvd_steady(
-        grid=grid,
-        fields=fields,
-        model_config=run_spec.model,
-        process_time_s=run_spec.time.process_time_s,
-        solver_config=run_spec.solver,
-    )
+    run_spec = compose_sim_config(config_name, overrides=_normalize_overrides(overrides))
+    result = run_aib_from_spec(run_spec)
     return np.asarray(result.thickness, dtype=float)
 
 
@@ -54,14 +55,19 @@ def _write_report(path: Path, summary: dict[str, Any]) -> None:
 
 def run_synthetic_assimilation(
     *,
-    sim_config_name: str = "smoke",
+    sim_config_name: str = "cvd_steady_min",
     output_dir: str | Path = "results/assimilation",
     target_k0: float = 1.6,
     initial_k0: float = 0.7,
     max_iters: int = 12,
     sim_overrides: Sequence[str] | None = None,
 ) -> dict[str, Any]:
-    """Fit `k0` on deterministic synthetic data and save outputs."""
+    """Fit `sim.model.params.kinetics.k_rxn` on deterministic synthetic data.
+
+    Notes:
+    - Argument names `target_k0` / `initial_k0` are retained for compatibility.
+    - Internally they map to AIB parameter `sim.model.params.kinetics.k_rxn`.
+    """
 
     _require_numpy()
     if max_iters < 1:
@@ -70,10 +76,16 @@ def run_synthetic_assimilation(
         raise ValueError("target_k0 and initial_k0 must be > 0")
 
     base_overrides = list(sim_overrides or ())
-    target = _simulate_thickness(sim_config_name, [*base_overrides, f"model.kinetics_params.k0={target_k0}"])
+    target = _simulate_thickness(
+        sim_config_name,
+        [*base_overrides, f"sim.model.params.kinetics.k_rxn={target_k0}"],
+    )
 
-    def loss_for(k0_value: float) -> float:
-        pred = _simulate_thickness(sim_config_name, [*base_overrides, f"model.kinetics_params.k0={k0_value}"])
+    def loss_for(k_value: float) -> float:
+        pred = _simulate_thickness(
+            sim_config_name,
+            [*base_overrides, f"sim.model.params.kinetics.k_rxn={k_value}"],
+        )
         return _rmse(pred, target)
 
     current = float(initial_k0)
@@ -91,12 +103,15 @@ def run_synthetic_assimilation(
 
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    fitted_params = {"k0": current}
+    fitted_params = {"model.params.kinetics.k_rxn": current, "k0": current}
     summary = {
         "sim_config_name": sim_config_name,
         "target_k0": float(target_k0),
         "initial_k0": float(initial_k0),
         "fitted_k0": float(current),
+        "target_k_rxn": float(target_k0),
+        "initial_k_rxn": float(initial_k0),
+        "fitted_k_rxn": float(current),
         "initial_loss": float(initial_loss),
         "final_loss": float(best_loss),
         "loss_reduction": float(initial_loss - best_loss),

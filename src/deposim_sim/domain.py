@@ -11,7 +11,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised only without numpy
     np = None  # type: ignore[assignment]
 
 
-_SUPPORTED_DOMAIN_KINDS = {"wafer_2d_polar", "wafer_1d_radial", "wafer_2d_xy"}
+_SUPPORTED_DOMAIN_KINDS = {"wafer_2d_polar", "wafer_1d_radial", "wafer_2d_xy", "from_fluent_xy"}
 
 
 def _require_numpy() -> None:
@@ -213,6 +213,11 @@ def build_domain_grid(domain_spec: Any) -> DomainGrid:
             ny=ny,
             edge_exclusion_mm=edge_exclusion_mm,
         )
+    if kind == "from_fluent_xy":
+        raise ValueError(
+            "domain.kind='from_fluent_xy' must be materialized from Fluent xy points via "
+            "deposim_sim.input_builder.build_domain_from_fluent_xy."
+        )
 
     return build_wafer_1d_radial(
         wafer_radius_mm=wafer_radius_mm,
@@ -246,6 +251,10 @@ def radial_profile(
         active_mask = active_mask & user_mask
 
     if grid.kind == "wafer_1d_radial":
+        profile = data.copy()
+        profile[~active_mask] = np.nan
+        return grid.r_mm.copy(), profile
+    if grid.kind == "from_fluent_xy":
         profile = data.copy()
         profile[~active_mask] = np.nan
         return grid.r_mm.copy(), profile

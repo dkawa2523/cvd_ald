@@ -166,7 +166,7 @@
       "type": "implement",
       "stop_after": false,
       "estimated_minutes": 120,
-      "description": "Implement rate law models in registry:\n- powerlaw: r = k(T) * \u03a0 Cs_i^n_i (allow negative/fractional n)\n- saturation_inhibition: denominator form enabling order transitions and inhibition\n\nImplement:\n- stable log evaluation\n- apparent order computation n_app = d ln r / d ln C (analytical if possible)\n\nEnsure rate laws accept Cs dict + state + T arrays.",
+      "description": "Implement rate law models in registry:\n- powerlaw: r = k(T) * Π Cs_i^n_i (allow negative/fractional n)\n- saturation_inhibition: denominator form enabling order transitions and inhibition\n\nImplement:\n- stable log evaluation\n- apparent order computation n_app = d ln r / d ln C (analytical if possible)\n\nEnsure rate laws accept Cs dict + state + T arrays.",
       "acceptance_criteria": [
         "Rate law registry resolves model by name from config",
         "powerlaw supports negative/fractional orders robustly",
@@ -192,7 +192,7 @@
     },
     {
       "task_id": "P0-006",
-      "title": "Transport\u2013reaction coupling solver: vectorized bisection on progress variable R",
+      "title": "Transport–reaction coupling solver: vectorized bisection on progress variable R",
       "milestone": "P0",
       "type": "implement",
       "stop_after": false,
@@ -1321,6 +1321,2061 @@
       },
       "verification_commands": [
         "bash -lc './scripts/commands.sh verify_task D-005'"
+      ]
+    },
+    {
+      "task_id": "D-006",
+      "title": "Decision: adopt full AIB-ODE replacement policy",
+      "milestone": "POST",
+      "type": "decision",
+      "stop_after": false,
+      "estimated_minutes": 45,
+      "description": "Record and adopt full replacement from legacy power_law/root_solve primary path to AIB-ODE unified path, including role/order constraints and fallback policy.",
+      "acceptance_criteria": [
+        "ADR 0008 is added and accepted",
+        "Decision outcome ADOPTED is traceable in docs",
+        "Verification command for D-006 passes"
+      ],
+      "depends_on": [
+        "D-005"
+      ],
+      "scope_limits": {
+        "max_changed_files": 5,
+        "max_diff_lines": 220,
+        "allowed_dirs": [
+          "docs/",
+          "tasks/",
+          "scripts/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task D-006'"
+      ]
+    },
+    {
+      "task_id": "D-007",
+      "title": "Decision: rewrite requirements/traceability for AIB migration",
+      "milestone": "POST",
+      "type": "decision",
+      "stop_after": false,
+      "estimated_minutes": 45,
+      "description": "Approve breaking rewrite of requirements/traceability/tasks contracts for AIB-centric runtime and verification chain.",
+      "acceptance_criteria": [
+        "Requirements include AIB-ODE primary path",
+        "Traceability maps updated requirements to D-007/P3 tasks",
+        "Verification command for D-007 passes"
+      ],
+      "depends_on": [
+        "D-006"
+      ],
+      "scope_limits": {
+        "max_changed_files": 6,
+        "max_diff_lines": 260,
+        "allowed_dirs": [
+          "docs/",
+          "tasks/",
+          "scripts/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task D-007'"
+      ]
+    },
+    {
+      "task_id": "D-008",
+      "title": "Decision: lock output/visualization contract output.v1",
+      "milestone": "POST",
+      "type": "decision",
+      "stop_after": false,
+      "estimated_minutes": 45,
+      "description": "Adopt a strict output/visualization contract for AIB runs with mandatory outputs/manifest.json (schema_version=output.v1), static PNG+HTML visualization policy, and explicit breaking-change boundaries.",
+      "acceptance_criteria": [
+        "ADR 0011 is added and accepted",
+        "output.v1 contract and failure policy are documented",
+        "Verification command for D-008 passes"
+      ],
+      "depends_on": [
+        "D-007"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 220,
+        "allowed_dirs": [
+          "docs/",
+          "tasks/",
+          "scripts/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task D-008'"
+      ]
+    },
+    {
+      "task_id": "P3-001",
+      "title": "Sim/Opt v2 schema and config contract introduction",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Introduce SimSpecV2/OptSpecV2 schema and YAML contract centered on sim:/opt: blocks and A/I/B roles.",
+      "acceptance_criteria": [
+        "compose_sim_config and compose_opt_config support v2 configs",
+        "configs/sim/*_min.yaml and configs/opt/*_min.yaml are loadable",
+        "Schema unit tests pass"
+      ],
+      "depends_on": [
+        "D-007"
+      ],
+      "scope_limits": {
+        "max_changed_files": 8,
+        "max_diff_lines": 500,
+        "allowed_dirs": [
+          "src/deposim_schema/",
+          "configs/sim/",
+          "configs/opt/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-001'"
+      ]
+    },
+    {
+      "task_id": "P3-002",
+      "title": "Fluent NPZ loader and role validator",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Add Fluent loader for steady/transient contracts and enforce role/order validation rules for AIB path.",
+      "acceptance_criteria": [
+        "load_fluent_npz_v2 validates shape contract",
+        "validate_roles_v2 and validate_sim_spec_v2 enforce role/order constraints",
+        "Loader/validator tests pass"
+      ],
+      "depends_on": [
+        "P3-001"
+      ],
+      "scope_limits": {
+        "max_changed_files": 8,
+        "max_diff_lines": 480,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_schema/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-002'"
+      ]
+    },
+    {
+      "task_id": "P3-003",
+      "title": "AIB-ODE core and implicit Euler+bisection solver",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 140,
+      "description": "Implement AIB-ODE core equations with bounded implicit update and fallback diagnostics.",
+      "acceptance_criteria": [
+        "step_theta_implicit provides bounded theta and fallback diagnostics",
+        "phi_B/f_I/Cs ratios are computed",
+        "AIB core tests pass"
+      ],
+      "depends_on": [
+        "P3-002"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 520,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-003'"
+      ]
+    },
+    {
+      "task_id": "P3-004",
+      "title": "Pipeline/smoke/run-manager migration to AIB path",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 140,
+      "description": "Switch execution path to AIB pipeline for steady/transient and persist new output artifacts.",
+      "acceptance_criteria": [
+        "smoke runs with v2 config and writes fields.npz + metrics.json",
+        "legacy cvd_steady path is retired",
+        "Pipeline migration tests pass"
+      ],
+      "depends_on": [
+        "P3-003"
+      ],
+      "scope_limits": {
+        "max_changed_files": 8,
+        "max_diff_lines": 560,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_report/",
+          "scripts/",
+          "configs/sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-004'"
+      ]
+    },
+    {
+      "task_id": "P3-005",
+      "title": "AIB reporting and benchmark/report contract update",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Update report outputs to AIB diagnostics (`phi_B`, `f_I`, Cs ratios) and align summary artifacts.",
+      "acceptance_criteria": [
+        "report includes AIB diagnostics figures",
+        "summary/report links remain deterministic",
+        "Report verification tests pass"
+      ],
+      "depends_on": [
+        "P3-004"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 420,
+        "allowed_dirs": [
+          "src/deposim_report/",
+          "src/deposim_sim/",
+          "docs/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-005'"
+      ]
+    },
+    {
+      "task_id": "P3-006",
+      "title": "Role/order enumeration and Optuna fit path",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 140,
+      "description": "Implement A/AI/AB/AIB role enumeration, order filtering, and Optuna-based parameter fitting with class compare output.",
+      "acceptance_criteria": [
+        "enumerate_roles and class_id outputs are valid",
+        "fit_candidate_with_optuna executes for at least one candidate",
+        "ranking.csv and class_compare.csv are emitted"
+      ],
+      "depends_on": [
+        "P3-005"
+      ],
+      "scope_limits": {
+        "max_changed_files": 9,
+        "max_diff_lines": 620,
+        "allowed_dirs": [
+          "src/deposim_opt/",
+          "configs/opt/",
+          "src/deposim_sim/",
+          "tests/",
+          "pyproject.toml"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-006'"
+      ]
+    },
+    {
+      "task_id": "P3-007",
+      "title": "Legacy path retirement and verification-gate finalization",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Finalize AIB migration by retiring legacy primary path and ensuring P3 verification gates are complete.",
+      "acceptance_criteria": [
+        "Legacy primary route is no longer used by smoke/pipeline",
+        "P3-001..P3-006 verify successfully",
+        "verify_task_contracts remains valid"
+      ],
+      "depends_on": [
+        "P3-006"
+      ],
+      "scope_limits": {
+        "max_changed_files": 8,
+        "max_diff_lines": 520,
+        "allowed_dirs": [
+          "src/",
+          "scripts/",
+          "tasks/",
+          "docs/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-007'"
+      ]
+    },
+    {
+      "task_id": "P3-008",
+      "title": "P3 Unstructured Fluent-xy visualization formalization",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Formalize from_fluent_xy rendering with triangulation + point overlay, NaN masking, and fallback behavior to prevent 1D pseudo-maps.",
+      "acceptance_criteria": [
+        "from_fluent_xy report maps render through triangulation without 1D/2D shape errors",
+        "thickness_map/phi_B_map/f_I_map artifacts are generated for Fluent-xy runs",
+        "Visualization tests pass"
+      ],
+      "depends_on": [
+        "P3-007"
+      ],
+      "scope_limits": {
+        "max_changed_files": 5,
+        "max_diff_lines": 260,
+        "allowed_dirs": [
+          "src/deposim_report/",
+          "src/deposim_sim/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-008'"
+      ]
+    },
+    {
+      "task_id": "P3-009",
+      "title": "P3 benchmark_wafer2d AIB runtime replacement",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Replace legacy kinetics-centric benchmark runner with AIB benchmark runner using A/AI/AB/AIB class cases and AIB diagnostics outputs.",
+      "acceptance_criteria": [
+        "benchmark_wafer2d command succeeds on aib_ode config",
+        "benchmark_case_metrics.json contains AIB diagnostics keys",
+        "benchmark and physviz benchmark tests pass on AIB cases"
+      ],
+      "depends_on": [
+        "P3-008"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 420,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "scripts/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-009'"
+      ]
+    },
+    {
+      "task_id": "P3-010",
+      "title": "P3 benchmark documentation full AIB rewrite",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Rewrite benchmark_cvd.md primary body to AIB equations/metrics/case criteria and isolate legacy formulas into historical section.",
+      "acceptance_criteria": [
+        "benchmark_cvd.md alone is sufficient to run and judge AIB benchmark",
+        "documented metric key names match runtime output keys",
+        "legacy equations are isolated from primary operational sections"
+      ],
+      "depends_on": [
+        "P3-009"
+      ],
+      "scope_limits": {
+        "max_changed_files": 2,
+        "max_diff_lines": 220,
+        "allowed_dirs": [
+          "benchmark_cvd.md",
+          "docs/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-010'"
+      ]
+    },
+    {
+      "task_id": "P3-011",
+      "title": "P3 legacy runtime module removal (root_solve/rate_laws)",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Delete legacy runtime modules/tests and clean package exports so primary runtime cannot import root_solve/power_law/lhhw paths.",
+      "acceptance_criteria": [
+        "root_solve/rate_laws runtime files and direct tests are removed",
+        "runtime source tree has no root_solve/power_law/lhhw_competition references",
+        "import_check succeeds after removal"
+      ],
+      "depends_on": [
+        "P3-010"
+      ],
+      "scope_limits": {
+        "max_changed_files": 8,
+        "max_diff_lines": 500,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "scripts/",
+          "src/deposim.egg-info/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-011'"
+      ]
+    },
+    {
+      "task_id": "P3-012",
+      "title": "P3 verification-gate convergence to AIB-only line",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Finalize verification gates so residual P3 tasks are validated under AIB-only runtime and contract checks remain green.",
+      "acceptance_criteria": [
+        "verify_task_contracts succeeds with P3-008..P3-012 definitions",
+        "commands.sh test succeeds without legacy test branches",
+        "integrated P3-012 gate succeeds"
+      ],
+      "depends_on": [
+        "P3-011"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 260,
+        "allowed_dirs": [
+          "scripts/",
+          "tasks/",
+          "docs/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-012'"
+      ]
+    },
+    {
+      "task_id": "P3-013",
+      "title": "P3 utility common AIB execution foundation",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Add a reusable utility path so peripheral workflows execute AIB runs via run_aib_from_spec and no longer depend on retired run_cvd_steady interfaces.",
+      "acceptance_criteria": [
+        "A shared utility exists to execute AIB runs from config_name + overrides",
+        "DOE/physviz/identifiability/assimilation can consume the shared utility path",
+        "runtime utility modules no longer import run_cvd_steady"
+      ],
+      "depends_on": [
+        "P3-012"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 260,
+        "allowed_dirs": [
+          "src/deposim_sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-013'"
+      ]
+    },
+    {
+      "task_id": "P3-014",
+      "title": "P3 DOE migration to AIB execution path",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 130,
+      "description": "Rewrite DOE execution to use from_fluent_xy + run_aib_from_spec and preserve case-dimension output storage with NPZ/Zarr fallback.",
+      "acceptance_criteria": [
+        "run_doe completes on AIB config inputs",
+        "DOE outputs keep case-dimension arrays and summary artifacts",
+        "DOE tests pass on AIB contracts"
+      ],
+      "depends_on": [
+        "P3-013"
+      ],
+      "scope_limits": {
+        "max_changed_files": 5,
+        "max_diff_lines": 320,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-014'"
+      ]
+    },
+    {
+      "task_id": "P3-015",
+      "title": "P3 physviz migration to AIB diagnostics",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 130,
+      "description": "Replace physviz legacy kinetics usage with AIB diagnostics maps and keep benchmark physviz outputs aligned with unstructured Fluent-xy rendering.",
+      "acceptance_criteria": [
+        "physviz workflow runs without run_cvd_steady dependency",
+        "with_physviz output contains AIB diagnostic map artifacts",
+        "physviz tests and benchmark physviz command pass"
+      ],
+      "depends_on": [
+        "P3-014"
+      ],
+      "scope_limits": {
+        "max_changed_files": 6,
+        "max_diff_lines": 380,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_report/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-015'"
+      ]
+    },
+    {
+      "task_id": "P3-016",
+      "title": "P3 identifiability migration to AIB path",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Migrate identifiability finite-difference diagnostics to AIB run execution and regenerate correlation/sensitivity outputs through the active runtime path.",
+      "acceptance_criteria": [
+        "compute_identifiability_diagnostics uses AIB execution path",
+        "identifiability diagnostics are generated for representative AIB parameters",
+        "identifiability tests pass"
+      ],
+      "depends_on": [
+        "P3-015"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 260,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-016'"
+      ]
+    },
+    {
+      "task_id": "P3-017",
+      "title": "P3 assimilation migration to AIB contract",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Update deposim_opt assimilation workflow to run synthetic fitting under SimSpecV2 AIB contracts and maintain report artifacts.",
+      "acceptance_criteria": [
+        "assimilation no longer imports run_cvd_steady",
+        "synthetic assimilation test runs on AIB config",
+        "fitted_params and summary/report artifacts are written"
+      ],
+      "depends_on": [
+        "P3-016"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 260,
+        "allowed_dirs": [
+          "src/deposim_opt/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-017'"
+      ]
+    },
+    {
+      "task_id": "P3-018",
+      "title": "P3 fit contract completion for role/selection outputs",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 140,
+      "description": "Complete run_fit contract coverage by honoring role candidates/constraints, selection topk controls, and emitting topk_assignments.csv.",
+      "acceptance_criteria": [
+        "role_enumeration roles.*.candidates and allow_none/max_size are applied",
+        "selection.topk_overall/topk_per_class are applied in outputs",
+        "tables/topk_assignments.csv is generated"
+      ],
+      "depends_on": [
+        "P3-017"
+      ],
+      "scope_limits": {
+        "max_changed_files": 6,
+        "max_diff_lines": 360,
+        "allowed_dirs": [
+          "src/deposim_opt/",
+          "configs/opt/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-018'"
+      ]
+    },
+    {
+      "task_id": "P3-019",
+      "title": "P3 measurement align integration in AIB pipeline",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 130,
+      "description": "Integrate measurement.align (shift/rotate/mask/interpolation) in the AIB pipeline through measurement_adapter for from_fluent_xy workflows.",
+      "acceptance_criteria": [
+        "measurement.align settings affect residual when enabled",
+        "alignment disabled path preserves raw measurement behavior",
+        "pipeline and measurement adapter tests pass"
+      ],
+      "depends_on": [
+        "P3-018"
+      ],
+      "scope_limits": {
+        "max_changed_files": 6,
+        "max_diff_lines": 360,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-019'"
+      ]
+    },
+    {
+      "task_id": "P3-020",
+      "title": "P3 output contract strictness and map consistency",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Enforce output save_fields filtering and keep unstructured map rendering consistent across standard and physviz reporting outputs.",
+      "acceptance_criteria": [
+        "fields.npz only stores keys declared in sim.output.save_fields",
+        "from_fluent_xy map rendering remains exception-free across report paths",
+        "report comparison tests pass"
+      ],
+      "depends_on": [
+        "P3-019"
+      ],
+      "scope_limits": {
+        "max_changed_files": 5,
+        "max_diff_lines": 300,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_report/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-020'"
+      ]
+    },
+    {
+      "task_id": "P3-021",
+      "title": "P3 P1/P2 gate redefinition and convergence",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 140,
+      "description": "Redefine verify_p1/verify_p2 as executable AIB-aligned gates and synchronize task contracts/traceability/eval protocol with the migrated verification line.",
+      "acceptance_criteria": [
+        "verify_p1 succeeds on AIB-aligned checks",
+        "verify_p2 succeeds on AIB-aligned checks",
+        "verify_task_contracts succeeds with P3-013..P3-021 definitions"
+      ],
+      "depends_on": [
+        "P3-020"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 280,
+        "allowed_dirs": [
+          "scripts/",
+          "tasks/",
+          "docs/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-021'"
+      ]
+    },
+    {
+      "task_id": "P3-022",
+      "title": "P3 migrate legacy utility modules (multiz/benchmark/phases_driver) to AIB",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 150,
+      "description": "Replace retired run_cvd_steady dependencies in multiz/benchmark/phases_driver with AIB execution via run_aib_from_spec and keep utility compatibility through AIB-compatible input conversion.",
+      "acceptance_criteria": [
+        "multiz.py, benchmark.py, and phases_driver.py no longer import run_cvd_steady",
+        "legacy input hints are converted into AIB-compatible overrides without hard failure",
+        "unit tests for multiz/benchmark/phases_driver pass on AIB contracts"
+      ],
+      "depends_on": [
+        "P3-021"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 420,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-022'"
+      ]
+    },
+    {
+      "task_id": "P3-023",
+      "title": "P3 complete run_fit ranking contract (full ranking + topk assignments)",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 110,
+      "description": "Ensure run_fit writes ranking.csv for all candidates while restricting top-k selection semantics to topk_assignments.csv and summary consistency counters.",
+      "acceptance_criteria": [
+        "ranking.csv contains all candidates sorted by best_score",
+        "topk_assignments.csv only includes selected records by overall/class rules",
+        "summary includes candidate_count/ranking_count/topk_assignment_count consistency checks"
+      ],
+      "depends_on": [
+        "P3-022"
+      ],
+      "scope_limits": {
+        "max_changed_files": 3,
+        "max_diff_lines": 180,
+        "allowed_dirs": [
+          "src/deposim_opt/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-023'"
+      ]
+    },
+    {
+      "task_id": "P3-024",
+      "title": "P3 unify from_fluent_xy map rendering to triangulation across reports",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Use triangulation rendering for all from_fluent_xy map outputs (including discrete/solver-health maps) with robust fallback on collinear or low-quality meshes.",
+      "acceptance_criteria": [
+        "run_report and physviz_report render from_fluent_xy maps through triangulation path",
+        "solver health and discrete maps avoid 1D pseudo-imshow rendering in from_fluent_xy mode",
+        "report comparison and physviz benchmark checks pass without plotting exceptions"
+      ],
+      "depends_on": [
+        "P3-023"
+      ],
+      "scope_limits": {
+        "max_changed_files": 5,
+        "max_diff_lines": 260,
+        "allowed_dirs": [
+          "src/deposim_report/",
+          "src/deposim_sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-024'"
+      ]
+    },
+    {
+      "task_id": "P3-025",
+      "title": "P3 redesign IO plugins for explicit AIB fluent/measurement loaders",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 140,
+      "description": "Replace build_field_bundle-era plugin assumptions with explicit AIB input loaders for fluent and measurement contracts across CSV/NPZ.",
+      "acceptance_criteria": [
+        "io_plugins no longer assumes build_field_bundle legacy flow",
+        "fluent and measurement loaders are separated and construct AIB-ready payloads",
+        "test_io_plugins passes with AIB input contract checks"
+      ],
+      "depends_on": [
+        "P3-024"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 260,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-025'"
+      ]
+    },
+    {
+      "task_id": "P3-026",
+      "title": "P3 migrate run_manager tests to AIB output artifact contract",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 100,
+      "description": "Update run_manager tests and minimal runtime glue to validate current AIB outputs (fields.npz/metrics.json/summary/report) instead of removed legacy artifact files.",
+      "acceptance_criteria": [
+        "test_run_manager validates fields.npz, metrics.json, summary.json, and report.html",
+        "legacy artifact assumptions (thickness.npz/cs_fields.npz/diagnostics.npz) are removed",
+        "run_manager tests pass under AIB config contracts"
+      ],
+      "depends_on": [
+        "P3-025"
+      ],
+      "scope_limits": {
+        "max_changed_files": 3,
+        "max_diff_lines": 220,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-026'"
+      ]
+    },
+    {
+      "task_id": "P3-027",
+      "title": "P3 clean legacy-schema dependent non-mainline tests",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 150,
+      "description": "Refactor or isolate residual old-schema tests (mass_transfer/state_closure/bosanquet_pattern and related imports) so AIB mainline tests remain executable without retired ModelSpec/SolverSpec/DriversSpec contracts.",
+      "acceptance_criteria": [
+        "legacy schema import errors are removed from non-mainline tests",
+        "AIB mainline test command can include updated non-mainline set safely",
+        "test suite no longer fails due to removed schema symbols in these modules"
+      ],
+      "depends_on": [
+        "P3-026"
+      ],
+      "scope_limits": {
+        "max_changed_files": 5,
+        "max_diff_lines": 320,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "scripts/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-027'"
+      ]
+    },
+    {
+      "task_id": "P3-028",
+      "title": "P3 final gate convergence for AIB-complete verification line",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Connect verify_p1/verify_p2 and traceability/eval protocol to P3-022..P3-027 so AIB-complete gates execute as the single supported verification line.",
+      "acceptance_criteria": [
+        "verify_p1 and verify_p2 include P3-022..P3-027 coverage",
+        "TRACEABILITY and EVAL_PROTOCOL mention P3-022..P3-028 linkage for MUST-058",
+        "verify_task_contracts succeeds with updated task contracts"
+      ],
+      "depends_on": [
+        "P3-027"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 260,
+        "allowed_dirs": [
+          "scripts/",
+          "tasks/",
+          "docs/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-028'"
+      ]
+    },
+    {
+      "task_id": "P3-029",
+      "title": "P3 PR-A common utility consolidation and duplicate-path removal",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Introduce shared common modules for override normalization, nested-path access, and triangulation rendering, then replace duplicate helper implementations in DOE/benchmark/report/identifiability/physviz/pipeline.",
+      "acceptance_criteria": [
+        "override normalization is centralized under deposim_sim.common.overrides",
+        "nested path set/get is centralized under deposim_sim.common.nested_path",
+        "triangulation rendering quality logic is centralized under deposim_sim.common.render_tri",
+        "AIB utility tests covering DOE/benchmark/report/identifiability continue to pass"
+      ],
+      "depends_on": [
+        "P3-028"
+      ],
+      "scope_limits": {
+        "max_changed_files": 9,
+        "max_diff_lines": 420,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_report/",
+          "scripts/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-029'"
+      ]
+    },
+    {
+      "task_id": "P3-030",
+      "title": "P3 PR-B staged legacy config cleanup and repository hygiene",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 130,
+      "description": "Apply staged deprecation for legacy config names, align old sim/opt YAML files to AIB wrappers, retire obsolete opt scaffold schema surface, and remove duplicated handoff/generated repository assets.",
+      "acceptance_criteria": [
+        "compose_sim_config('smoke'/'example_cvd'/'multiz'/'ald_synthetic') resolves to AIB-compatible configs via deprecation aliases",
+        "compose_opt_config('base'/'stub') resolves to fit_cvd_steady_min aliases",
+        "duplicate handoff pack and generated egg-info directories are removed from tracked repository state",
+        "import_check passes after cleanup"
+      ],
+      "depends_on": [
+        "P3-029"
+      ],
+      "scope_limits": {
+        "max_changed_files": 12,
+        "max_diff_lines": 520,
+        "allowed_dirs": [
+          "configs/",
+          "src/deposim_schema/",
+          "src/deposim_opt/",
+          ".gitignore",
+          "scripts/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-030'"
+      ]
+    },
+    {
+      "task_id": "P3-031",
+      "title": "P3 PR-C verification-line convergence and legacy P1/P2 remap",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Simplify scripts/commands.sh by remapping stale P1/P2 verify_task branches onto AIB gates, fix invalid P0 smoke checks against current output contracts, and keep task-contract validation green.",
+      "acceptance_criteria": [
+        "verify_task P0-009 succeeds with current AIB smoke output contract",
+        "legacy P1/P2 verify_task branches no longer depend on retired schema/tests",
+        "verify_p1 and verify_p2 remain executable as AIB verification lines",
+        "verify_task_contracts succeeds"
+      ],
+      "depends_on": [
+        "P3-030"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 320,
+        "allowed_dirs": [
+          "scripts/",
+          "tasks/",
+          "docs/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-031'"
+      ]
+    },
+    {
+      "task_id": "P3-032",
+      "title": "P3 introduce strict output.v1 manifest across runners",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 130,
+      "description": "Introduce outputs/manifest.json (schema_version=output.v1) for simulation/DOE/benchmark/fit paths and derive summary artifact mappings from manifest records.",
+      "acceptance_criteria": [
+        "run_manager and run_fit produce outputs/manifest.json with output.v1 schema",
+        "summary.json exposes manifest_path and artifact_paths derived from manifest",
+        "missing required manifest keys fail validation"
+      ],
+      "depends_on": [
+        "D-008"
+      ],
+      "scope_limits": {
+        "max_changed_files": 8,
+        "max_diff_lines": 420,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_opt/",
+          "src/deposim_report/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-032'"
+      ]
+    },
+    {
+      "task_id": "P3-033",
+      "title": "P3 centralize plot naming/style catalog for static PNG outputs",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Add deposim_report.plot_catalog and route run_report/physviz/benchmark fixed map outputs through shared plot IDs and style metadata.",
+      "acceptance_criteria": [
+        "plot catalog module is introduced and used by primary report paths",
+        "from_fluent_xy rendering remains tri-first with scatter fallback only",
+        "thickness/phi_B/f_I/solver health map outputs are produced with catalog IDs"
+      ],
+      "depends_on": [
+        "P3-032"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 360,
+        "allowed_dirs": [
+          "src/deposim_report/",
+          "src/deposim_sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-033'"
+      ]
+    },
+    {
+      "task_id": "P3-034",
+      "title": "P3 expose real solver-health maps from AIB diagnostics",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 110,
+      "description": "Propagate iteration/fallback diagnostics from implicit Euler steps into pipeline outputs and visualize solver health from real maps instead of defaults.",
+      "acceptance_criteria": [
+        "aib_ode step diagnostics include iteration_count and fallback mask",
+        "pipeline diagnostics include root_iteration_count and root_status_map",
+        "solver_health_map reflects runtime diagnostics"
+      ],
+      "depends_on": [
+        "P3-033"
+      ],
+      "scope_limits": {
+        "max_changed_files": 5,
+        "max_diff_lines": 280,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_report/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-034'"
+      ]
+    },
+    {
+      "task_id": "P3-035",
+      "title": "P3 unify artifact contract across sim/doe/benchmark/fit reports",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 140,
+      "description": "Standardize report artifact link generation from manifest for run_manager/doe/benchmark/run_fit and remove per-run hardcoded artifact lists.",
+      "acceptance_criteria": [
+        "all runner summaries expose consistent manifest-driven artifact_paths",
+        "benchmark and fit outputs include ranking/class compare artifacts in manifest",
+        "DOE report links are generated from manifest artifacts"
+      ],
+      "depends_on": [
+        "P3-034"
+      ],
+      "scope_limits": {
+        "max_changed_files": 8,
+        "max_diff_lines": 420,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_opt/",
+          "src/deposim_report/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-035'"
+      ]
+    },
+    {
+      "task_id": "P3-036",
+      "title": "P3 unify root/project navigation for results index entrypoint",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 100,
+      "description": "Update results index management so each run updates both project index and root results/index.html with stable links to latest reports.",
+      "acceptance_criteria": [
+        "results/index.html is regenerated from project summaries",
+        "project index links remain valid from root entrypoint",
+        "smoke run updates root and project index files"
+      ],
+      "depends_on": [
+        "P3-035"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 240,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_report/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-036'"
+      ]
+    },
+    {
+      "task_id": "P3-037",
+      "title": "P3 add strict output contract tests",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 100,
+      "description": "Add dedicated tests for output.v1 manifest validity and extend report/benchmark/physviz tests to assert contract keys and artifacts.",
+      "acceptance_criteria": [
+        "test_output_contract validates mandatory manifest keys",
+        "manifest absence or missing required keys fails tests",
+        "existing report/benchmark tests assert manifest presence"
+      ],
+      "depends_on": [
+        "P3-036"
+      ],
+      "scope_limits": {
+        "max_changed_files": 6,
+        "max_diff_lines": 300,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_opt/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-037'"
+      ]
+    },
+    {
+      "task_id": "P3-038",
+      "title": "P3 converge tasks/traceability/verify lines on output.v1 contract",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 110,
+      "description": "Add D-008/P3-032..P3-038 task wiring, sync traceability/eval docs to manifest contract, and update verify_task routing for the new output contract gates.",
+      "acceptance_criteria": [
+        "tasks/tasks.json includes D-008 and P3-032..P3-038",
+        "TRACEABILITY links MUST-024/026/027/058 to new tasks",
+        "verify_task_contracts and verify_task P3-038 both pass"
+      ],
+      "depends_on": [
+        "P3-037"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 260,
+        "allowed_dirs": [
+          "tasks/",
+          "docs/",
+          "scripts/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-038'"
+      ]
+    },
+    {
+      "task_id": "D-009",
+      "title": "Decision: adopt output_viz.md as primary output.v1 contract spec",
+      "milestone": "POST",
+      "type": "decision",
+      "stop_after": false,
+      "estimated_minutes": 45,
+      "description": "Adopt output_viz.md as the code-aligned primary output/visualization contract specification while keeping schema_version=output.v1 and static PNG+HTML policy.",
+      "acceptance_criteria": [
+        "output_viz.md is populated with mandatory contract sections",
+        "Contract text is consistent with ADR 0011 and output.v1 runtime behavior",
+        "Verification command for D-009 passes"
+      ],
+      "depends_on": [
+        "D-008"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 260,
+        "allowed_dirs": [
+          "output_viz.md",
+          "docs/",
+          "tasks/",
+          "scripts/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task D-009'"
+      ]
+    },
+    {
+      "task_id": "P3-039",
+      "title": "P3 harden output.v1 manifest validation semantics",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Strengthen output manifest checks with relative-path enforcement, plot-id uniqueness, and required artifact existence validation.",
+      "acceptance_criteria": [
+        "manifest paths reject absolute and parent-traversal forms",
+        "duplicate plot_id is rejected by validation",
+        "required=true artifacts missing on disk fail validation"
+      ],
+      "depends_on": [
+        "D-009"
+      ],
+      "scope_limits": {
+        "max_changed_files": 3,
+        "max_diff_lines": 220,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-039'"
+      ]
+    },
+    {
+      "task_id": "P3-040",
+      "title": "P3 enforce manifest-first run report output links",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Refactor run_report/run_manager flow so report artifact links are derived from manifest records instead of ad-hoc link arrays.",
+      "acceptance_criteria": [
+        "run_report accepts manifest-driven link resolution",
+        "run_manager passes manifest context into report generation",
+        "report artifact list remains deterministic"
+      ],
+      "depends_on": [
+        "P3-039"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 260,
+        "allowed_dirs": [
+          "src/deposim_report/",
+          "src/deposim_sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-040'"
+      ]
+    },
+    {
+      "task_id": "P3-041",
+      "title": "P3 expand plot catalog coverage across report map classes",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 130,
+      "description": "Extend plot catalog IDs/metadata to measurement/error/radial/species/zref and align report/physviz naming with shared catalog helpers.",
+      "acceptance_criteria": [
+        "plot catalog includes comparison/profile/species and DOE z_ref identifiers",
+        "run_report and physviz_report use shared token/catalog helpers",
+        "from_fluent_xy remains tri-first with scatter fallback only"
+      ],
+      "depends_on": [
+        "P3-040"
+      ],
+      "scope_limits": {
+        "max_changed_files": 5,
+        "max_diff_lines": 320,
+        "allowed_dirs": [
+          "src/deposim_report/",
+          "src/deposim_sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-041'"
+      ]
+    },
+    {
+      "task_id": "P3-042",
+      "title": "P3 unify artifact assembly flow across sim/doe/benchmark/fit",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 130,
+      "description": "Align runner output ordering and manifest linkage so report/summary/manifest creation uses one consistent artifact contract shape.",
+      "acceptance_criteria": [
+        "all runners write summary/report before strict manifest file validation",
+        "artifact links used in reports are manifest-order derived",
+        "summary.artifact_paths remains manifest-derived across runners"
+      ],
+      "depends_on": [
+        "P3-041"
+      ],
+      "scope_limits": {
+        "max_changed_files": 6,
+        "max_diff_lines": 360,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_opt/",
+          "src/deposim_report/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-042'"
+      ]
+    },
+    {
+      "task_id": "P3-043",
+      "title": "P3 harden root results navigation against broken project summaries",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 90,
+      "description": "Strengthen results index update behavior so malformed project summary payloads do not block root index regeneration.",
+      "acceptance_criteria": [
+        "update_root_files skips malformed/partial project summaries safely",
+        "results/index.html still updates from valid projects",
+        "run_manager tests include broken-summary tolerance scenario"
+      ],
+      "depends_on": [
+        "P3-042"
+      ],
+      "scope_limits": {
+        "max_changed_files": 3,
+        "max_diff_lines": 200,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "tests/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-043'"
+      ]
+    },
+    {
+      "task_id": "P3-044",
+      "title": "P3 expand output contract tests for strict manifest/report coupling",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Add explicit tests for manifest strictness and report linkage so contract drift is detected early in unit gates.",
+      "acceptance_criteria": [
+        "manifest path and duplicate-id failure paths are tested",
+        "runner report artifacts are validated against manifest paths",
+        "contract tests cover simulation/benchmark/fit output paths"
+      ],
+      "depends_on": [
+        "P3-043"
+      ],
+      "scope_limits": {
+        "max_changed_files": 5,
+        "max_diff_lines": 300,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_opt/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-044'"
+      ]
+    },
+    {
+      "task_id": "P3-045",
+      "title": "P3 synchronize task/traceability/verify lines for D-009 and P3-039..045",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 100,
+      "description": "Add D-009/P3-039..P3-045 into verify routing and traceability docs so output-viz convergence work is fully auditable.",
+      "acceptance_criteria": [
+        "tasks/tasks.json includes D-009 and P3-039..P3-045",
+        "TRACEABILITY links MUST-024/026/027/058/061 to new tasks",
+        "verify_task_contracts and verify_task P3-045 both pass"
+      ],
+      "depends_on": [
+        "P3-044"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 260,
+        "allowed_dirs": [
+          "tasks/",
+          "docs/",
+          "scripts/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-045'"
+      ]
+    },
+    {
+      "task_id": "D-010",
+      "title": "Decision: selective adoption scope for optimize.md on AIB optimization",
+      "milestone": "POST",
+      "type": "decision",
+      "stop_after": false,
+      "estimated_minutes": 45,
+      "description": "Fix adoption boundaries for optimize.md. Keep already-implemented redundant features out of scope and adopt only useful additions (sampler/pruner/storage, score decomposition, multi-condition, hierarchical regularization, staged fidelity).",
+      "acceptance_criteria": [
+        "ADR documents adopted vs excluded optimize.md items",
+        "AIB-only primary path is preserved",
+        "Heavy optimizer dependencies remain excluded"
+      ],
+      "depends_on": [
+        "D-009"
+      ],
+      "scope_limits": {
+        "max_changed_files": 2,
+        "max_diff_lines": 180,
+        "allowed_dirs": [
+          "docs/adr/",
+          "docs/REQUIREMENTS.md"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task D-010'"
+      ]
+    },
+    {
+      "task_id": "P3-046",
+      "title": "P3 extend opt schema/config with sampler/pruner/storage/fidelity/multi-condition keys",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 130,
+      "description": "Extend OptSpecV2/ParameterFitSpec and minimum opt YAMLs for selective optimize.md adoption. Keep existing YAML compatibility when new keys are absent.",
+      "acceptance_criteria": [
+        "ParameterFitSpec accepts sampler/pruner/storage/fidelity/objective penalty fields",
+        "opt.measurement.conditions can be supplied without breaking single-condition mode",
+        "Existing fit_*_min configs remain runnable"
+      ],
+      "depends_on": [
+        "D-010"
+      ],
+      "scope_limits": {
+        "max_changed_files": 6,
+        "max_diff_lines": 360,
+        "allowed_dirs": [
+          "src/deposim_schema/",
+          "configs/opt/",
+          "src/deposim_schema/test_sim_config_v2.py"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-046'"
+      ]
+    },
+    {
+      "task_id": "P3-047",
+      "title": "P3 add objective score decomposition module for AIB optimization",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 140,
+      "description": "Introduce deposim_opt.objective with decomposed scoring (data/solver/physics/prior/complexity) and stable output keys for ranking/report tables.",
+      "acceptance_criteria": [
+        "evaluate_candidate_score returns stable component keys",
+        "physics/solver/prior penalties are independently testable",
+        "module is reusable from fit_optuna without code duplication"
+      ],
+      "depends_on": [
+        "P3-046"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 320,
+        "allowed_dirs": [
+          "src/deposim_opt/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-047'"
+      ]
+    },
+    {
+      "task_id": "P3-048",
+      "title": "P3 implement optuna sampler/pruner/storage/resume integration",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 160,
+      "description": "Update fit_optuna runtime to reflect sampler/pruner/storage settings from YAML, support study resume with sqlite storage, and preserve random-search fallback when optuna is unavailable.",
+      "acceptance_criteria": [
+        "sampler=tpe|cmaes|random is reflected in study setup",
+        "pruner=none|median|hyperband is reflected in study setup",
+        "sqlite storage resume works with load_if_exists=true"
+      ],
+      "depends_on": [
+        "P3-047"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 360,
+        "allowed_dirs": [
+          "src/deposim_opt/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-048'"
+      ]
+    },
+    {
+      "task_id": "P3-049",
+      "title": "P3 add weighted multi-condition assimilation and hierarchical log-offset fitting",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 170,
+      "description": "Add weighted condition loop and per-condition hierarchical log-offset parameterization (global base + condition deltas) with prior regularization and staged fidelity evaluation.",
+      "acceptance_criteria": [
+        "opt.measurement.conditions supports name/weight/fluent_file/measurement_file/overrides",
+        "per_condition + hierarchical(log_offset) search-space entries are evaluated correctly",
+        "fidelity levels enable coarse-to-fine condition-count evaluation"
+      ],
+      "depends_on": [
+        "P3-048"
+      ],
+      "scope_limits": {
+        "max_changed_files": 5,
+        "max_diff_lines": 420,
+        "allowed_dirs": [
+          "src/deposim_opt/",
+          "configs/opt/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-049'"
+      ]
+    },
+    {
+      "task_id": "P3-050",
+      "title": "P3 enrich ranking/class_compare with score components and tie diagnostics",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Emit decomposed score columns in ranking.csv and tie diagnostics in class_compare.csv while preserving manifest/output contract behavior.",
+      "acceptance_criteria": [
+        "ranking.csv includes component columns and score_total",
+        "class_compare.csv includes tie_flag/tie_group_size/delta_from_best",
+        "topk_assignments.csv remains selection-only output"
+      ],
+      "depends_on": [
+        "P3-049"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 260,
+        "allowed_dirs": [
+          "src/deposim_opt/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-050'"
+      ]
+    },
+    {
+      "task_id": "P3-051",
+      "title": "P3 expand optimization tests for decomposition/pruning/multi-condition/hierarchical",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 150,
+      "description": "Add/expand tests for objective decomposition, optuna resume/pruner paths, weighted multi-condition behavior, hierarchical log-offset prior effects, and tie/ranking output columns.",
+      "acceptance_criteria": [
+        "test_objective validates component behavior",
+        "test_fit_optuna covers resume/multi-condition/hierarchical/tie columns",
+        "schema compatibility tests still pass"
+      ],
+      "depends_on": [
+        "P3-050"
+      ],
+      "scope_limits": {
+        "max_changed_files": 6,
+        "max_diff_lines": 420,
+        "allowed_dirs": [
+          "src/deposim_opt/",
+          "src/deposim_schema/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-051'"
+      ]
+    },
+    {
+      "task_id": "P3-052",
+      "title": "P3 synchronize optimization tasks/traceability/eval gates for D-010 and P3-046..052",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 110,
+      "description": "Wire verify_task commands, traceability mapping, and eval protocol updates for optimization selective adoption tasks.",
+      "acceptance_criteria": [
+        "verify_task supports D-010 and P3-046..P3-052",
+        "TRACEABILITY and EVAL_PROTOCOL reference new optimization gates",
+        "verify_task_contracts passes"
+      ],
+      "depends_on": [
+        "P3-051"
+      ],
+      "scope_limits": {
+        "max_changed_files": 5,
+        "max_diff_lines": 280,
+        "allowed_dirs": [
+          "tasks/",
+          "docs/",
+          "scripts/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-052'"
+      ]
+    },
+    {
+      "task_id": "D-011",
+      "title": "Decision: selective improve2.md adoption scope for P0-focused AIB improvements",
+      "milestone": "POST",
+      "type": "decision",
+      "stop_after": false,
+      "estimated_minutes": 45,
+      "description": "Fix improve2.md adoption boundaries and keep only useful non-redundant P0 improvements (role stability diagnostics, identifiability integration, cache, preflight, report warning).",
+      "acceptance_criteria": [
+        "ADR documents adopted vs excluded improve2.md items",
+        "AIB single-path policy is preserved",
+        "No heavy dependency additions are introduced"
+      ],
+      "depends_on": [
+        "D-010"
+      ],
+      "scope_limits": {
+        "max_changed_files": 2,
+        "max_diff_lines": 180,
+        "allowed_dirs": [
+          "docs/adr/",
+          "docs/REQUIREMENTS.md"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task D-011'"
+      ]
+    },
+    {
+      "task_id": "P3-053",
+      "title": "P3 add role stability and role-identifiability diagnostics to fit outputs",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 130,
+      "description": "Generate role-stability table and diagnostics summary from top-k fit candidates, then expose role identifiability warning in fit summary outputs.",
+      "acceptance_criteria": [
+        "tables/role_stability.csv is generated",
+        "outputs/fit_diagnostics.json stores role diagnostics and warning flag",
+        "Near-tie role swaps raise role_identifiability_warning"
+      ],
+      "depends_on": [
+        "P3-056"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 260,
+        "allowed_dirs": [
+          "src/deposim_opt/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-053'"
+      ]
+    },
+    {
+      "task_id": "P3-054",
+      "title": "P3 integrate identifiability diagnostics and coarse-to-fine evaluation cache",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 160,
+      "description": "Integrate identifiability diagnostics into fit best-candidate flow and add condition-evaluation caching to reduce duplicate coarse-to-fine recomputation.",
+      "acceptance_criteria": [
+        "Identifiability warnings appear in fit diagnostics when enabled",
+        "Coarse-to-fine loops reuse cached condition evaluations",
+        "Cache behavior is test-covered and bounded"
+      ],
+      "depends_on": [
+        "P3-053"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 320,
+        "allowed_dirs": [
+          "src/deposim_opt/",
+          "src/deposim_sim/identifiability.py"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-054'"
+      ]
+    },
+    {
+      "task_id": "P3-055",
+      "title": "P3 add preflight fail-fast checks and report solver health warning banner",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 130,
+      "description": "Validate condition inputs before trial execution (finite ratio and shape checks) and show a warning banner in report when non-bracketed solver counts exceed threshold.",
+      "acceptance_criteria": [
+        "Preflight blocks invalid condition inputs before optimization trials",
+        "report.html shows solver warning box for threshold breaches",
+        "fit and report tests cover warning/fail-fast paths"
+      ],
+      "depends_on": [
+        "P3-054"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 280,
+        "allowed_dirs": [
+          "src/deposim_opt/",
+          "src/deposim_report/",
+          "src/deposim_sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-055'"
+      ]
+    },
+    {
+      "task_id": "P3-056",
+      "title": "P3 extend schema/config/tests for analysis block and fit diagnostics",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 140,
+      "description": "Extend opt schema and minimum configs with analysis controls (role_stability, identifiability, cache, preflight) and add focused diagnostics tests while keeping backward compatibility.",
+      "acceptance_criteria": [
+        "ParameterFitSpec accepts analysis.* keys with defaults",
+        "Existing fit_*_min configs remain runnable without new overrides",
+        "Schema and diagnostics tests pass"
+      ],
+      "depends_on": [
+        "D-011"
+      ],
+      "scope_limits": {
+        "max_changed_files": 6,
+        "max_diff_lines": 320,
+        "allowed_dirs": [
+          "src/deposim_schema/",
+          "configs/opt/",
+          "src/deposim_opt/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-056'"
+      ]
+    },
+    {
+      "task_id": "P3-057",
+      "title": "P3 synchronize improve2 selective-adoption tasks/traceability/eval gates",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 100,
+      "description": "Wire D-011 and P3-053..P3-057 into verify_task routing, task tracking, and traceability/eval protocol docs.",
+      "acceptance_criteria": [
+        "verify_task supports D-011 and P3-053..P3-057",
+        "TRACEABILITY and EVAL_PROTOCOL reference improve2 selective-adoption gates",
+        "verify_task_contracts passes"
+      ],
+      "depends_on": [
+        "P3-055"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 260,
+        "allowed_dirs": [
+          "tasks/",
+          "docs/",
+          "scripts/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-057'"
       ]
     }
   ]

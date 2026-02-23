@@ -1,5 +1,3 @@
-"""Root solvers for transport-reaction coupling."""
+"""Solver namespace reserved for AIB time integrators."""
 
-from . import root_solve
-
-__all__ = ["root_solve"]
+__all__: list[str] = []

@@ -12,7 +12,7 @@ def render_report_page(
     heading: str,
     sections: Sequence[str],
     back_href: str = "../../index.html",
-    back_label: str = "Back to results/index.html",
+    back_label: str = "Back to project index",
     style: str | None = None,
 ) -> str:
     """Render a minimal full HTML page for report artifacts."""

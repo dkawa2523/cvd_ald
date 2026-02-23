@@ -1,7 +1,4 @@
-# P0 placeholder for optimization config root.
-# This file intentionally contains only stub fields.
-# Real optimization settings are introduced in P2 tasks.
-
-opt:
-  enabled: false
-  notes: "stub config for sim/opt root separation"
+# Deprecated compatibility config. Use fit_cvd_steady_min.yaml directly.
+defaults:
+  - fit_cvd_steady_min
+  - _self_

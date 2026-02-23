@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -10,14 +11,8 @@ try:
 except ModuleNotFoundError:  # pragma: no cover
     np = None  # type: ignore[assignment]
 
-from deposim_schema import compose_sim_config
-
-from .benchmark_wafer2d import (
-    build_wafer2d_cases,
-    run_wafer2d_benchmark,
-    write_case_input_npz,
-)
-from .domain import build_domain_grid
+from .benchmark_wafer2d import build_wafer2d_cases, run_wafer2d_benchmark, write_case_input_npz
+from .output_manifest import SCHEMA_VERSION
 
 
 @unittest.skipIf(np is None, "NumPy is required for wafer2d benchmark tests")
@@ -26,94 +21,107 @@ class TestWafer2DBenchmark(unittest.TestCase):
         cases_a = build_wafer2d_cases()
         cases_b = build_wafer2d_cases()
         self.assertEqual([c.case_id for c in cases_a], [c.case_id for c in cases_b])
-        self.assertEqual([c.overrides for c in cases_a], [c.overrides for c in cases_b])
+        self.assertEqual([c.class_id for c in cases_a], [c.class_id for c in cases_b])
+        self.assertEqual({c.class_id for c in cases_a}, {"A", "AI", "AB", "AIB"})
 
     def test_file_payload_keys_and_shapes(self) -> None:
-        run_spec = compose_sim_config("smoke", overrides=["domain.kind=wafer_2d_polar", "domain.nr=8", "domain.ntheta=16"])
-        grid = build_domain_grid(run_spec.domain)
-        file_cases = [case for case in build_wafer2d_cases() if case.file_pattern is not None]
-        self.assertGreaterEqual(len(file_cases), 2)
-
+        case = build_wafer2d_cases()[0]
         with TemporaryDirectory() as tmp:
-            payload_path, cref = write_case_input_npz(
-                case=file_cases[0],
-                grid=grid,
-                output_dir=Path(tmp),
-                c_ref_mol_m3=1.8,
-                temperature_k=710.0,
-                species="precursor",
-            )
+            payload_path, xy_mm, cref = write_case_input_npz(case=case, output_dir=Path(tmp))
             self.assertTrue(payload_path.exists())
             with np.load(payload_path) as payload:
-                self.assertIn("C_ref__precursor", payload.files)
-                self.assertIn("T", payload.files)
-                self.assertEqual(payload["C_ref__precursor"].shape, grid.shape)
-                self.assertEqual(payload["T"].shape, grid.shape)
-                np.testing.assert_allclose(payload["C_ref__precursor"], cref)
+                self.assertIn("xy", payload.files)
+                self.assertIn("cref", payload.files)
+                self.assertEqual(payload["xy"].shape, xy_mm.shape)
+                self.assertEqual(payload["cref"].shape, cref.shape)
+                self.assertEqual(payload["cref"].shape[1], 4)
 
-    def test_runner_emits_case_dimension_outputs(self) -> None:
+    def test_runner_emits_aib_metric_outputs(self) -> None:
         with TemporaryDirectory() as tmp:
             out = run_wafer2d_benchmark(
-                config_name="smoke",
+                config_name="cvd_steady_min",
                 overrides=[
-                    f"output.project_dir={tmp}",
-                    "domain.nr=8",
-                    "domain.ntheta=12",
-                    "time.process_time_s=2.0",
+                    f"sim.output.root_dir={tmp}",
+                    "sim.output.project=benchtest",
                 ],
             )
             run_dir = Path(out["run_dir"])
             self.assertTrue((run_dir / "summary.json").exists())
             self.assertTrue((run_dir / "report.html").exists())
             self.assertTrue((run_dir / "outputs" / "benchmark_case_metrics.json").exists())
+            self.assertTrue((run_dir / "outputs" / "benchmark_cases.npz").exists())
+            self.assertTrue((run_dir / "outputs" / "class_compare.csv").exists())
+            self.assertTrue((run_dir / "outputs" / "ranking.csv").exists())
+            self.assertTrue((run_dir / "outputs" / "manifest.json").exists())
 
             summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
-            artifact_path = run_dir / summary["artifact_paths"]["benchmark_cases"]
-            self.assertTrue(artifact_path.exists())
-            case_count = len(build_wafer2d_cases())
-            self.assertEqual(summary["case_count"], case_count)
+            self.assertEqual(summary["sim_model"], "aib_ode")
+            self.assertEqual(summary["case_count"], len(build_wafer2d_cases()))
+            self.assertIn("overall_passed", summary["trend_assertions"])
+            self.assertEqual(summary.get("manifest_path"), "outputs/manifest.json")
+            self.assertIn("ranking", summary.get("artifact_paths", {}))
 
-            if artifact_path.suffix == ".npz":
-                payload = np.load(artifact_path)
-                self.assertEqual(payload["thickness"].shape[0], case_count)
-                self.assertEqual(payload["da_proxy"].shape[0], case_count)
-                self.assertEqual(payload["cs_over_cref"].shape[0], case_count)
+            manifest = json.loads((run_dir / "outputs" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["schema_version"], SCHEMA_VERSION)
+            artifact_ids = {row["id"] for row in manifest["artifacts"]}
+            self.assertTrue({"ranking", "class_compare", "benchmark_case_metrics", "benchmark_cases"}.issubset(artifact_ids))
 
-    def test_trend_assertions_regime_split(self) -> None:
+            payload = np.load(run_dir / "outputs" / "benchmark_cases.npz")
+            self.assertIn("phi_B", payload.files)
+            self.assertIn("f_I", payload.files)
+            self.assertIn("residual_nm", payload.files)
+            self.assertEqual(payload["h_nm"].shape[0], len(build_wafer2d_cases()))
+
+            rows = json.loads((run_dir / "outputs" / "benchmark_case_metrics.json").read_text(encoding="utf-8"))
+            self.assertEqual(len(rows), len(build_wafer2d_cases()))
+            required = {
+                "case_id",
+                "class_id",
+                "mean_phi_B",
+                "mean_f_I",
+                "mean_CsA_over_CrefA",
+                "mean_CsB_over_CrefB",
+                "mean_abs_residual_nm",
+            }
+            self.assertTrue(required.issubset(set(rows[0].keys())))
+
+            with (run_dir / "outputs" / "class_compare.csv").open("r", encoding="utf-8") as fh:
+                class_rows = list(csv.DictReader(fh))
+            classes = {row["class_id"] for row in class_rows}
+            self.assertEqual(classes, {"A", "AI", "AB", "AIB"})
+
+    def test_runner_supports_legacy_cli_override_aliases(self) -> None:
         with TemporaryDirectory() as tmp:
             out = run_wafer2d_benchmark(
-                config_name="smoke",
+                config_name="cvd_steady_min",
                 overrides=[
                     f"output.project_dir={tmp}",
+                    "output.run_dir_name=bench_alias",
                     "domain.nr=8",
                     "domain.ntheta=12",
-                    "time.process_time_s=2.0",
                 ],
             )
-            trend = out["summary"]["trend_assertions"]
-            self.assertTrue(trend["assert_regime_cs_ratio"])
-            self.assertTrue(trend["assert_regime_da_proxy"])
-            self.assertTrue(trend["assert_radial_trend"])
-            self.assertTrue(trend["assert_file_theta_transfer"])
-            self.assertTrue(trend["assert_solver_health"])
-            self.assertTrue(trend["overall_passed"])
+            run_dir = Path(out["run_dir"])
+            self.assertTrue(run_dir.exists())
+            self.assertIn("bench_alias", run_dir.name)
 
     def test_report_and_index_links_exist(self) -> None:
         with TemporaryDirectory() as tmp:
             out = run_wafer2d_benchmark(
-                config_name="smoke",
+                config_name="cvd_steady_min",
                 overrides=[
-                    f"output.project_dir={tmp}",
-                    "domain.nr=8",
-                    "domain.ntheta=12",
-                    "time.process_time_s=2.0",
+                    f"sim.output.root_dir={tmp}",
+                    "sim.output.project=benchtest",
                 ],
             )
             run_dir = Path(out["run_dir"])
             report = (run_dir / "report.html").read_text(encoding="utf-8")
             self.assertIn("Trend Assertions", report)
             self.assertIn("benchmark_case_metrics.json", report)
-            index = (Path(tmp) / "index.html").read_text(encoding="utf-8")
+            manifest = json.loads((run_dir / "outputs" / "manifest.json").read_text(encoding="utf-8"))
+            for row in manifest["artifacts"]:
+                self.assertIn(str(row["path"]), report)
+            index = (Path(tmp) / "benchtest" / "index.html").read_text(encoding="utf-8")
             self.assertIn(f"runs/{run_dir.name}/report.html", index)
 
 

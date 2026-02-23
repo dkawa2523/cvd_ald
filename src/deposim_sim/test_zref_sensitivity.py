@@ -16,14 +16,27 @@ from .doe import run_zref_sensitivity
 class TestZrefSensitivity(unittest.TestCase):
     def test_zref_sensitivity_outputs_metrics_and_plot(self) -> None:
         with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fluent_path = root / "fluent.npz"
+            xy = np.array([[-10.0, -10.0], [0.0, 0.0], [20.0, 10.0], [30.0, -20.0]], dtype=float)
+            cref = np.array(
+                [
+                    [1.0, 0.4, 0.1, 0.0],
+                    [0.9, 0.3, 0.1, 0.0],
+                    [0.8, 0.3, 0.1, 0.0],
+                    [0.7, 0.2, 0.1, 0.0],
+                ],
+                dtype=float,
+            )
+            np.savez(fluent_path, xy=xy, cref=cref)
+
             result = run_zref_sensitivity(
-                config_name="smoke",
+                config_name="cvd_steady_min",
                 z_ref_values_mm=[2.0, 5.0, 8.0],
                 base_overrides=[
-                    f"output.project_dir={tmp}",
-                    "domain.nr=6",
-                    "domain.ntheta=10",
-                    "time.process_time_s=2.0",
+                    f"sim.output.root_dir={tmp}",
+                    "sim.output.project=zref_test",
+                    f"sim.inputs.fluent.file={fluent_path}",
                 ],
             )
             run_dir = result.run_dir

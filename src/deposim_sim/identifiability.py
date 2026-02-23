@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from copy import deepcopy
 from typing import Any
 
-from .domain import build_domain_grid
-from .physics.cvd_steady import run_cvd_steady
-from .synthetic_inputs import build_synthetic_field_bundle
+from .common.nested_path import get_nested, set_nested
+from .pipeline import run_aib_from_spec
 
 try:  # pragma: no cover
     import numpy as np
@@ -21,55 +20,8 @@ def _require_numpy() -> None:
         raise RuntimeError("NumPy is required for identifiability diagnostics.")
 
 
-def _get_nested_value(root: Any, path: str) -> Any:
-    current = root
-    for token in path.split("."):
-        if hasattr(current, token):
-            current = getattr(current, token)
-            continue
-        if isinstance(current, Mapping):
-            if token not in current:
-                raise ValueError(f"parameter path not found: {path!r}")
-            current = current[token]
-            continue
-        raise ValueError(f"parameter path not found: {path!r}")
-    return current
-
-
-def _set_nested_value(root: Any, path: str, value: Any) -> None:
-    tokens = path.split(".")
-    current = root
-    for token in tokens[:-1]:
-        if hasattr(current, token):
-            current = getattr(current, token)
-            continue
-        if isinstance(current, Mapping):
-            if token not in current:
-                raise ValueError(f"parameter path not found: {path!r}")
-            current = current[token]
-            continue
-        raise ValueError(f"parameter path not found: {path!r}")
-
-    leaf = tokens[-1]
-    if hasattr(current, leaf):
-        setattr(current, leaf, value)
-        return
-    if isinstance(current, dict):
-        current[leaf] = value
-        return
-    raise ValueError(f"parameter path not writable: {path!r}")
-
-
 def _thickness_vector(run_spec: Any) -> np.ndarray:
-    grid = build_domain_grid(run_spec.domain)
-    fields = build_synthetic_field_bundle(run_spec, grid)
-    result = run_cvd_steady(
-        grid=grid,
-        fields=fields,
-        model_config=run_spec.model,
-        process_time_s=run_spec.time.process_time_s,
-        solver_config=run_spec.solver,
-    )
+    result = run_aib_from_spec(run_spec)
     return np.asarray(result.thickness, dtype=float).ravel()
 
 
@@ -112,15 +64,15 @@ def compute_identifiability_diagnostics(
     norms: dict[str, float] = {}
 
     for path in parameter_paths:
-        base_value = float(_get_nested_value(run_spec, path))
+        base_value = float(get_nested(run_spec, path))
         step = relative_step * max(abs(base_value), 1.0)
         if step <= 0.0:
             step = relative_step
 
         plus_spec = deepcopy(run_spec)
         minus_spec = deepcopy(run_spec)
-        _set_nested_value(plus_spec, path, base_value + step)
-        _set_nested_value(minus_spec, path, base_value - step)
+        set_nested(plus_spec, path, base_value + step)
+        set_nested(minus_spec, path, base_value - step)
 
         plus = _thickness_vector(plus_spec)
         minus = _thickness_vector(minus_spec)

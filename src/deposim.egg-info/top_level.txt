@@ -1,3 +1,0 @@
-deposim_report
-deposim_schema
-deposim_sim

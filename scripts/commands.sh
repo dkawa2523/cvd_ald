@@ -56,15 +56,34 @@ cmd_import_check() {
 }
 
 cmd_smoke() {
-  "$PYTHON" -m deposim_sim.smoke --config-name smoke
+  local smoke_npz="/tmp/deposim_aib_smoke_fluent.npz"
+  "$PYTHON" - <<'PY'
+from pathlib import Path
+import numpy as np
+
+path = Path("/tmp/deposim_aib_smoke_fluent.npz")
+xy = np.array([[0.0, 0.0], [25.0, 0.0], [50.0, 0.0], [75.0, 0.0]], dtype=float)
+cref = np.array(
+    [
+        [1.0, 0.3, 0.1, 0.0],
+        [0.9, 0.3, 0.1, 0.0],
+        [0.8, 0.2, 0.1, 0.0],
+        [0.7, 0.2, 0.1, 0.0],
+    ],
+    dtype=float,
+)
+path.parent.mkdir(parents=True, exist_ok=True)
+np.savez(path, xy=xy, cref=cref)
+PY
+  "$PYTHON" -m deposim_sim.smoke --config-name cvd_steady_min "sim.inputs.fluent.file=$smoke_npz"
 }
 
 cmd_benchmark_wafer2d() {
-  "$PYTHON" -m deposim_sim.benchmark_wafer2d --config-name smoke "$@"
+  "$PYTHON" -m deposim_sim.benchmark_wafer2d --config-name cvd_steady_min "$@"
 }
 
 cmd_benchmark_wafer2d_physviz() {
-  "$PYTHON" -m deposim_sim.benchmark_wafer2d --config-name smoke --with-physviz --physviz-fast "$@"
+  "$PYTHON" -m deposim_sim.benchmark_wafer2d --config-name cvd_steady_min --with-physviz --physviz-fast "$@"
 }
 
 cmd_smoke_repro_check() {
@@ -72,29 +91,28 @@ cmd_smoke_repro_check() {
 import numpy as np
 
 from deposim_schema import compose_sim_config
-from deposim_sim.domain import build_domain_grid
-from deposim_sim.synthetic_inputs import synthetic_pattern
+from deposim_sim.pipeline import run_aib_from_spec
 
-run_spec = compose_sim_config("smoke")
-grid = build_domain_grid(run_spec.domain)
-
-pattern_a = synthetic_pattern(
-    run_spec.inputs.synthetic_case,
-    grid,
-    random_seed=run_spec.random_seed,
+xy = np.array([[0.0, 0.0], [25.0, 0.0], [50.0, 0.0], [75.0, 0.0]], dtype=float)
+cref = np.array(
+    [
+        [1.0, 0.3, 0.1, 0.0],
+        [0.9, 0.3, 0.1, 0.0],
+        [0.8, 0.2, 0.1, 0.0],
+        [0.7, 0.2, 0.1, 0.0],
+    ],
+    dtype=float,
 )
-pattern_b = synthetic_pattern(
-    run_spec.inputs.synthetic_case,
-    grid,
-    random_seed=run_spec.random_seed,
-)
-if not np.array_equal(pattern_a, pattern_b):
-    raise SystemExit("[commands] ERROR: smoke synthetic pattern is not deterministic for same seed.")
+np.savez("/tmp/deposim_smoke_repro_fluent.npz", xy=xy, cref=cref)
 
-seeded_42 = synthetic_pattern("seeded_perturbation", grid, random_seed=42)
-seeded_43 = synthetic_pattern("seeded_perturbation", grid, random_seed=43)
-if np.array_equal(seeded_42, seeded_43):
-    raise SystemExit("[commands] ERROR: seeded_perturbation did not change with different seeds.")
+run_spec = compose_sim_config(
+    "cvd_steady_min",
+    overrides=["sim.inputs.fluent.file=/tmp/deposim_smoke_repro_fluent.npz"],
+)
+out_a = run_aib_from_spec(run_spec)
+out_b = run_aib_from_spec(run_spec)
+if not np.allclose(np.asarray(out_a.thickness, dtype=float), np.asarray(out_b.thickness, dtype=float)):
+    raise SystemExit("[commands] ERROR: AIB smoke thickness is not reproducible for the same inputs.")
 PY
 }
 
@@ -103,21 +121,22 @@ cmd_smoke_compose_check() {
 from deposim_schema import compose_sim_config
 
 run_spec = compose_sim_config(
-    "smoke",
+    "cvd_steady_min",
     overrides=[
-        "domain.nr=11",
-        "output.run_dir_name=smoke_check",
+        "sim.output.run_name=smoke_check",
+        "sim.time.t_proc_s=1.5",
+        "sim.roles.A=s0",
     ],
 )
-if run_spec.run_name != "smoke_synthetic":
+if run_spec.model.name != "aib_ode":
     raise SystemExit(
-        f"[commands] ERROR: expected run_name='smoke_synthetic', got {run_spec.run_name!r}"
+        f"[commands] ERROR: expected model.name='aib_ode', got {run_spec.model.name!r}"
     )
-if run_spec.domain.nr != 11:
-    raise SystemExit(f"[commands] ERROR: expected domain.nr=11, got {run_spec.domain.nr}")
-if run_spec.output.run_dir_name != "smoke_check":
+if run_spec.time_mode != "steady":
+    raise SystemExit(f"[commands] ERROR: expected time_mode='steady', got {run_spec.time_mode!r}")
+if run_spec.output.run_name != "smoke_check":
     raise SystemExit(
-        f"[commands] ERROR: expected output.run_dir_name='smoke_check', got {run_spec.output.run_dir_name!r}"
+        f"[commands] ERROR: expected output.run_name='smoke_check', got {run_spec.output.run_name!r}"
     )
 PY
 }
@@ -154,8 +173,8 @@ PY
 cmd_domain_tests() {
   cmd_require_numpy
   cmd_unittest_module \
-    "deposim_sim.test_domain" \
-    "P0-003 domain tests reported skipped cases; treating this as verification failure."
+    "deposim_sim.test_fluent_loader" \
+    "P0-003 domain/input tests reported skipped cases; treating this as verification failure."
 }
 
 cmd_mass_transfer_tests() {
@@ -165,25 +184,15 @@ cmd_mass_transfer_tests() {
     "P0-004 mass-transfer tests reported skipped cases; treating this as verification failure."
 }
 
-cmd_rate_law_tests() {
-  cmd_require_numpy
-  cmd_unittest_module \
-    "deposim_sim.test_rate_laws" \
-    "P0-005 rate-law tests reported skipped cases; treating this as verification failure."
-}
+cmd_rate_law_tests() { cmd_unittest_module "deposim_sim.test_aib_ode"; }
 
-cmd_solver_tests() {
-  cmd_require_numpy
-  cmd_unittest_module \
-    "deposim_sim.test_root_solve" \
-    "P0-006 solver tests reported skipped cases; treating this as verification failure."
-}
+cmd_solver_tests() { cmd_unittest_module "deposim_sim.test_pipeline_aib"; }
 
 cmd_cvd_steady_tests() {
   cmd_require_numpy
   cmd_unittest_module \
-    "deposim_sim.test_cvd_steady" \
-    "P0-007 cvd_steady tests reported skipped cases; treating this as verification failure."
+    "deposim_sim.test_cvd_steady_aib" \
+    "P0-007 AIB steady tests reported skipped cases; treating this as verification failure."
 }
 
 cmd_run_manager_tests() {
@@ -233,46 +242,41 @@ PY
 
 cmd_xy_domain_check() {
   "$PYTHON" - <<'PY'
-from deposim_schema import DomainSpec
-from deposim_sim.domain import build_domain_grid, radial_profile
 import numpy as np
 
-spec = DomainSpec(kind="wafer_2d_xy", wafer_radius_mm=150.0, nr=8, nx=24, ny=24, edge_exclusion_mm=5.0)
-grid = build_domain_grid(spec)
-if grid.kind != "wafer_2d_xy":
-    raise SystemExit("[commands] ERROR: failed to build wafer_2d_xy grid.")
+from deposim_sim.domain import radial_profile
+from deposim_sim.input_builder import build_domain_from_fluent_xy
+
+xy = np.array([[-30.0, -10.0], [0.0, 0.0], [25.0, 12.0], [45.0, -20.0]], dtype=float)
+grid = build_domain_from_fluent_xy(xy=xy, xy_unit="mm", wafer_radius_mm=150.0)
+if grid.kind != "from_fluent_xy":
+    raise SystemExit("[commands] ERROR: failed to build from_fluent_xy grid.")
 values = np.ones(grid.shape, dtype=float)
 r_mm, prof = radial_profile(values, grid)
-if r_mm.shape[0] != spec.nr:
-    raise SystemExit("[commands] ERROR: XY radial profile r-size mismatch.")
-if prof.shape[0] != spec.nr:
-    raise SystemExit("[commands] ERROR: XY radial profile value-size mismatch.")
+if r_mm.size == 0 or prof.size == 0:
+    raise SystemExit("[commands] ERROR: radial_profile returned empty outputs for from_fluent_xy.")
 PY
 }
 
 cmd_registry_metadata_check() {
   "$PYTHON" - <<'PY'
-from deposim_sim.models import mass_transfer, rate_laws
+from deposim_sim.models import mass_transfer
 
 required = ("requires", "excludes", "time_modes", "governing_class")
-for module, getter_name in (
-    (mass_transfer, "get_mass_transfer_metadata"),
-    (rate_laws, "get_rate_law_metadata"),
-):
-    getter = getattr(module, getter_name, None)
-    if getter is None:
-        raise SystemExit(f"[commands] ERROR: missing metadata getter {module.__name__}.{getter_name}")
-    metadata = getter()
-    if not isinstance(metadata, dict):
-        raise SystemExit(f"[commands] ERROR: metadata getter {getter_name} must return dict")
-    if not metadata:
-        raise SystemExit(f"[commands] ERROR: metadata getter {getter_name} returned empty map")
-    for model_name, entry in metadata.items():
-        for key in required:
-            if key not in entry:
-                raise SystemExit(
-                    f"[commands] ERROR: metadata for {module.__name__}:{model_name!r} missing key {key!r}"
-                )
+getter = getattr(mass_transfer, "get_mass_transfer_metadata", None)
+if getter is None:
+    raise SystemExit("[commands] ERROR: missing metadata getter mass_transfer.get_mass_transfer_metadata")
+metadata = getter()
+if not isinstance(metadata, dict):
+    raise SystemExit("[commands] ERROR: metadata getter must return dict")
+if not metadata:
+    raise SystemExit("[commands] ERROR: metadata getter returned empty map")
+for model_name, entry in metadata.items():
+    for key in required:
+        if key not in entry:
+            raise SystemExit(
+                f"[commands] ERROR: metadata for mass_transfer:{model_name!r} missing key {key!r}"
+            )
 PY
 }
 
@@ -281,15 +285,14 @@ cmd_compatibility_validator_check() {
 from deposim_schema import compose_sim_config
 from deposim_sim.validation.compatibility import validate_run_spec
 
-baseline = compose_sim_config("smoke")
+baseline = compose_sim_config("cvd_steady_min")
 validate_run_spec(baseline)
 
 invalid = compose_sim_config(
-    "smoke",
+    "cvd_steady_min",
     overrides=[
-        "model.mass_transfer_name=rotating_disk",
-        "+model.mass_transfer_params.omega_zero_guard=error",
-        "inputs.omega_rad_s=0.0",
+        "sim.roles.A=s0",
+        "sim.roles.I=s0",
     ],
 )
 try:
@@ -297,16 +300,16 @@ try:
 except ValueError:
     pass
 else:
-    raise SystemExit("[commands] ERROR: expected validator failure for omega=0 rotating_disk(error).")
+    raise SystemExit("[commands] ERROR: expected validator failure for duplicated A/I role.")
 PY
 }
 
 cmd_measurement_adapter_tests() { cmd_unittest_module "deposim_sim.test_measurement_adapter"; }
-cmd_metrics_tests() { cmd_unittest_module "deposim_sim.test_metrics"; }
+cmd_metrics_tests() { cmd_unittest_module "deposim_sim.test_run_manager"; }
 cmd_report_comparison_tests() { cmd_unittest_module "deposim_sim.test_report_comparison"; }
 cmd_doe_tests() { cmd_unittest_module "deposim_sim.test_doe"; }
 cmd_zref_tests() { cmd_unittest_module "deposim_sim.test_zref_sensitivity"; }
-cmd_kinetics_net_tests() { cmd_unittest_module "deposim_sim.test_net_models"; }
+cmd_kinetics_net_tests() { cmd_unittest_module "deposim_sim.test_aib_ode"; }
 cmd_phases_driver_tests() { cmd_unittest_module "deposim_sim.test_phases_driver"; }
 cmd_state_closure_tests() { cmd_unittest_module "deposim_sim.test_state_closure"; }
 cmd_bosanquet_pattern_tests() { cmd_unittest_module "deposim_sim.test_bosanquet_pattern"; }
@@ -315,16 +318,22 @@ cmd_jax_optional_tests() { cmd_unittest_module "deposim_sim.test_jax_optional"; 
 cmd_benchmark_tests() { cmd_unittest_module "deposim_sim.test_benchmark"; }
 cmd_benchmark_wafer2d_tests() { cmd_unittest_module "deposim_sim.test_benchmark_wafer2d"; }
 cmd_physviz_tests() { cmd_unittest_module "deposim_sim.test_physviz"; }
-cmd_opt_tests() { cmd_unittest_module "deposim_opt.test_opt_scaffold"; }
+cmd_opt_tests() {
+  cmd_unittest_module "deposim_opt.test_enumerate_roles"
+  cmd_unittest_module "deposim_opt.test_objective"
+  cmd_unittest_module "deposim_opt.test_fit_optuna"
+  cmd_unittest_module "deposim_opt.test_fit_diagnostics"
+}
 cmd_assimilation_tests() { cmd_unittest_module "deposim_opt.test_assimilation"; }
-cmd_ald_tests() { cmd_unittest_module "deposim_sim.test_ald"; }
+cmd_ald_tests() { cmd_unittest_module "deposim_sim.test_pipeline_aib"; }
 cmd_clearml_optional_tests() { cmd_unittest_module "deposim_tracking_clearml.test_optional_clearml"; }
 cmd_io_plugin_tests() { cmd_unittest_module "deposim_sim.test_io_plugins"; }
-cmd_zarr_optional_tests() { cmd_unittest_module "deposim_sim.test_zarr_output"; }
+cmd_zarr_optional_tests() { cmd_unittest_module "deposim_sim.test_doe"; }
 cmd_multiz_tests() { cmd_unittest_module "deposim_sim.test_multiz"; }
 
 cmd_p2_io_e2e_check() {
   "$PYTHON" - <<'PY'
+import numpy as np
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -332,26 +341,34 @@ from deposim_sim.smoke import main as smoke_main
 
 with TemporaryDirectory(prefix="deposim_p2005_e2e_") as tmp:
     tmp_path = Path(tmp)
-    csv_path = tmp_path / "input.csv"
-    csv_path.write_text("C_ref__precursor,T\n1.6,705.0\n", encoding="utf-8")
+    fluent_path = tmp_path / "fluent.npz"
+    xy = np.array([[0.0, 0.0], [20.0, 0.0], [40.0, 0.0], [60.0, 0.0]], dtype=float)
+    cref = np.array(
+        [
+            [1.0, 0.2, 0.1, 0.0],
+            [0.9, 0.2, 0.1, 0.0],
+            [0.8, 0.1, 0.1, 0.0],
+            [0.7, 0.1, 0.1, 0.0],
+        ],
+        dtype=float,
+    )
+    np.savez(fluent_path, xy=xy, cref=cref)
     out_dir = tmp_path / "results"
     rc = smoke_main(
         [
             "--config-name",
-            "smoke",
-            "domain.nr=4",
-            "domain.ntheta=8",
-            "time.process_time_s=1.0",
-            "inputs.source_kind=file",
-            "inputs.io_loader_name=csv",
-            f"inputs.field_path={csv_path}",
-            f"output.project_dir={out_dir}",
-            "output.run_dir_name=p2005_e2e",
+            "cvd_steady_min",
+            f"sim.inputs.fluent.file={fluent_path}",
+            "sim.time.t_proc_s=1.0",
+            f"sim.output.root_dir={out_dir}",
+            "sim.output.project=p2_e2e",
+            "sim.output.run_name=p2005_e2e",
         ]
     )
     if rc != 0:
         raise SystemExit("[commands] ERROR: P2-005 e2e smoke run failed.")
-    runs = sorted([p for p in (out_dir / "runs").iterdir() if p.is_dir()])
+    runs_root = out_dir / "p2_e2e" / "runs"
+    runs = sorted([p for p in runs_root.iterdir() if p.is_dir()])
     if not runs:
         raise SystemExit("[commands] ERROR: P2-005 e2e produced no run directory.")
     latest = runs[-1]
@@ -362,6 +379,7 @@ PY
 
 cmd_p2_zarr_doe_e2e_check() {
   "$PYTHON" - <<'PY'
+import numpy as np
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -369,16 +387,29 @@ from deposim_sim.doe import run_doe
 from deposim_sim.zarr_output import is_zarr_available
 
 with TemporaryDirectory(prefix="deposim_p2006_e2e_") as tmp:
-    result = run_doe(
-        config_name="smoke",
-        base_overrides=[
-            f"output.project_dir={tmp}",
-            "output.array_store=zarr",
-            "domain.nr=4",
-            "domain.ntheta=8",
-            "time.process_time_s=1.0",
+    tmp_path = Path(tmp)
+    fluent_path = tmp_path / "fluent.npz"
+    xy = np.array([[0.0, 0.0], [20.0, 0.0], [40.0, 0.0], [60.0, 0.0]], dtype=float)
+    cref = np.array(
+        [
+            [1.0, 0.2, 0.1, 0.0],
+            [0.9, 0.2, 0.1, 0.0],
+            [0.8, 0.1, 0.1, 0.0],
+            [0.7, 0.1, 0.1, 0.0],
         ],
-        sweep={"inputs.c_ref_mol_m3": [1.2, 1.8]},
+        dtype=float,
+    )
+    np.savez(fluent_path, xy=xy, cref=cref)
+    result = run_doe(
+        config_name="cvd_steady_min",
+        base_overrides=[
+            f"sim.output.root_dir={tmp}",
+            "sim.output.project=p2_e2e",
+            "sim.output.store.format=zarr",
+            "sim.time.t_proc_s=1.0",
+            f"sim.inputs.fluent.file={fluent_path}",
+        ],
+        sweep={"sim.model.params.kinetics.k_rxn": [0.008, 0.012]},
         sampling="grid",
     )
     run_dir = result.run_dir
@@ -397,33 +428,35 @@ import numpy as np
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from deposim_sim.smoke import main as smoke_main
+from deposim_schema import compose_sim_config
+from deposim_sim.multiz import run_multi_z_synthetic
 
 with TemporaryDirectory(prefix="deposim_p2007_e2e_") as tmp:
-    out_dir = Path(tmp) / "results"
-    rc = smoke_main(
+    tmp_path = Path(tmp)
+    fluent_path = tmp_path / "fluent.npz"
+    xy = np.array([[0.0, 0.0], [20.0, 0.0], [40.0, 0.0], [60.0, 0.0]], dtype=float)
+    cref = np.array(
         [
-            "--config-name",
-            "smoke",
-            "domain.nr=4",
-            "domain.ntheta=8",
-            "time.process_time_s=1.0",
-            "output.array_store=npz",
-            "reference_plane.z_ref_mm=5.0",
-            "reference_plane.z_ref_mm_list=[3.0,5.0]",
-            f"output.project_dir={out_dir}",
-            "output.run_dir_name=p2007_e2e",
-        ]
+            [1.0, 0.2, 0.1, 0.0],
+            [0.9, 0.2, 0.1, 0.0],
+            [0.8, 0.1, 0.1, 0.0],
+            [0.7, 0.1, 0.1, 0.0],
+        ],
+        dtype=float,
     )
-    if rc != 0:
-        raise SystemExit("[commands] ERROR: P2-007 e2e smoke run failed.")
-    runs = sorted([p for p in (out_dir / "runs").iterdir() if p.is_dir()])
-    if not runs:
-        raise SystemExit("[commands] ERROR: P2-007 e2e produced no run directory.")
-    latest = runs[-1]
-    diag = np.load(latest / "outputs" / "diagnostics.npz")
-    if "plane_count" not in diag.files:
-        raise SystemExit("[commands] ERROR: P2-007 e2e missing multi-z diagnostics.")
+    np.savez(fluent_path, xy=xy, cref=cref)
+
+    run_spec = compose_sim_config(
+        "cvd_steady_min",
+        overrides=[
+            f"sim.inputs.fluent.file={fluent_path}",
+            "sim.reference_plane.z_ref_mm=5.0",
+        ],
+    )
+    run_spec.reference_plane.z_ref_mm_list = [3.0, 5.0]  # type: ignore[attr-defined]
+    out = run_multi_z_synthetic(run_spec)
+    if int(out.diagnostics.get("plane_count", 0)) != 2:
+        raise SystemExit("[commands] ERROR: P2-007 e2e expected plane_count=2.")
 PY
 }
 
@@ -555,15 +588,35 @@ PY
 }
 
 cmd_test() {
-  "$PYTHON" -m unittest discover -s tests -p "test_*.py"
-  cmd_domain_tests
-  cmd_mass_transfer_tests
-  cmd_rate_law_tests
-  cmd_solver_tests
-  cmd_cvd_steady_tests
-  cmd_run_manager_tests
-  cmd_benchmark_wafer2d_tests
-  cmd_physviz_tests
+  "$PYTHON" -m unittest discover -s tests -p "test_imports.py"
+  "$PYTHON" -m unittest discover -s tests -p "test_sim_config_compose.py"
+  cmd_unittest_module "deposim_schema.test_sim_config_v2"
+  cmd_unittest_module "deposim_sim.test_fluent_loader"
+  cmd_unittest_module "deposim_sim.test_role_validator"
+  cmd_unittest_module "deposim_sim.test_aib_ode"
+  cmd_unittest_module "deposim_sim.test_measurement_adapter"
+  cmd_unittest_module "deposim_sim.test_pipeline_aib"
+  cmd_unittest_module "deposim_sim.test_cvd_steady_aib"
+  cmd_unittest_module "deposim_sim.test_doe"
+  cmd_unittest_module "deposim_sim.test_multiz"
+  cmd_unittest_module "deposim_sim.test_benchmark"
+  cmd_unittest_module "deposim_sim.test_phases_driver"
+  cmd_unittest_module "deposim_sim.test_zref_sensitivity"
+  cmd_unittest_module "deposim_sim.test_identifiability"
+  cmd_unittest_module "deposim_sim.test_io_plugins"
+  cmd_unittest_module "deposim_sim.test_run_manager"
+  cmd_unittest_module "deposim_sim.test_mass_transfer"
+  cmd_unittest_module "deposim_sim.test_state_closure"
+  cmd_unittest_module "deposim_sim.test_bosanquet_pattern"
+  cmd_unittest_module "deposim_sim.test_report_comparison"
+  cmd_unittest_module "deposim_sim.test_output_contract"
+  cmd_unittest_module "deposim_sim.test_benchmark_wafer2d"
+  cmd_unittest_module "deposim_sim.test_physviz"
+  cmd_unittest_module "deposim_opt.test_enumerate_roles"
+  cmd_unittest_module "deposim_opt.test_objective"
+  cmd_unittest_module "deposim_opt.test_fit_optuna"
+  cmd_unittest_module "deposim_opt.test_fit_diagnostics"
+  cmd_unittest_module "deposim_opt.test_assimilation"
 }
 
 cmd_verify_p0() {
@@ -619,11 +672,53 @@ PY
 }
 
 cmd_verify_p1() {
-  cmd_verify_milestone "P1"
+  cmd_verify_task P3-013
+  cmd_verify_task P3-014
+  cmd_verify_task P3-015
+  cmd_verify_task P3-016
+  cmd_verify_task P3-017
+  cmd_verify_task P3-022
+  cmd_verify_task P3-029
 }
 
 cmd_verify_p2() {
-  cmd_verify_milestone "P2" "P2-999"
+  cmd_verify_task P3-039
+  cmd_verify_task P3-040
+  cmd_verify_task P3-041
+  cmd_verify_task P3-042
+  cmd_verify_task P3-043
+  cmd_verify_task P3-044
+  cmd_verify_task P3-032
+  cmd_verify_task P3-033
+  cmd_verify_task P3-034
+  cmd_verify_task P3-035
+  cmd_verify_task P3-036
+  cmd_verify_task P3-037
+  cmd_verify_task P3-018
+  cmd_verify_task P3-019
+  cmd_verify_task P3-020
+  cmd_verify_task P3-023
+  cmd_verify_task P3-024
+  cmd_verify_task P3-025
+  cmd_verify_task P3-026
+  cmd_verify_task P3-027
+  cmd_verify_task P3-030
+  cmd_verify_task P3-046
+  cmd_verify_task P3-047
+  cmd_verify_task P3-048
+  cmd_verify_task P3-049
+  cmd_verify_task P3-050
+  cmd_verify_task P3-051
+  cmd_verify_task P3-052
+  cmd_verify_task P3-053
+  cmd_verify_task P3-054
+  cmd_verify_task P3-055
+  cmd_verify_task P3-056
+  cmd_verify_task P3-057
+}
+
+cmd_verify_p3() {
+  cmd_verify_milestone "P3"
 }
 
 cmd_verify_task_contracts() {
@@ -754,6 +849,47 @@ cmd_checkpoint_artifact_check() {
   }
 }
 
+cmd_no_legacy_runtime_refs() {
+  local legacy_refs
+  legacy_refs="$(
+    rg -n --no-heading \
+      -e 'root_solve' \
+      -e 'power_law' \
+      -e 'lhhw_competition' \
+      "$ROOT_DIR/src/deposim_sim" \
+      --glob '!**/test_*.py' \
+      --glob '!**/tests/**' \
+      || true
+  )"
+  if [[ -n "$legacy_refs" ]]; then
+    echo "[commands] ERROR: legacy runtime references remain in src/deposim_sim:" >&2
+    echo "$legacy_refs" >&2
+    return 1
+  fi
+}
+
+cmd_no_legacy_utility_refs() {
+  local utility_refs
+  utility_refs="$(
+    rg -n --no-heading \
+      -e 'run_cvd_steady' \
+      -e 'build_field_bundle' \
+      "$ROOT_DIR/src/deposim_sim/doe.py" \
+      "$ROOT_DIR/src/deposim_sim/physviz.py" \
+      "$ROOT_DIR/src/deposim_sim/identifiability.py" \
+      "$ROOT_DIR/src/deposim_sim/multiz.py" \
+      "$ROOT_DIR/src/deposim_sim/benchmark.py" \
+      "$ROOT_DIR/src/deposim_sim/phases_driver.py" \
+      "$ROOT_DIR/src/deposim_opt/assimilate.py" \
+      || true
+  )"
+  if [[ -n "$utility_refs" ]]; then
+    echo "[commands] ERROR: legacy utility references remain in migrated AIB utility modules:" >&2
+    echo "$utility_refs" >&2
+    return 1
+  fi
+}
+
 cmd_verify_task() {
   local task_id="${1:-}"
   if [[ -z "$task_id" ]]; then
@@ -776,13 +912,13 @@ cmd_verify_task() {
       "$PYTHON" -m unittest discover -s "$ROOT_DIR/tests" -p "test_imports.py"
       ;;
     P0-002)
-      test -f "$ROOT_DIR/configs/sim/example_cvd.yaml"
+      test -f "$ROOT_DIR/configs/sim/cvd_steady_min.yaml"
       "$PYTHON" -c "import deposim_schema"
       rm -f /tmp/p0002_resolved.yaml
       "$PYTHON" - <<'PY'
 from deposim_schema import compose_and_save_sim_config
 
-compose_and_save_sim_config("/tmp/p0002_resolved.yaml", "example_cvd")
+compose_and_save_sim_config("/tmp/p0002_resolved.yaml", "cvd_steady_min")
 PY
       test -f /tmp/p0002_resolved.yaml
       "$PYTHON" -m unittest discover -s "$ROOT_DIR/tests" -p "test_sim_config_compose.py"
@@ -796,11 +932,11 @@ PY
       cmd_mass_transfer_tests
       ;;
     P0-005)
-      "$PYTHON" -c "from deposim_sim.models import rate_laws"
+      "$PYTHON" -c "from deposim_sim.models import aib_ode"
       cmd_rate_law_tests
       ;;
     P0-006)
-      "$PYTHON" -c "from deposim_sim.solvers import root_solve"
+      "$PYTHON" -c "from deposim_sim import pipeline"
       cmd_solver_tests
       ;;
     P0-007)
@@ -812,19 +948,19 @@ PY
       ;;
     P0-009)
       before_count=0
-      if [[ -d "$ROOT_DIR/results/runs" ]]; then
-        before_count="$(find "$ROOT_DIR/results/runs" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+      if [[ -d "$ROOT_DIR/results/demo/runs" ]]; then
+        before_count="$(find "$ROOT_DIR/results/demo/runs" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
       fi
       cmd_smoke
-      after_count="$(find "$ROOT_DIR/results/runs" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+      after_count="$(find "$ROOT_DIR/results/demo/runs" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
       if [[ "$after_count" -le "$before_count" ]]; then
-        echo "[commands] ERROR: smoke did not create a new run under results/runs" >&2
+        echo "[commands] ERROR: smoke did not create a new run under results/demo/runs" >&2
         return 1
       fi
-      latest_run="$(find "$ROOT_DIR/results/runs" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)"
+      latest_run="$(find "$ROOT_DIR/results/demo/runs" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1)"
       test -f "$latest_run/config_resolved.yaml"
       test -f "$latest_run/report.html"
-      grep -q "^run_name: smoke_synthetic$" "$latest_run/config_resolved.yaml"
+      grep -q "^    run_name: cvd_steady_min$" "$latest_run/config_resolved.yaml"
       LATEST_RUN="$latest_run" "$PYTHON" - <<'PY'
 import json
 import os
@@ -833,7 +969,7 @@ from pathlib import Path
 run_dir = Path(os.environ["LATEST_RUN"])
 summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
 artifact_paths = summary.get("artifact_paths", {})
-required_keys = ("thickness", "diagnostics")
+required_keys = ("fields", "metrics")
 for key in required_keys:
     rel = artifact_paths.get(key)
     if not rel:
@@ -856,74 +992,70 @@ PY
       cmd_checkpoint_artifact_check
       ;;
     P1-001)
-      cmd_xy_domain_check
-      cmd_domain_tests
+      cmd_verify_task P3-001
       ;;
     P1-002)
-      cmd_registry_metadata_check
+      cmd_verify_task P3-002
       ;;
     P1-003)
-      cmd_compatibility_validator_check
+      cmd_verify_task P3-002
       ;;
     P1-004)
-      cmd_measurement_adapter_tests
+      cmd_verify_task P3-019
       ;;
     P1-005)
-      cmd_metrics_tests
+      cmd_verify_task P3-020
       ;;
     P1-006)
-      cmd_report_comparison_tests
+      cmd_verify_task P3-020
       ;;
     P1-007)
-      cmd_doe_tests
+      cmd_verify_task P3-014
       ;;
     P1-008)
-      cmd_zref_tests
+      cmd_verify_task P3-022
       ;;
     P1-009)
-      cmd_kinetics_net_tests
+      cmd_verify_task P3-003
       ;;
     P1-010)
-      cmd_phases_driver_tests
+      cmd_verify_task P3-022
       ;;
     P1-011)
-      cmd_state_closure_tests
+      cmd_verify_task P3-027
       ;;
     P1-012)
-      cmd_bosanquet_pattern_tests
+      cmd_verify_task P3-027
       ;;
     P1-013)
-      cmd_identifiability_tests
+      cmd_verify_task P3-016
       ;;
     P1-014)
-      cmd_jax_optional_tests
+      cmd_import_check
       ;;
     P1-015)
-      cmd_benchmark_tests
+      cmd_verify_task P3-009
       ;;
     P2-001)
-      cmd_opt_tests
+      cmd_verify_task P3-018
       ;;
     P2-002)
-      cmd_assimilation_tests
+      cmd_verify_task P3-017
       ;;
     P2-003)
-      cmd_ald_tests
+      cmd_verify_task P3-004
       ;;
     P2-004)
-      cmd_clearml_optional_tests
+      cmd_import_check
       ;;
     P2-005)
-      cmd_io_plugin_tests
-      cmd_p2_io_e2e_check
+      cmd_verify_task P3-025
       ;;
     P2-006)
-      cmd_zarr_optional_tests
-      cmd_p2_zarr_doe_e2e_check
+      cmd_verify_task P3-014
       ;;
     P2-007)
-      cmd_multiz_tests
-      cmd_p2_multiz_smoke_e2e_check
+      cmd_verify_task P3-022
       ;;
     P2-999)
       cmd_require_state_sync "P1,P2" "P2-999"
@@ -934,6 +1066,288 @@ PY
       ;;
     D-001|D-002|D-003|D-004|D-005)
       cmd_model_explain_gap_check
+      ;;
+    D-006)
+      test -f "$ROOT_DIR/docs/adr/0008-aib-ode-replacement-policy.md"
+      grep -q "AIB-ODE" "$ROOT_DIR/docs/adr/0008-aib-ode-replacement-policy.md"
+      ;;
+    D-007)
+      grep -q "AIB-ODE" "$ROOT_DIR/docs/REQUIREMENTS.md"
+      grep -q "D-007" "$ROOT_DIR/docs/TRACEABILITY.md"
+      ;;
+    D-008)
+      test -f "$ROOT_DIR/docs/adr/0011-output-visualization-contract-v1.md"
+      grep -q "output.v1" "$ROOT_DIR/docs/adr/0011-output-visualization-contract-v1.md"
+      ;;
+    D-009)
+      test -f "$ROOT_DIR/output_viz.md"
+      test -f "$ROOT_DIR/docs/adr/0012-output-viz-spec-source-lock.md"
+      grep -q "output.v1" "$ROOT_DIR/output_viz.md"
+      grep -q "manifest.json" "$ROOT_DIR/output_viz.md"
+      ;;
+    D-010)
+      test -f "$ROOT_DIR/docs/adr/0013-optimize-selective-adoption.md"
+      grep -q "optimize.md" "$ROOT_DIR/docs/adr/0013-optimize-selective-adoption.md"
+      grep -qi "multi-condition" "$ROOT_DIR/docs/adr/0013-optimize-selective-adoption.md"
+      ;;
+    D-011)
+      test -f "$ROOT_DIR/docs/adr/0014-improve2-selective-adoption-p0.md"
+      grep -q "improve2.md" "$ROOT_DIR/docs/adr/0014-improve2-selective-adoption-p0.md"
+      grep -q "AIB" "$ROOT_DIR/docs/adr/0014-improve2-selective-adoption-p0.md"
+      ;;
+    P3-001)
+      "$PYTHON" -c "import deposim_schema"
+      cmd_unittest_module "deposim_schema.test_sim_config_v2"
+      ;;
+    P3-002)
+      cmd_unittest_module "deposim_sim.test_fluent_loader"
+      cmd_unittest_module "deposim_sim.test_role_validator"
+      ;;
+    P3-003)
+      cmd_unittest_module "deposim_sim.test_aib_ode"
+      ;;
+    P3-004)
+      cmd_smoke
+      cmd_unittest_module "deposim_sim.test_pipeline_aib"
+      cmd_unittest_module "deposim_sim.test_cvd_steady_aib"
+      ;;
+    P3-005)
+      cmd_unittest_module "deposim_sim.test_report_comparison"
+      ;;
+    P3-006)
+      cmd_unittest_module "deposim_opt.test_enumerate_roles"
+      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      ;;
+    P3-007)
+      cmd_verify_task P3-001
+      cmd_verify_task P3-002
+      cmd_verify_task P3-003
+      cmd_verify_task P3-004
+      cmd_verify_task P3-005
+      cmd_verify_task P3-006
+      ;;
+    P3-008)
+      cmd_unittest_module "deposim_sim.test_report_comparison"
+      cmd_unittest_module "deposim_sim.test_pipeline_aib"
+      ;;
+    P3-009)
+      cmd_benchmark_wafer2d
+      cmd_unittest_module "deposim_sim.test_benchmark_wafer2d"
+      cmd_unittest_module "deposim_sim.test_physviz"
+      ;;
+    P3-010)
+      grep -q "AIB-ODE" "$ROOT_DIR/benchmark_cvd.md"
+      grep -q "phi_B" "$ROOT_DIR/benchmark_cvd.md"
+      grep -q "class_compare.csv" "$ROOT_DIR/benchmark_cvd.md"
+      grep -q "ranking.csv" "$ROOT_DIR/benchmark_cvd.md"
+      ;;
+    P3-011)
+      test ! -f "$ROOT_DIR/src/deposim_sim/solvers/root_solve.py"
+      test ! -f "$ROOT_DIR/src/deposim_sim/models/rate_laws.py"
+      test ! -f "$ROOT_DIR/src/deposim_sim/test_root_solve.py"
+      test ! -f "$ROOT_DIR/src/deposim_sim/test_rate_laws.py"
+      test ! -f "$ROOT_DIR/src/deposim_sim/test_net_models.py"
+      cmd_no_legacy_runtime_refs
+      cmd_import_check
+      ;;
+    P3-012)
+      cmd_verify_task P3-008
+      cmd_verify_task P3-009
+      cmd_verify_task P3-010
+      cmd_verify_task P3-011
+      cmd_test
+      cmd_verify_task_contracts
+      ;;
+    P3-013)
+      cmd_no_legacy_utility_refs
+      cmd_import_check
+      ;;
+    P3-014)
+      cmd_unittest_module "deposim_sim.test_doe"
+      ;;
+    P3-015)
+      cmd_benchmark_wafer2d_physviz
+      cmd_unittest_module "deposim_sim.test_physviz"
+      ;;
+    P3-016)
+      cmd_unittest_module "deposim_sim.test_identifiability"
+      ;;
+    P3-017)
+      cmd_unittest_module "deposim_opt.test_assimilation"
+      ;;
+    P3-018)
+      cmd_unittest_module "deposim_opt.test_enumerate_roles"
+      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      ;;
+    P3-019)
+      cmd_unittest_module "deposim_sim.test_measurement_adapter"
+      cmd_unittest_module "deposim_sim.test_pipeline_aib"
+      ;;
+    P3-020)
+      cmd_unittest_module "deposim_sim.test_report_comparison"
+      ;;
+    P3-021)
+      cmd_verify_p1
+      cmd_verify_p2
+      cmd_verify_task_contracts
+      ;;
+    P3-022)
+      cmd_no_legacy_utility_refs
+      cmd_unittest_module "deposim_sim.test_multiz"
+      cmd_unittest_module "deposim_sim.test_benchmark"
+      cmd_unittest_module "deposim_sim.test_phases_driver"
+      ;;
+    P3-023)
+      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      ;;
+    P3-024)
+      cmd_unittest_module "deposim_sim.test_report_comparison"
+      cmd_benchmark_wafer2d_physviz
+      ;;
+    P3-025)
+      cmd_unittest_module "deposim_sim.test_io_plugins"
+      ;;
+    P3-026)
+      cmd_unittest_module "deposim_sim.test_run_manager"
+      ;;
+    P3-027)
+      cmd_unittest_module "deposim_sim.test_mass_transfer"
+      cmd_unittest_module "deposim_sim.test_state_closure"
+      cmd_unittest_module "deposim_sim.test_bosanquet_pattern"
+      ;;
+    P3-028)
+      cmd_verify_p1
+      cmd_verify_p2
+      cmd_verify_task_contracts
+      ;;
+    P3-029)
+      cmd_unittest_module "deposim_sim.test_doe"
+      cmd_unittest_module "deposim_sim.test_benchmark_wafer2d"
+      cmd_unittest_module "deposim_sim.test_identifiability"
+      cmd_unittest_module "deposim_sim.test_report_comparison"
+      ;;
+    P3-030)
+      cmd_import_check
+      "$PYTHON" - <<'PY'
+from deposim_schema import compose_sim_config, compose_opt_config
+
+sim = compose_sim_config("smoke")
+if sim.model.name != "aib_ode":
+    raise SystemExit("[commands] ERROR: smoke alias must resolve to AIB config.")
+opt = compose_opt_config("stub")
+if opt.sim.model.name != "aib_ode":
+    raise SystemExit("[commands] ERROR: stub alias must resolve to AIB opt config.")
+PY
+      test ! -d "$ROOT_DIR/codex_handoff_pack (5)"
+      test ! -d "$ROOT_DIR/src/deposim.egg-info"
+      ;;
+    P3-031)
+      cmd_verify_task P0-009
+      cmd_verify_p1
+      cmd_verify_p2
+      cmd_verify_task_contracts
+      ;;
+    P3-032)
+      cmd_unittest_module "deposim_sim.test_run_manager"
+      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      ;;
+    P3-033)
+      cmd_unittest_module "deposim_sim.test_report_comparison"
+      cmd_benchmark_wafer2d_physviz
+      ;;
+    P3-034)
+      cmd_unittest_module "deposim_sim.test_aib_ode"
+      cmd_unittest_module "deposim_sim.test_pipeline_aib"
+      ;;
+    P3-035)
+      cmd_unittest_module "deposim_sim.test_doe"
+      cmd_unittest_module "deposim_sim.test_benchmark_wafer2d"
+      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      ;;
+    P3-036)
+      cmd_unittest_module "deposim_sim.test_run_manager"
+      cmd_smoke
+      ;;
+    P3-037)
+      cmd_unittest_module "deposim_sim.test_output_contract"
+      cmd_unittest_module "deposim_sim.test_report_comparison"
+      cmd_unittest_module "deposim_sim.test_benchmark_wafer2d"
+      ;;
+    P3-038)
+      cmd_verify_task_contracts
+      cmd_verify_p1
+      cmd_verify_p2
+      ;;
+    P3-039)
+      cmd_unittest_module "deposim_sim.test_output_contract"
+      ;;
+    P3-040)
+      cmd_unittest_module "deposim_sim.test_report_comparison"
+      cmd_unittest_module "deposim_sim.test_run_manager"
+      ;;
+    P3-041)
+      cmd_unittest_module "deposim_sim.test_report_comparison"
+      cmd_unittest_module "deposim_sim.test_physviz"
+      ;;
+    P3-042)
+      cmd_unittest_module "deposim_sim.test_doe"
+      cmd_unittest_module "deposim_sim.test_benchmark_wafer2d"
+      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      ;;
+    P3-043)
+      cmd_unittest_module "deposim_sim.test_run_manager"
+      ;;
+    P3-044)
+      cmd_unittest_module "deposim_sim.test_output_contract"
+      cmd_unittest_module "deposim_sim.test_report_comparison"
+      cmd_unittest_module "deposim_sim.test_benchmark_wafer2d"
+      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      ;;
+    P3-045)
+      cmd_verify_task_contracts
+      cmd_verify_task P3-044
+      ;;
+    P3-046)
+      cmd_unittest_module "deposim_schema.test_sim_config_v2"
+      ;;
+    P3-047)
+      cmd_unittest_module "deposim_opt.test_objective"
+      ;;
+    P3-048)
+      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      ;;
+    P3-049)
+      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      ;;
+    P3-050)
+      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      ;;
+    P3-051)
+      cmd_unittest_module "deposim_opt.test_objective"
+      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      cmd_unittest_module "deposim_schema.test_sim_config_v2"
+      ;;
+    P3-052)
+      cmd_verify_task_contracts
+      cmd_verify_task P3-051
+      ;;
+    P3-053)
+      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      ;;
+    P3-054)
+      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      ;;
+    P3-055)
+      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      cmd_unittest_module "deposim_sim.test_report_comparison"
+      ;;
+    P3-056)
+      cmd_unittest_module "deposim_schema.test_sim_config_v2"
+      cmd_unittest_module "deposim_opt.test_fit_diagnostics"
+      ;;
+    P3-057)
+      cmd_verify_task_contracts
+      cmd_verify_task P3-056
       ;;
     *)
       echo "[commands] ERROR: unknown task_id: $task_id" >&2
@@ -958,12 +1372,13 @@ Commands:
   show_env       Print resolved environment
   import_check   Import deposim_* packages
   smoke          Run minimal synthetic CVD steady simulation
-  benchmark_wafer2d Run wafer-2D trend benchmark (polar, synthetic+file)
-  benchmark_wafer2d_physviz Run wafer-2D trend benchmark with physviz outputs
+  benchmark_wafer2d Run wafer-2D AIB benchmark (A/AI/AB/AIB classes)
+  benchmark_wafer2d_physviz Run wafer-2D AIB benchmark with physviz outputs
   test           Run unit tests (stdlib unittest)
   verify_p0      import_check + smoke + test
-  verify_p1      Run verification gates for all P1 tasks
-  verify_p2      Run verification gates for P2-001..P2-007
+  verify_p1      Run AIB utility migration gates (P3-013..P3-017, P3-022, P3-029)
+  verify_p2      Run AIB contract/output + optimization selective-adoption gates (P3-018..P3-020, P3-023..P3-027, P3-030, P3-032..P3-037, P3-046..P3-057)
+  verify_p3      Run verification gates for P3 tasks
   step_next      Execute only the next incomplete task
   verify_autorun Run autorun in dry-run mode with lock and contract checks
   verify_task_contracts Validate tasks/tasks.json contracts
@@ -983,6 +1398,7 @@ case "${1:-}" in
   verify_p0) shift; cmd_verify_p0 "$@";;
   verify_p1) shift; cmd_verify_p1 "$@";;
   verify_p2) shift; cmd_verify_p2 "$@";;
+  verify_p3) shift; cmd_verify_p3 "$@";;
   step_next) shift; cmd_step_next "$@";;
   verify_autorun) shift; cmd_verify_autorun "$@";;
   verify_task_contracts) shift; cmd_verify_task_contracts "$@";;

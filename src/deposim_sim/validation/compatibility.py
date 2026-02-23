@@ -1,90 +1,62 @@
-"""Compatibility validation for model/time/input combinations."""
+"""Validation helpers for AIB simulation configuration."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any
-
-from deposim_sim.models.mass_transfer import get_mass_transfer_metadata
-from deposim_sim.models.rate_laws import get_rate_law_metadata
+import warnings
 
 
-_DYNAMIC_STATE_NAMES = {"dynamic_ode", "coverage_dynamic", "coverage_ode"}
+def validate_roles_v2(run_spec: Any) -> None:
+    """Validate role contract: A required, I/B optional, all disjoint."""
+
+    sim = getattr(run_spec, "sim", run_spec)
+    roles = sim.roles
+    species = list(sim.inputs.fluent.species)
+
+    if not roles.A:
+        raise ValueError("sim.roles.A is required")
+    if roles.A not in species:
+        raise ValueError("sim.roles.A must be in sim.inputs.fluent.species")
+    if roles.I is not None and roles.I not in species:
+        raise ValueError("sim.roles.I must be in sim.inputs.fluent.species")
+    if roles.B is not None and roles.B not in species:
+        raise ValueError("sim.roles.B must be in sim.inputs.fluent.species")
+
+    selected = [x for x in (roles.A, roles.I, roles.B) if x is not None]
+    if len(set(selected)) != len(selected):
+        raise ValueError("sim.roles A/I/B must be disjoint")
 
 
-def _entry(
-    metadata: Mapping[str, Mapping[str, Any]],
-    model_name: str,
-    kind: str,
-) -> Mapping[str, Any]:
-    if model_name not in metadata:
-        supported = ", ".join(sorted(metadata))
-        raise ValueError(f"Unknown {kind} model '{model_name}'. Supported models: {{{supported}}}")
-    entry = metadata[model_name]
-    for key in ("requires", "excludes", "time_modes", "governing_class"):
-        if key not in entry:
-            raise ValueError(f"{kind} metadata for '{model_name}' is missing key '{key}'")
-    return entry
+def validate_sim_spec_v2(run_spec: Any) -> None:
+    """Validate AIB config contract and order constraints."""
 
+    sim = getattr(run_spec, "sim", run_spec)
+    validate_roles_v2(sim)
 
-def _check_time_mode(entry: Mapping[str, Any], *, model_name: str, kind: str, mode: str) -> None:
-    allowed = {str(value) for value in entry.get("time_modes", [])}
-    if allowed and mode not in allowed:
-        allowed_text = ", ".join(sorted(allowed))
-        raise ValueError(
-            f"{kind} model '{model_name}' is not compatible with time.mode='{mode}'. "
-            f"Allowed modes: {{{allowed_text}}}"
+    if sim.time_mode not in {"steady", "transient"}:
+        raise ValueError("sim.time_mode must be steady|transient")
+    if sim.inputs.fluent.mode not in {"steady", "transient"}:
+        raise ValueError("sim.inputs.fluent.mode must be steady|transient")
+    if sim.time_mode != sim.inputs.fluent.mode:
+        raise ValueError("sim.time_mode and sim.inputs.fluent.mode must match")
+
+    if len(sim.inputs.fluent.species) > 10:
+        warnings.warn(
+            "sim.inputs.fluent.species > 10 may make role enumeration expensive in v1.",
+            RuntimeWarning,
+            stacklevel=2,
         )
 
-
-def _check_rotating_disk_guard(run_spec: Any) -> None:
-    if str(run_spec.model.mass_transfer_name) != "rotating_disk":
-        return
-    omega = float(getattr(run_spec.inputs, "omega_rad_s", 0.0))
-    params = getattr(run_spec.model, "mass_transfer_params", {}) or {}
-    if not isinstance(params, Mapping):
-        raise ValueError("model.mass_transfer_params must be a mapping")
-    guard = str(params.get("omega_zero_guard", "error")).strip().lower()
-    if guard in {"fallback", "fallback_stagnant_film", "stagnant_film"}:
-        return
-    if omega <= 0.0:
-        raise ValueError(
-            "Invalid configuration: rotating_disk with omega_rad_s<=0 requires "
-            "omega_zero_guard='fallback_stagnant_film' or positive omega."
-        )
+    orders = sim.model.orders
+    has_b = sim.roles.B is not None
+    total_order = orders.reaction_site_order_A + orders.reaction_site_order_star + (1 if has_b else 0)
+    if total_order > int(orders.enforce_total_order_le):
+        raise ValueError("order constraint violated: p_A + p_* + m_B > 3")
 
 
-def _check_state_time_mode(run_spec: Any) -> None:
-    state_name = str(getattr(run_spec.model, "state_name", "none")).strip().lower()
-    mode = str(getattr(run_spec.time, "mode", "")).strip().lower()
-    if state_name in _DYNAMIC_STATE_NAMES and mode == "cvd_steady":
-        raise ValueError(
-            "Invalid configuration: dynamic state model cannot run with time.mode='cvd_steady'. "
-            "Use time.mode in {'cvd_transient','ald_cycle'} or a steady_state closure."
-        )
-
-
+# Backward-compatible name used by existing callers.
 def validate_run_spec(run_spec: Any) -> None:
-    """Raise ValueError when run_spec contains incompatible model/time/input combinations."""
-    if not hasattr(run_spec, "model") or not hasattr(run_spec, "time") or not hasattr(run_spec, "inputs"):
-        raise ValueError("run_spec must include model, time, and inputs sections")
+    validate_sim_spec_v2(run_spec)
 
-    mode = str(getattr(run_spec.time, "mode", "")).strip()
-    if not mode:
-        raise ValueError("time.mode must be non-empty")
 
-    mass_name = str(getattr(run_spec.model, "mass_transfer_name", "")).strip()
-    if not mass_name:
-        raise ValueError("model.mass_transfer_name must be non-empty")
-    mass_meta = _entry(get_mass_transfer_metadata(), mass_name, "mass_transfer")
-    _check_time_mode(mass_meta, model_name=mass_name, kind="mass_transfer", mode=mode)
-
-    kinetics_name = str(getattr(run_spec.model, "kinetics_name", "")).strip()
-    if not kinetics_name:
-        raise ValueError("model.kinetics_name must be non-empty")
-    rate_meta = _entry(get_rate_law_metadata(), kinetics_name, "rate_law")
-    _check_time_mode(rate_meta, model_name=kinetics_name, kind="rate_law", mode=mode)
-
-    _check_rotating_disk_guard(run_spec)
-    _check_state_time_mode(run_spec)
-
+__all__ = ["validate_roles_v2", "validate_sim_spec_v2", "validate_run_spec"]

@@ -40,33 +40,33 @@ The platform MUST run when omega_rad_s=0; rotation affects km models/averaging b
 
 Mass-transfer coefficient (k_m) MUST be selected via registry and YAML, supporting at least stagnant-film and rotating-disk options with omega guards.
 
-### MUST-007: Rate law family supports multi-order kinetics including negative/fractional apparent orders
+### MUST-007: Unified AIB-ODE core is the only primary kinetics path
 
-Rate laws MUST support explicit reaction orders and allow negative/fractional values as 'apparent' orders; stable numerical evaluation is required.
+The primary simulation path MUST use a single `aib_ode` model with role-based class selection (A/AI/AB/AIB), and MUST NOT require legacy `power_law/lhhw` model selection for primary execution.
 
-### MUST-008: Saturation/inhibition kinetics (denominator form) is supported
+### MUST-008: Role contract is fixed and validated
 
-At least one rate law MUST support saturation/inhibition via denominator (Langmuir/LHHW-like) to capture order transitions and inhibition effects.
+Role assignment MUST satisfy: A required, I/B each optional single species, A/I/B disjoint, and unused species allowed.
 
-### MUST-009: Standard diagnostics are produced (Cs/Cref, Da proxy, apparent orders)
+### MUST-009: Standard AIB diagnostics are produced (Cs ratios, phi_B, f_I)
 
-Outputs MUST include Cs/Cref map, a Damköhler-like proxy map, and apparent reaction order map(s) where possible.
+Outputs MUST include `CsA_over_CrefA`, `CsB_over_CrefB` (NaN when B absent), `phi_B`, and `f_I`, plus residual map when measurement is provided.
 
 ### MUST-010: Physical constraints are enforced
 
 Concentrations must be nonnegative; coverage must be in [0,1]; thickness sign convention must be consistent (deposit positive, etch negative).
 
-### MUST-011: Progress-variable reduction to scalar root solve (R) for dominant reaction
+### MUST-011: ODE-first update with implicit Euler+bisection is implemented
 
-For the common single-dominant-reaction case, the coupled system MUST be reduced to a scalar root solve in progress variable R with a physically safe bracket.
+The theta state update MUST use implicit Euler with bisection in `[0,1]` and preserve bounded state behavior.
 
-### MUST-012: Vectorized bracketing root solver (bisection) is implemented
+### MUST-012: Non-bracket fallback behavior is mandatory
 
-A vectorized bisection solver MUST be implemented for CPU and be compatible with a JAX backend later; iteration counts and status must be tracked.
+If implicit bracketing fails, the solver MUST fall back to a clamped explicit update and emit diagnostics (`non_bracketed_count`).
 
-### MUST-013: Monotonicity check + fallback behavior exists
+### MUST-013: Order constraints are enforced by validator
 
-The solver MUST include a monotonicity/shape check for F(R) and define fallback behavior (e.g., warn+interval split or controlled failure) for non-monotonic cases.
+The validator MUST enforce integer-order constraints and total-order limit: `p_A + p_* + m_B <= 3`, with `m_B` fixed by role-B presence.
 
 ### MUST-014: Regime sanity checks are testable
 
@@ -76,9 +76,9 @@ The code MUST include tests verifying behavior in reaction-limited and transport
 
 NumPy CPU baseline MUST exist. JAX is optional but planned; engine selection must be YAML-controlled.
 
-### MUST-016: Time modes: steady is implemented as primary CVD mode
+### MUST-016: Time modes are `steady` and `transient` with shared AIB core
 
-CVD steady mode MUST be implemented with thickness = rate * process_time; transient/phases are planned and tracked.
+CVD steady and transient MUST both run through the same AIB-ODE core; ALD baseline execution MUST use transient concentration time series.
 
 ### MUST-017: Drivers: support time/space varying external input modification
 
@@ -88,9 +88,9 @@ The framework MUST support modifying scalar and spatial inputs over time/phases 
 
 Initial conditions for state variables MUST support scalar values and spatial maps (for future ALD/state models).
 
-### MUST-019: Simulation config is YAML-managed via Hydra, split sim/opt
+### MUST-019: Simulation config is YAML-managed and split as `sim` / `opt`
 
-Configs MUST be YAML-based and composed by Hydra; sim and opt configs are separated into distinct directories.
+Configs MUST use YAML composition with `configs/sim/` and `configs/opt/`, and runtime contracts MUST be centered on `sim:` and `opt:` blocks.
 
 ### MUST-020: Simulation and optimization/ML code is separated into packages
 
@@ -110,7 +110,7 @@ All run/verify commands MUST be centralized in scripts/commands.sh; tasks and do
 
 ### MUST-024: Output layout has fixed entrypoint results/index.html
 
-Outputs MUST be organized per project with results/index.html as the fixed entrypoint; resolved config and summary must be saved per run.
+Outputs MUST be organized per project with `results/index.html` as the fixed entrypoint; resolved config and summary must be saved per run. Root and project indexes MUST both resolve to latest run reports.
 
 ### MUST-025: No directory explosion for DOE; case dimension storage
 
@@ -118,11 +118,24 @@ DOE outputs MUST be stored without per-case deep directories; store case-dimensi
 
 ### MUST-026: Standard plots and HTML report are generated
 
-Generate thickness map, radial profile, Cs/Cref, Da proxy, apparent order maps, plus an HTML report linking outputs.
+Generate thickness map, radial profile, Cs ratios, `phi_B`/`f_I` maps, and HTML report linking run artifacts from manifest records.
 
 ### MUST-027: Numerical health metrics are logged
 
-Root iteration counts, failure rates, monotonicity fallback usage, and constraint violations MUST be recorded and visualizable.
+Implicit solver non-bracket counts, bounded-state checks, and validation violations MUST be recorded and visualizable. Solver health maps MUST be driven by runtime diagnostics (not placeholder defaults).
+
+### MUST-061: Output contract must be versioned and machine-readable
+
+Each run MUST emit `outputs/manifest.json` with `schema_version=\"output.v1\"`, required artifact records, and plot metadata; missing required keys MUST fail validation.
+`output_viz.md` MUST be maintained as the implementation-aligned contract reference for output/visualization behavior.
+
+### MUST-062: Optimization objective must emit decomposed score components
+
+`deposim_opt` fitting outputs MUST include decomposed score columns (`loss_data`, `penalty_solver`, `penalty_phys`, `penalty_prior`, `penalty_complexity`, `score_total`) for auditability and reproducible ranking explanations.
+
+### MUST-063: Optimization contract must support multi-condition and staged fidelity
+
+Optimization config MUST support weighted multi-condition fitting and staged condition-count fidelity (`coarse -> fine`) with pruning hooks, while preserving backward compatibility for single-condition YAML files.
 
 ### MUST-028: runs/ and results/ are gitignored and managed
 
@@ -164,17 +177,17 @@ If `domain.kind=wafer_2d_xy` is selected, the runtime MUST build a valid simulat
 
 Model registries MUST expose compatibility metadata (`requires`, `excludes`, `time_modes`, `governing_class`), and a validator MUST stop representative invalid configurations before simulation execution.
 
-### MUST-057: Measurement comparison path must be first-class in P1 workflow
+### MUST-057: Measurement comparison path must be first-class in AIB workflow
 
-P1 workflow MUST include deterministic measurement-map alignment, KPI generation, and sim-vs-measurement reporting so practical model review can be completed without custom scripts.
+Workflow MUST include deterministic measurement alignment, KPI generation, and sim-vs-measurement reporting for AIB-based runs.
 
 ### MUST-058: Verification commands for P1/P2 must be executable gates
 
 `scripts/commands.sh verify_task <task_id>` for P1/P2 MUST run concrete checks/tests; placeholder pass-through verification is not allowed.
 
-### MUST-059: ALD phased execution and state closure modes must be YAML-selectable
+### MUST-059: ALD transient execution must be YAML-selectable
 
-ALD-capable phased execution (`time.phases`) and state closure modes (at least `dynamic_ode` and `steady_state`) MUST be selectable through YAML and validated for mode compatibility.
+ALD transient execution (time-series concentration input) MUST be selectable through YAML and validated with the same AIB role/order rules.
 
 ### MUST-060: Heavy dependencies remain optional extras unless a gate requires them
 
@@ -192,9 +205,9 @@ Provide sweep runners with grid/random sampling, producing summary metrics (unif
 
 Provide a benchmark mode that reports performance; it must not force resource selection.
 
-### SHOULD-031: Additional kinetics models (competition/LHHW, ER-like) are supported
+### SHOULD-031: Additional kinetics models remain optional research tracks
 
-Add competition adsorption / LHHW-like and ER-like reduced models for broader applicability.
+Alternative kinetics (competition/LHHW, ER-like) may exist as optional research tracks but must stay outside the primary AIB runtime path unless promoted by ADR.
 
 ### SHOULD-032: Net model supports dep-etch-loss composition
 

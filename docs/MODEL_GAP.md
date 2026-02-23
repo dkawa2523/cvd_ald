@@ -76,6 +76,19 @@ Decision records:
 
 ---
 
+## model_equation_new Gap Triage (2026-02-22)
+
+| Item from `model_equation_new.md` | Current status in requirements/tasks | Action |
+|---|---|---|
+| AIB-ODE as single primary physics path | Conflicted with legacy root/rate-law requirements | ADOPTED (D-006, ADR 0008) |
+| Role contract (A required, I/B <=1, disjoint, allow unused) | Partially covered in validator notes only | ADOPTED (D-006, P3-002) |
+| B-order fixed by role presence, total-order <=3 | Not enforced in previous runtime | ADOPTED (D-006, P3-002/P3-003) |
+| Sim/Opt split with `sim:` / `opt:` blocks | Partially present, contract not unified | ADOPTED (D-007, P3-001/P3-006) |
+| Class comparison A/AI/AB/AIB + ranking outputs | Not in baseline optimization path | ADOPTED (P3-006) |
+| Legacy `power_law/root_solve` retirement | Legacy route remained primary | ADOPTED (P3-007) |
+
+---
+
 ## How To Update This File
 
 When `model.md` changes:

@@ -1,4 +1,4 @@
-"""DOE execution helpers with case-dimension outputs and z_ref sensitivity workflow."""
+"""DOE execution helpers for AIB workflows with case-dimension outputs."""
 
 from __future__ import annotations
 
@@ -11,12 +11,13 @@ from pathlib import Path
 from typing import Any
 
 from deposim_report.html_page import render_report_page
+from deposim_report.plot_catalog import DOE_KPI_MAPS, DOE_ZREF_PLOT, to_plot_record
 from deposim_schema import compose_and_save_sim_config, compose_sim_config
 
-from .domain import build_domain_grid
-from .input_builder import build_field_bundle
+from .common.overrides import normalize_overrides, normalize_sweep
 from .metrics import compute_kpi_metrics
-from .physics.cvd_steady import run_cvd_steady
+from .output_manifest import artifact_links, artifact_paths, build_manifest, load_manifest, write_manifest
+from .pipeline import run_aib_from_spec
 from .results_index import next_run_dir, update_project_files
 from .validation import validate_run_spec
 from .zarr_output import load_array_store, save_array_store
@@ -122,17 +123,21 @@ def run_doe(
     if sampling_mode not in {"grid", "random"}:
         raise ValueError("sampling must be 'grid' or 'random'")
 
+    sweep_norm = normalize_sweep(sweep)
+    base_norm = normalize_overrides(base_overrides, prefix_sim=True)
+
     if sampling_mode == "grid":
-        cases = _grid_cases(sweep)
+        cases = _grid_cases(sweep_norm)
     else:
         if random_cases < 1:
             raise ValueError("random_cases must be >= 1 when sampling='random'")
-        cases = _random_cases(sweep, n_cases=random_cases, random_seed=random_seed)
+        cases = _random_cases(sweep_norm, n_cases=random_cases, random_seed=random_seed)
 
-    base_spec = compose_sim_config(config_name, overrides=base_overrides)
-    project_dir = Path(base_spec.output.project_dir)
+    base_spec = compose_sim_config(config_name, overrides=base_norm)
+    sim = getattr(base_spec, "sim", base_spec)
+    project_dir = Path(sim.output.root_dir) / sim.output.project
     project_dir.mkdir(parents=True, exist_ok=True)
-    root_name = run_dir_name or f"{base_spec.output.run_dir_name}_doe"
+    root_name = run_dir_name or f"{sim.output.run_name}_doe"
     run_id, run_dir = next_run_dir(project_dir, root_name)
     run_dir.mkdir(parents=True, exist_ok=False)
     outputs_dir = run_dir / "outputs"
@@ -141,11 +146,14 @@ def run_doe(
     plots_dir.mkdir(parents=True, exist_ok=True)
 
     compose_and_save_sim_config(
-        run_dir / base_spec.output.resolved_config_filename,
+        run_dir / "config_resolved.yaml",
         config_name=config_name,
-        overrides=base_overrides,
+        overrides=base_norm,
     )
-    (run_dir / "doe_sweep.json").write_text(json.dumps({"sampling": sampling_mode, "sweep": sweep}, indent=2), encoding="utf-8")
+    (run_dir / "doe_sweep.json").write_text(
+        json.dumps({"sampling": sampling_mode, "sweep": sweep_norm}, indent=2),
+        encoding="utf-8",
+    )
 
     case_payload: list[dict[str, Any]] = []
     thickness_cases: list[np.ndarray] = []
@@ -156,38 +164,29 @@ def run_doe(
     grid_shape: tuple[int, ...] | None = None
 
     for case_index, case in enumerate(cases):
-        case_overrides = list(base_overrides or [])
-        case_overrides.extend(f"{key}={_literal(value)}" for key, value in case.items())
+        case_overrides = [*base_norm, *[f"{key}={_literal(value)}" for key, value in case.items()]]
         spec = compose_sim_config(config_name, overrides=case_overrides)
         validate_run_spec(spec)
-        grid = build_domain_grid(spec.domain)
-        fields = build_field_bundle(spec, grid)
-        result = run_cvd_steady(
-            grid=grid,
-            fields=fields,
-            model_config=spec.model,
-            process_time_s=spec.time.process_time_s,
-            solver_config=spec.solver,
-        )
+        result = run_aib_from_spec(spec)
+
+        thickness = np.asarray(result.thickness, dtype=float)
+        dep_rate = np.asarray(result.deposition_rate, dtype=float)
+
         if grid_shape is None:
-            grid_shape = result.thickness.shape
-        elif result.thickness.shape != grid_shape:
+            grid_shape = thickness.shape
+        elif thickness.shape != grid_shape:
             raise ValueError(
-                f"DOE case shape mismatch: expected {grid_shape}, got {result.thickness.shape} at case {case_index}"
+                f"DOE case shape mismatch: expected {grid_shape}, got {thickness.shape} at case {case_index}"
             )
 
-        kpi = compute_kpi_metrics(
-            np.asarray(result.thickness, dtype=float),
-            grid,
-            spec_min=spec.kpi.spec_min,
-            spec_max=spec.kpi.spec_max,
-            ring_count=spec.kpi.ring_count,
-        )
-        thickness_cases.append(np.asarray(result.thickness, dtype=float))
-        deposition_rate_cases.append(np.asarray(result.deposition_rate, dtype=float))
+        kpi = compute_kpi_metrics(thickness, result.grid)
+        thickness_cases.append(thickness)
+        deposition_rate_cases.append(dep_rate)
         nu_values.append(float(kpi["nu_percent"]))
         center_edge_values.append(kpi["center_edge_delta"])
-        z_refs.append(float(spec.reference_plane.z_ref_mm))
+
+        sim_case = getattr(spec, "sim", spec)
+        z_refs.append(float(sim_case.reference_plane.z_ref_mm))
         case_payload.append(
             {
                 "case_index": case_index,
@@ -206,6 +205,7 @@ def run_doe(
     )
     z_ref_arr = np.asarray(z_refs, dtype=float)
 
+    store_fmt = str(getattr(sim.output, "store", {}).get("format", "npz"))
     doe_store = save_array_store(
         base_path=outputs_dir / "doe_cases",
         arrays={
@@ -215,7 +215,7 @@ def run_doe(
             "center_edge_delta": center_edge_arr,
             "z_ref_mm": z_ref_arr,
         },
-        store=str(base_spec.output.array_store),
+        store=store_fmt,
     )
     (outputs_dir / "doe_cases.json").write_text(json.dumps(case_payload, indent=2), encoding="utf-8")
 
@@ -224,9 +224,36 @@ def run_doe(
         {"rank": int(rank + 1), "case_index": int(idx), "nu_percent": float(nu_arr[idx])}
         for rank, idx in enumerate(rank_idx[: min(10, len(rank_idx))])
     ]
+    timestamp_utc = datetime.now(timezone.utc).isoformat()
+    doe_store_rel = Path(doe_store["path"]).relative_to(run_dir).as_posix()
+    plot_records: list[dict[str, Any]] = []
+    _plot_metric(nu_arr, plots_dir / DOE_KPI_MAPS[0].filename, ylabel=DOE_KPI_MAPS[0].title)
+    plot_records.append(to_plot_record(DOE_KPI_MAPS[0], rel_path=f"plots/{DOE_KPI_MAPS[0].filename}"))
+    if np.isfinite(center_edge_arr).any():
+        _plot_metric(center_edge_arr, plots_dir / DOE_KPI_MAPS[1].filename, ylabel=DOE_KPI_MAPS[1].title)
+        plot_records.append(to_plot_record(DOE_KPI_MAPS[1], rel_path=f"plots/{DOE_KPI_MAPS[1].filename}"))
+
+    artifact_rows = [
+        {"id": "config", "path": "config_resolved.yaml", "kind": "yaml", "required": True},
+        {"id": "summary", "path": "summary.json", "kind": "json", "required": True},
+        {"id": "report", "path": "report.html", "kind": "html", "required": True},
+        {"id": "manifest", "path": "outputs/manifest.json", "kind": "json", "required": True},
+        {"id": "doe_cases_store", "path": doe_store_rel, "kind": str(doe_store["store_used"]), "required": True},
+        {"id": "doe_cases_json", "path": "outputs/doe_cases.json", "kind": "json", "required": True},
+        {"id": "doe_sweep", "path": "doe_sweep.json", "kind": "json", "required": True},
+    ]
+    manifest = build_manifest(
+        run_id=run_id,
+        mode="doe",
+        created_at_utc=timestamp_utc,
+        artifacts=artifact_rows,
+        plots=plot_records,
+        metadata={"sampling": sampling_mode, "case_count": int(len(cases))},
+    )
+    artifact_map = artifact_paths(manifest)
     summary = {
         "run_id": run_id,
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "timestamp_utc": timestamp_utc,
         "mode": "doe",
         "sampling": sampling_mode,
         "case_count": int(len(cases)),
@@ -234,21 +261,21 @@ def run_doe(
         "best_case_index": int(rank_idx[0]),
         "best_nu_percent": float(nu_arr[rank_idx[0]]),
         "mean_nu_percent": float(np.mean(nu_arr)),
-        "sweep_keys": sorted(sweep),
+        "sweep_keys": sorted(sweep_norm),
         "ranking_top_nu": ranking,
         "doe_cases_store_used": doe_store["store_used"],
-        "doe_cases_store_path": Path(doe_store["path"]).relative_to(run_dir).as_posix(),
+        "doe_cases_store_path": doe_store_rel,
+        "manifest_path": "outputs/manifest.json",
+        "artifact_paths": artifact_map,
     }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-
-    _plot_metric(nu_arr, plots_dir / "kpi_nu_percent.png", ylabel="NU Percent")
-    if np.isfinite(center_edge_arr).any():
-        _plot_metric(center_edge_arr, plots_dir / "kpi_center_edge_delta.png", ylabel="Center-Edge Delta")
 
     ranking_rows = "".join(
         f"<tr><td>{row['rank']}</td><td>{row['case_index']}</td><td>{row['nu_percent']:.8g}</td></tr>"
         for row in ranking
     )
+    output_links = artifact_links(manifest)
+    output_items = "".join(f"<li><a href='{path}'>{path}</a></li>" for path in output_links)
     report_html = render_report_page(
         title=f"DOE Report: {run_id}",
         heading=f"DOE Report: {run_id}",
@@ -263,17 +290,11 @@ def run_doe(
             "<h2>Top Ranking (NU%)</h2>"
             "<table border='1' cellspacing='0' cellpadding='4'><tr><th>Rank</th><th>Case</th><th>NU%</th></tr>"
             f"{ranking_rows}</table>",
-            "<h2>Artifacts</h2>"
-            "<ul>"
-            f"<li><a href='{summary['doe_cases_store_path']}'>{summary['doe_cases_store_path']}</a></li>"
-            "<li><a href='outputs/doe_cases.json'>outputs/doe_cases.json</a></li>"
-            "<li><a href='doe_sweep.json'>doe_sweep.json</a></li>"
-            "<li><a href='summary.json'>summary.json</a></li>"
-            "<li><a href='plots/kpi_nu_percent.png'>plots/kpi_nu_percent.png</a></li>"
-            "</ul>",
+            f"<h2>Artifacts</h2><ul>{output_items}</ul>",
         ],
     )
     (run_dir / "report.html").write_text(report_html, encoding="utf-8")
+    write_manifest(run_dir, manifest)
 
     update_project_files(project_dir, summary)
     return DoeRunResult(run_dir=run_dir, case_count=len(cases), summary=summary)
@@ -285,18 +306,20 @@ def run_zref_sensitivity(
     z_ref_values_mm: Sequence[float],
     base_overrides: Sequence[str] | None = None,
 ) -> DoeRunResult:
-    """Run z_ref sensitivity workflow as a DOE factor and emit a dedicated artifact."""
+    """Run z_ref sensitivity workflow as a DOE factor and emit dedicated artifact."""
+
     if not z_ref_values_mm:
         raise ValueError("z_ref_values_mm must be non-empty")
     result = run_doe(
         config_name=config_name,
-        sweep={"reference_plane.z_ref_mm": list(z_ref_values_mm)},
+        sweep={"sim.reference_plane.z_ref_mm": list(z_ref_values_mm)},
         sampling="grid",
         base_overrides=base_overrides,
         run_dir_name="zref_sensitivity",
     )
     if np is None:
         return result
+
     summary = json.loads((result.run_dir / "summary.json").read_text(encoding="utf-8"))
     case_store_path = result.run_dir / str(summary["doe_cases_store_path"])
     outputs = load_array_store(case_store_path)
@@ -323,16 +346,40 @@ def run_zref_sensitivity(
         fig.savefig(result.run_dir / "plots" / "zref_sensitivity.png", dpi=140)
         plt.close(fig)
 
+    manifest_path = result.run_dir / "outputs" / "manifest.json"
+    manifest = load_manifest(manifest_path)
+    artifacts = list(manifest.get("artifacts", []))
+    plots = list(manifest.get("plots", []))
+    zref_rel = f"outputs/{Path(zref_store['path']).name}"
+    artifacts.append({"id": "zref_sensitivity_store", "path": zref_rel, "kind": store_requested, "required": True})
+    if plt is not None:
+        plots.append(to_plot_record(DOE_ZREF_PLOT, rel_path=f"plots/{DOE_ZREF_PLOT.filename}"))
+    manifest_updated = build_manifest(
+        run_id=str(manifest["run_id"]),
+        mode=str(manifest["mode"]),
+        created_at_utc=str(manifest["created_at_utc"]),
+        artifacts=artifacts,
+        plots=plots,
+        metadata=dict(manifest.get("metadata", {})),
+    )
+    write_manifest(result.run_dir, manifest_updated)
+    artifact_map = artifact_paths(manifest_updated)
+    summary["manifest_path"] = "outputs/manifest.json"
+    summary["artifact_paths"] = artifact_map
+    (result.run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
     report_path = result.run_dir / "report.html"
     report_text = report_path.read_text(encoding="utf-8")
     extra = (
         "<h2>z_ref Sensitivity</h2>"
         "<ul>"
-        f"<li><a href='outputs/{Path(zref_store['path']).name}'>outputs/{Path(zref_store['path']).name}</a></li>"
+        f"<li><a href='{zref_rel}'>{zref_rel}</a></li>"
         "<li><a href='plots/zref_sensitivity.png'>plots/zref_sensitivity.png</a></li>"
         "</ul>"
     )
     report_path.write_text(report_text.replace("</body></html>", extra + "</body></html>"), encoding="utf-8")
+    project_dir = result.run_dir.parent.parent
+    update_project_files(project_dir, summary)
     return result
 
 

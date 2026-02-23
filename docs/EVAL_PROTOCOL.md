@@ -25,7 +25,8 @@ Acceptance checks:
 - `results/index.html` exists
 - run directory contains:
   - `config_resolved.yaml`
-  - `outputs/` with thickness + diagnostics arrays
+  - `outputs/fields.npz` and `outputs/metrics.json`
+  - `outputs/manifest.json` (`schema_version=output.v1`)
   - `plots/` and `report.html`
 
 ### 3) Unit tests (numerical sanity)
@@ -47,27 +48,26 @@ Command:
 
 ## P1 Gate
 
-Run all P1 verification tasks:
+Run AIB utility migration gates:
 
 - `./scripts/commands.sh verify_p1`
 
 This gate includes:
 
-- XY domain runtime checks
-- registry metadata + compatibility validator checks
-- measurement/KPI/report path tests
-- DOE and z_ref workflow tests
-- extended kinetics/net, phases/state, bosanquet/pattern, identifiability
-- optional JAX selection and benchmark checks
+- Utility common AIB execution checks
+- DOE/z_ref workflows on AIB path
+- Physviz benchmark outputs on AIB path
+- Identifiability and assimilation checks on AIB path
+- Residual legacy-utility migration checks (`multiz`, `benchmark`, `phases_driver`)
 
-## Wafer2D Trend Benchmark (polar-first)
+## Wafer2D AIB Benchmark
 
 Run the benchmark runner that validates:
 
-- synthetic + file(npz) input paths
-- reaction-limited vs transport-limited trend ordering
-- radial and theta transfer trend checks
-- solver health (`root_failure_fraction == 0` for all benchmark cases)
+- A/AI/AB/AIB class coverage
+- AIB diagnostics (`phi_B`, `f_I`, `CsA_over_CrefA`, `CsB_over_CrefB`, `residual_nm`)
+- ranking/class comparison outputs (`ranking.csv`, `class_compare.csv`)
+- summary trend assertions (`overall_passed`)
 
 Command:
 
@@ -79,32 +79,57 @@ Physviz extension command (time-space maps + term-importance plots):
 
 ## P2 Gate
 
-Run all P2 verification tasks:
+Run AIB contract/output gates:
 
 - `./scripts/commands.sh verify_p2`
 
 This gate includes:
 
-- `deposim_opt` scaffold + minimal synthetic assimilation loop
-- ALD skeleton gate
-- optional ClearML leaf-package behavior
-- IO plugin selection with smoke end-to-end checks
-- optional Zarr storage with DOE/smoke end-to-end checks
-- multi-z diagnostics with smoke end-to-end checks
+- Opt contract completion checks (`role_enumeration`, `selection`, top-k outputs)
+- selective optimize.md adoption checks (`sampler/pruner/storage`, decomposed objective, multi-condition/hierarchical fidelity)
+- Measurement alignment integration checks
+- Output contract strictness checks (`save_fields`, manifest validation, report map generation)
+- ranking/full-candidate + tri-rendering + IO/run_manager + non-mainline test convergence checks
 
-Final P2 consistency gate:
+Final AIB gate:
 
-- `./scripts/commands.sh verify_task P2-999`
+- `./scripts/commands.sh verify_task P3-038`
 
-`verify_task P2-999` enforces:
+`verify_task P3-038` enforces:
 
-- autorun state synchronization for P1/P2
-- full P1 + P2 gate replay
-- repo consistency checks
+- full P1 + P2 AIB gate replay
+- task contract validation
 
-If state is not synchronized after manual execution, run:
+Output/Viz convergence gates:
 
-- `./scripts/commands.sh reconcile_state --milestone P1,P2`
+- `./scripts/commands.sh verify_task D-009`
+- `./scripts/commands.sh verify_task P3-039`
+- `./scripts/commands.sh verify_task P3-040`
+- `./scripts/commands.sh verify_task P3-041`
+- `./scripts/commands.sh verify_task P3-042`
+- `./scripts/commands.sh verify_task P3-043`
+- `./scripts/commands.sh verify_task P3-044`
+- `./scripts/commands.sh verify_task P3-045`
+
+Optimization selective-adoption gates:
+
+- `./scripts/commands.sh verify_task D-010`
+- `./scripts/commands.sh verify_task P3-046`
+- `./scripts/commands.sh verify_task P3-047`
+- `./scripts/commands.sh verify_task P3-048`
+- `./scripts/commands.sh verify_task P3-049`
+- `./scripts/commands.sh verify_task P3-050`
+- `./scripts/commands.sh verify_task P3-051`
+- `./scripts/commands.sh verify_task P3-052`
+
+improve2 selective-adoption gates:
+
+- `./scripts/commands.sh verify_task D-011`
+- `./scripts/commands.sh verify_task P3-053`
+- `./scripts/commands.sh verify_task P3-054`
+- `./scripts/commands.sh verify_task P3-055`
+- `./scripts/commands.sh verify_task P3-056`
+- `./scripts/commands.sh verify_task P3-057`
 
 ## Contract Gate
 

@@ -1,21 +1,4 @@
-run_name: opt_baseline
-sim_config_name: smoke
-max_iters: 20
-
-parameters:
-  - name: k0
-    path: model.kinetics_params.k0
-    initial: 1.0
-    transform: positive
-    lower: 0.01
-    upper: 100.0
-  - name: k_m
-    path: model.mass_transfer_params.k_m_m_s
-    initial: 0.02
-    transform: positive
-    lower: 1.0e-4
-    upper: 1.0
-
-objective:
-  metric: thickness_rmse
-  robust_loss: huber
+# Deprecated compatibility config. Use fit_cvd_steady_min.yaml directly.
+defaults:
+  - fit_cvd_steady_min
+  - _self_
