@@ -129,6 +129,37 @@ def _sample_search_space(
     return out
 
 
+def _validate_transport_search_space(
+    *,
+    sim_spec: SimSpecV2,
+    search_space: list[dict[str, Any]],
+    role_has_b: bool,
+) -> None:
+    transport = dict(getattr(sim_spec.model.params, "transport", {}) or {})
+    km_source = str(transport.get("km_source", "fit_scalar")).strip().lower()
+    if km_source != "from_cfd_flux_sink":
+        return
+
+    names = {str(item.get("name", "")).strip() for item in search_space}
+    forbidden = {"model.params.transport.km_A", "model.params.transport.km_B"}
+    used_forbidden = sorted(name for name in names if name in forbidden)
+    if used_forbidden:
+        joined = ", ".join(used_forbidden)
+        raise ValueError(
+            "km_source=from_cfd_flux_sink forbids direct km optimization. "
+            f"Remove: {joined}"
+        )
+
+    if "model.params.transport.gamma_km_A" not in names:
+        raise ValueError(
+            "km_source=from_cfd_flux_sink requires model.params.transport.gamma_km_A in opt.parameter_fit.search_space"
+        )
+    if role_has_b and "model.params.transport.gamma_km_B" not in names:
+        raise ValueError(
+            "km_source=from_cfd_flux_sink with role B requires model.params.transport.gamma_km_B in search_space"
+        )
+
+
 def _extract_conditions(opt_spec: Any) -> list[ConditionSpec]:
     measurement_cfg = dict(getattr(opt_spec, "measurement", {}) or {})
     default_keys = dict(measurement_cfg.get("keys", {"h": "h_nm", "xy": "xy"}))
@@ -492,6 +523,24 @@ def _cache_key(condition_name: str, params: Mapping[str, float]) -> tuple[Any, .
     return (str(condition_name), tuple(rounded))
 
 
+def _evaluate_fidelity_levels(
+    *,
+    sample: Mapping[str, Any],
+    levels: Sequence[int],
+    conditions: Sequence[ConditionSpec],
+    evaluate_subset: Any,
+    step_hook: Any | None = None,
+) -> tuple[dict[str, float], dict[str, float]]:
+    final_components: dict[str, float] = {}
+    final_cond_scores: dict[str, float] = {}
+    for step_idx, level in enumerate(levels):
+        subset = list(conditions[: int(level)])
+        final_components, final_cond_scores = evaluate_subset(sample, subset)
+        if step_hook is not None:
+            step_hook(step_idx, final_components)
+    return final_components, final_cond_scores
+
+
 def fit_candidate_with_optuna(
     *,
     sim_spec: SimSpecV2,
@@ -510,6 +559,7 @@ def fit_candidate_with_optuna(
         role_has_i=role_has_i,
         role_has_b=role_has_b,
     )
+    _validate_transport_search_space(sim_spec=sim_spec, search_space=search_space, role_has_b=role_has_b)
     conditions = _extract_conditions(opt_spec)
     _validate_conditions(conditions)
 
@@ -669,14 +719,18 @@ def fit_candidate_with_optuna(
                 trial=trial,
             )
 
-            final_components: dict[str, float] = {}
-            final_cond_scores: dict[str, float] = {}
-            for step_idx, level in enumerate(levels):
-                subset = conditions[:level]
-                final_components, final_cond_scores = evaluate_subset(sample, subset)
-                trial.report(float(final_components["score_total"]), step=step_idx)
+            def _step_hook(step_idx: int, components: Mapping[str, float]) -> None:
+                trial.report(float(components["score_total"]), step=step_idx)
                 if trial.should_prune():
                     raise optuna.TrialPruned()
+
+            final_components, final_cond_scores = _evaluate_fidelity_levels(
+                sample=sample,
+                levels=levels,
+                conditions=conditions,
+                evaluate_subset=evaluate_subset,
+                step_hook=_step_hook,
+            )
 
             trial.set_user_attr("components", dict(final_components))
             trial.set_user_attr("condition_scores", dict(final_cond_scores))
@@ -710,11 +764,12 @@ def fit_candidate_with_optuna(
                 lambda_prior=lambda_prior,
                 rng=rng,
             )
-            comps: dict[str, float] = {}
-            cond_scores: dict[str, float] = {}
-            for level in levels:
-                subset = conditions[:level]
-                comps, cond_scores = evaluate_subset(sample, subset)
+            comps, cond_scores = _evaluate_fidelity_levels(
+                sample=sample,
+                levels=levels,
+                conditions=conditions,
+                evaluate_subset=evaluate_subset,
+            )
             score = float(comps["score_total"])
             if score < best_score:
                 best_score = score

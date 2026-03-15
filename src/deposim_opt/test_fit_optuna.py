@@ -217,6 +217,53 @@ class TestFitOptuna(unittest.TestCase):
             self.assertIn("condition_scores", out)
             self.assertGreaterEqual(out["best_components"]["penalty_prior"], 0.0)
 
+    def test_flux_km_requires_gamma_not_km_a(self) -> None:
+        with TemporaryDirectory() as tmp:
+            fluent_path, meas_path = self._write_inputs(tmp)
+            sim_spec = compose_sim_config(
+                "cvd_steady_min",
+                overrides=[
+                    f"sim.inputs.fluent.file={fluent_path}",
+                    "sim.model.params.transport.km_source=from_cfd_flux_sink",
+                ],
+            )
+            role = RoleCandidate(A="s0", I=None, B=None, class_id="A")
+            order = {
+                "adsorption_site_order": 1,
+                "reaction_site_order_A": 1,
+                "reaction_site_order_star": 0,
+            }
+            opt_spec = SimpleNamespace(
+                measurement={"file": str(meas_path), "keys": {"h": "h_nm", "xy": "xy"}},
+                parameter_fit=SimpleNamespace(
+                    engine="random",
+                    sampler="tpe",
+                    pruner="none",
+                    fidelity={"levels": [1]},
+                    storage={"url": "", "study_name": "", "load_if_exists": False},
+                    n_trials_per_candidate=1,
+                    seed=123,
+                    objective={"loss": "huber", "huber_delta_nm": 10.0, "penalties": {}},
+                    search_space=[
+                        {
+                            "name": "model.params.transport.km_A",
+                            "type": "loguniform",
+                            "low": 1.0e-6,
+                            "high": 1.0e-2,
+                        }
+                    ],
+                ),
+                class_compare=SimpleNamespace(complexity_penalty={"lambda_role": 0.0}),
+            )
+
+            with self.assertRaises(ValueError):
+                fit_candidate_with_optuna(
+                    sim_spec=sim_spec,
+                    role_candidate=role,
+                    order_candidate=order,
+                    opt_spec=opt_spec,
+                )
+
     @unittest.skipIf(optuna is None, "optuna is required for resume test")
     def test_fit_candidate_optuna_resume_storage(self) -> None:
         with TemporaryDirectory() as tmp:
