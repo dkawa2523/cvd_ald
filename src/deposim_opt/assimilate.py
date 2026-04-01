@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from deposim_schema import compose_sim_config
+from deposim_sim.common.overrides import normalize_overrides
 from deposim_sim.pipeline import run_aib_from_spec
 
 try:  # pragma: no cover
@@ -21,19 +22,8 @@ def _require_numpy() -> None:
         raise RuntimeError("NumPy is required for assimilation.")
 
 
-def _normalize_overrides(overrides: Sequence[str]) -> list[str]:
-    out: list[str] = []
-    for item in overrides:
-        text = str(item)
-        if text.startswith("sim."):
-            out.append(text)
-        else:
-            out.append(f"sim.{text}")
-    return out
-
-
 def _simulate_thickness(config_name: str, overrides: Sequence[str]) -> np.ndarray:
-    run_spec = compose_sim_config(config_name, overrides=_normalize_overrides(overrides))
+    run_spec = compose_sim_config(config_name, overrides=normalize_overrides(overrides, prefix_sim=True))
     result = run_aib_from_spec(run_spec)
     return np.asarray(result.thickness, dtype=float)
 

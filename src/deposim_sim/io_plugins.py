@@ -71,7 +71,7 @@ def _load_fluent_csv(
     if mode == "steady":
         xy = np.stack([x, y], axis=1)
         cref = np.stack([np.asarray(table[str(name)], dtype=float).reshape(-1) for name in species], axis=1)
-        return FluentData(mode="steady", cref=cref, xy=xy, time=None, species=tuple(species))
+        return FluentData(mode="steady", cref=cref, flux_sink=None, xy=xy, time=None, species=tuple(species))
 
     if time_key not in table.dtype.names:
         raise ValueError("fluent transient csv requires a time column")
@@ -92,7 +92,14 @@ def _load_fluent_csv(
     if xy_ref is None:
         raise ValueError("fluent csv has no rows")
     cref = np.stack(cref_series, axis=0)
-    return FluentData(mode="transient", cref=cref, xy=xy_ref, time=np.asarray(times, dtype=float), species=tuple(species))
+    return FluentData(
+        mode="transient",
+        cref=cref,
+        flux_sink=None,
+        xy=xy_ref,
+        time=np.asarray(times, dtype=float),
+        species=tuple(species),
+    )
 
 
 def load_fluent_input(

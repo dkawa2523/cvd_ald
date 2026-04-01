@@ -32,6 +32,28 @@ class TestSimConfigV2(unittest.TestCase):
         self.assertEqual(opt_spec.sim.model.name, "aib_ode")
         self.assertEqual(opt_spec.opt.task, "fit_roles_and_params")
 
+    def test_domain_kind_overrides_are_supported(self) -> None:
+        spec_xy = compose_sim_config(
+            "cvd_steady_min",
+            overrides=[
+                "sim.domain.kind=wafer_2d_xy",
+                "sim.domain.nr=4",
+                "sim.domain.nx=8",
+                "sim.domain.ny=6",
+            ],
+        )
+        self.assertEqual(spec_xy.domain.kind, "wafer_2d_xy")
+
+        spec_polar = compose_sim_config(
+            "cvd_steady_min",
+            overrides=[
+                "sim.domain.kind=wafer_2d_polar",
+                "sim.domain.nr=4",
+                "sim.domain.ntheta=12",
+            ],
+        )
+        self.assertEqual(spec_polar.domain.kind, "wafer_2d_polar")
+
 
 if __name__ == "__main__":
     unittest.main()

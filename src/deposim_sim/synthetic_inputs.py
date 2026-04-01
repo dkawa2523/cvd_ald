@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+import warnings
 
 from .domain import DomainGrid
 from .physics.cvd_steady import FieldBundle
@@ -43,6 +44,11 @@ def synthetic_pattern(case: str, grid: DomainGrid, *, random_seed: int = 0) -> A
 def build_synthetic_field_bundle(run_spec: Any, grid: DomainGrid) -> FieldBundle:
     """Create deterministic synthetic ``FieldBundle`` from RunSpec-like config."""
     _require_numpy()
+    warnings.warn(
+        "synthetic input bundle path is legacy-oriented; active workflows should use Fluent-backed inputs.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     pattern = synthetic_pattern(
         run_spec.inputs.synthetic_case,
         grid,

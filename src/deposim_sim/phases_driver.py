@@ -9,6 +9,7 @@ from tempfile import TemporaryDirectory
 from typing import Any
 
 from deposim_sim.input_builder import load_fluent_npz_v2
+from deposim_sim.common.path_tools import set_attr_path
 from deposim_sim.pipeline import run_aib_from_spec
 from deposim_sim.validation import validate_run_spec
 
@@ -29,22 +30,6 @@ class PhaseRunResult:
     phase_thickness: list[np.ndarray]
     input_preview: list[dict[str, Any]]
     phase_diagnostics: list[dict[str, Any]]
-
-
-def _set_attr_path(root: Any, key_path: str, value: Any) -> None:
-    parts = [p for p in str(key_path).split(".") if p]
-    if not parts:
-        return
-    cursor = root
-    for key in parts[:-1]:
-        if isinstance(cursor, dict):
-            cursor = cursor.setdefault(key, {})
-        else:
-            cursor = getattr(cursor, key)
-    if isinstance(cursor, dict):
-        cursor[parts[-1]] = value
-    else:
-        setattr(cursor, parts[-1], value)
 
 
 def _legacy_fluent_scale(run_spec: Any, phase: dict[str, Any]) -> float:
@@ -140,7 +125,7 @@ def run_phased_synthetic(run_spec: Any) -> PhaseRunResult:
             phase_sim.inputs.fluent.file = str(fluent_path)
             phase_sim.time.t_proc_s = float(item["duration_s"])
             for key, value in item["overrides"].items():
-                _set_attr_path(phase_sim, str(key), value)
+                set_attr_path(phase_sim, str(key), value, strip_sim_prefix=True)
 
             out = run_aib_from_spec(phase_spec)
             thickness = np.asarray(out.thickness, dtype=float)

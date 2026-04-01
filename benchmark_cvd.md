@@ -36,6 +36,20 @@ $$
 
 Bなしクラス（A, AI）では `phi_B`, `CsB_over_CrefB` は `NaN` を正とする。
 
+### 2.5 CFDフラックス拘束（P1拡張）
+`sim.model.params.transport.km_source=from_cfd_flux_sink` のとき:
+
+$$
+k_{m,\mathrm{CFD}}(x,y,t)=\\frac{J_{sink}(x,y,t)}{C_{ref}(x,y,t)+\epsilon}
+$$
+
+$$
+k_{m,\mathrm{used}}(x,y,t)=\gamma_{km}\,k_{m,\mathrm{CFD}}(x,y,t)
+$$
+
+ここで `gamma_km_A/B` は条件差吸収用のスケール因子。
+`km_clip`, `flux_negative_policy` で数値安全策を適用する。
+
 ## 3. 入力契約
 - `sim.model.name=aib_ode` 必須。
 - `sim.domain.kind=from_fluent_xy` を前提（再格子化は行わない）。
@@ -61,6 +75,12 @@ Bなしクラス（A, AI）では `phi_B`, `CsB_over_CrefB` は `NaN` を正と�
 - `outputs/class_compare.csv`
 - （physviz有効時）`outputs/physviz_maps.npz`
 
+追加診断（transport拡張時）:
+- `diagnostics.km_A_map`, `diagnostics.km_B_map`
+- `diagnostics.km_A_cfd_map`, `diagnostics.km_B_cfd_map`
+- `diagnostics.tau_A_map`, `diagnostics.tau_B_map`
+- `diagnostics.km_source`, `diagnostics.transport_units_hint`
+
 `benchmark_case_metrics.json` の主キー:
 - `case_id`, `class_id`
 - `mean_h_nm`
@@ -83,10 +103,38 @@ Bなしクラス（A, AI）では `phi_B`, `CsB_over_CrefB` は `NaN` を正と�
 - `assert_ai_phi_b_nan`
 - `overall_passed`（全assertのAND）
 
+`--compare-flux-km` 実行時は追加で:
+- `assert_flux_km_mean_not_worse`（平均 `delta_score_flux_minus_free <= 0`）
+
 ## 7. 実行コマンド
 - `./scripts/commands.sh benchmark_wafer2d`
 - `./scripts/commands.sh benchmark_wafer2d_physviz`
+- `./scripts/commands.sh benchmark_wafer2d_flux_km`
 
-## 8. 履歴（legacy）
+## 8. 画像の意味（physviz）
+- `physviz_h_nm.png`: 代表ケースの膜厚分布。
+- `physviz_phi_B.png`: B輸送拘束の強さ指標（Bなし領域はNaN）。
+- `physviz_f_I.png`: 阻害係数（小さいほど阻害強）。
+- `physviz_km_A.png`: A種の使用 `k_m` 分布。
+- `physviz_tau_A.png`: 輸送更新時間スケール `tau=z_ref/km` 分布。
+- `physviz_input_cref_A.png`: 入力 `C_ref(A)` 分布。
+- `physviz_input_flux_A.png`: 入力 `flux_sink(A)` 分布。
+
+重要度変数の解釈:
+- `mean_km_A`: エッジマスク内での `k_m` 面平均。
+- `mean_tau_A`: `tau=z_ref/km` の面平均。
+- `delta_score_flux_minus_free`: `flux-km` と `free-km` の残差差。負ならflux拘束が改善。
+- `km_spread_ratio`: ケース間 `mean_km_A` の最大/最小比。大きいほど輸送揺らぎが大。
+- `p1_recommendation`: `km_spread_ratio>=10` または `flux-km` 平均改善時に true。
+## 9. 妥当性の見方（本ベンチ）
+- AIBの阻害傾向が成立: `mean_f_I(AI) < mean_f_I(A)`。
+- AIB vs AB で抑制傾向: `mean_h_nm(AIB) < mean_h_nm(AB)`。
+- A/AI で `phi_B` がNaN、AB/AIBで有限。
+- solver健全性: root失敗率が低い（`root_non_bracket_count_map` 参照）。
+
+これらが同時成立していれば、少なくとも「役割分離」「輸送/反応の符号・方向性」は
+実装と整合していると判断できる。
+
+## 10. 履歴（legacy）
 `power_law`, `lhhw_competition`, `root_solve`, `run_cvd_steady` を主経路とする旧ベンチ仕様は廃止済み。
 必要時は Git 履歴を参照すること（実行時フォールバックは持たない）。

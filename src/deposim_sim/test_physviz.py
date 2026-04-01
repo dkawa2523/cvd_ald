@@ -36,6 +36,10 @@ class TestPhysViz(unittest.TestCase):
                 self.assertIn("phi_B", data.files)
                 self.assertIn("f_I", data.files)
                 self.assertIn("h_nm", data.files)
+                self.assertIn("km_A", data.files)
+                self.assertIn("tau_A", data.files)
+                self.assertIn("input_cref_A", data.files)
+                self.assertIn("input_flux_A", data.files)
 
     def test_benchmark_wafer2d_physviz_command(self) -> None:
         repo_root = Path(__file__).resolve().parents[2]

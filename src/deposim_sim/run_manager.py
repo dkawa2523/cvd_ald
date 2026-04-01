@@ -7,13 +7,14 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 from typing import Any
+import warnings
 
 from deposim_report import write_run_report
 from deposim_schema import compose_and_save_sim_config
 
 from .metrics import compute_kpi_metrics
-from .output_manifest import artifact_paths, build_manifest, write_manifest
-from .results_index import next_run_dir, update_project_files
+from .common.run_artifacts import create_run_layout, finalize_run_outputs
+from .output_manifest import artifact_paths, build_manifest
 
 try:  # pragma: no cover
     import numpy as np
@@ -51,12 +52,15 @@ def save_run_outputs(
     _require_numpy()
     sim = getattr(run_spec, "sim", run_spec)
 
-    root_dir = Path(sim.output.root_dir)
-    project_dir = root_dir / sim.output.project
-    project_dir.mkdir(parents=True, exist_ok=True)
-
-    run_id, run_dir = next_run_dir(project_dir, sim.output.run_name)
-    run_dir.mkdir(parents=True, exist_ok=False)
+    layout = create_run_layout(
+        root_dir=Path(sim.output.root_dir),
+        project=str(sim.output.project),
+        run_name=str(sim.output.run_name),
+        with_inputs_dir=False,
+    )
+    run_id = layout.run_id
+    run_dir = layout.run_dir
+    outputs_dir = layout.outputs_dir
 
     compose_and_save_sim_config(
         run_dir / "config_resolved.yaml",
@@ -64,12 +68,16 @@ def save_run_outputs(
         overrides=config_overrides,
     )
 
-    outputs_dir = run_dir / "outputs"
-    outputs_dir.mkdir(parents=True, exist_ok=True)
-
     fields_path = outputs_dir / "fields.npz"
     requested_fields = _normalize_field_names(getattr(sim.output, "save_fields", []))
     if requested_fields:
+        missing = [k for k in requested_fields if k not in result.fields]
+        if missing:
+            warnings.warn(
+                f"Requested save_fields were not produced and will be skipped: {missing}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
         payload = {k: np.asarray(result.fields[k]) for k in requested_fields if k in result.fields}
     else:
         payload = {k: np.asarray(v) for k, v in result.fields.items()}
@@ -153,10 +161,7 @@ def save_run_outputs(
         "manifest_path": "outputs/manifest.json",
         "artifact_paths": artifact_map,
     }
-    (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    write_manifest(run_dir, manifest)
-
-    update_project_files(project_dir, summary)
+    finalize_run_outputs(layout=layout, summary=summary, manifest=manifest)
     return run_dir
 
 

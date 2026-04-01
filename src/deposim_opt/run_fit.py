@@ -4,44 +4,20 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
-import csv
 from datetime import datetime, timezone
 import json
 from pathlib import Path
 from typing import Any
 
 from deposim_schema import compose_and_save_opt_config, compose_opt_config
-from deposim_sim.output_manifest import artifact_links, artifact_paths, build_manifest, write_manifest
-from deposim_sim.results_index import next_run_dir, update_project_files
+from deposim_sim.common.csv_io import write_rows_csv
+from deposim_sim.common.run_artifacts import create_run_layout, finalize_run_outputs
+from deposim_sim.output_manifest import artifact_links, artifact_paths, build_manifest
 
 from .class_compare import build_class_compare, build_role_stability
 from .enumerate_orders import enumerate_orders
 from .enumerate_roles import RoleCandidate, class_id_from_roles, enumerate_roles
 from .fit_optuna import fit_candidate_with_optuna
-
-
-def _run_dir(sim: Any, opt: Any) -> tuple[Path, str, Path]:
-    root_dir = Path(str(opt.output.get("root_dir", sim.output.root_dir)))
-    project = str(opt.output.get("project", sim.output.project))
-    run_name = str(opt.output.get("run_name", "fit_aib"))
-    project_dir = root_dir / project
-    project_dir.mkdir(parents=True, exist_ok=True)
-    run_id, run_dir = next_run_dir(project_dir, run_name)
-    run_dir.mkdir(parents=True, exist_ok=False)
-    return project_dir, run_id, run_dir
-
-
-def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if not rows:
-        path.write_text("", encoding="utf-8")
-        return
-    keys = sorted({k for row in rows for k in row.keys()})
-    with path.open("w", encoding="utf-8", newline="") as fp:
-        writer = csv.DictWriter(fp, fieldnames=keys)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({k: row.get(k) for k in keys})
 
 
 def run_fit(
@@ -53,7 +29,14 @@ def run_fit(
     sim = spec.sim
     opt = spec.opt
 
-    project_dir, run_id, run_dir = _run_dir(sim, opt)
+    layout = create_run_layout(
+        root_dir=Path(str(opt.output.get("root_dir", sim.output.root_dir))),
+        project=str(opt.output.get("project", sim.output.project)),
+        run_name=str(opt.output.get("run_name", "fit_aib")),
+        with_inputs_dir=False,
+    )
+    run_id = layout.run_id
+    run_dir = layout.run_dir
     compose_and_save_opt_config(run_dir / "config_resolved.yaml", config_name, overrides=overrides)
 
     role_spec = opt.role_enumeration
@@ -141,12 +124,11 @@ def run_fit(
             )
 
     tables_dir = run_dir / "tables"
-    outputs_dir = run_dir / "outputs"
-    outputs_dir.mkdir(parents=True, exist_ok=True)
-    _write_csv(tables_dir / "ranking.csv", ranking_rows)
-    _write_csv(tables_dir / "class_compare.csv", class_rows)
-    _write_csv(tables_dir / "topk_assignments.csv", topk_assignments)
-    _write_csv(tables_dir / "role_stability.csv", role_stability_rows if role_stability_enabled else [])
+    outputs_dir = layout.outputs_dir
+    write_rows_csv(tables_dir / "ranking.csv", ranking_rows)
+    write_rows_csv(tables_dir / "class_compare.csv", class_rows)
+    write_rows_csv(tables_dir / "topk_assignments.csv", topk_assignments)
+    write_rows_csv(tables_dir / "role_stability.csv", role_stability_rows if role_stability_enabled else [])
 
     cache_totals = {"trial_hits": 0, "global_hits": 0, "misses": 0, "stores": 0, "evictions": 0}
     for row in all_records:
@@ -230,10 +212,7 @@ def run_fit(
         "</body></html>"
     )
     (run_dir / "report.html").write_text(report, encoding="utf-8")
-    (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    write_manifest(run_dir, manifest)
-
-    update_project_files(project_dir, summary)
+    finalize_run_outputs(layout=layout, summary=summary, manifest=manifest)
     return {"run_id": run_id, "run_dir": str(run_dir), "summary": summary}
 
 

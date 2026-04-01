@@ -27,13 +27,15 @@ class TestWafer2DBenchmark(unittest.TestCase):
     def test_file_payload_keys_and_shapes(self) -> None:
         case = build_wafer2d_cases()[0]
         with TemporaryDirectory() as tmp:
-            payload_path, xy_mm, cref = write_case_input_npz(case=case, output_dir=Path(tmp))
+            payload_path, xy_mm, cref, flux_sink = write_case_input_npz(case=case, output_dir=Path(tmp))
             self.assertTrue(payload_path.exists())
             with np.load(payload_path) as payload:
                 self.assertIn("xy", payload.files)
                 self.assertIn("cref", payload.files)
+                self.assertIn("flux_sink", payload.files)
                 self.assertEqual(payload["xy"].shape, xy_mm.shape)
                 self.assertEqual(payload["cref"].shape, cref.shape)
+                self.assertEqual(payload["flux_sink"].shape, flux_sink.shape)
                 self.assertEqual(payload["cref"].shape[1], 4)
 
     def test_runner_emits_aib_metric_outputs(self) -> None:
@@ -82,6 +84,8 @@ class TestWafer2DBenchmark(unittest.TestCase):
                 "mean_CsA_over_CrefA",
                 "mean_CsB_over_CrefB",
                 "mean_abs_residual_nm",
+                "mean_km_A",
+                "mean_tau_A",
             }
             self.assertTrue(required.issubset(set(rows[0].keys())))
 
@@ -123,6 +127,24 @@ class TestWafer2DBenchmark(unittest.TestCase):
                 self.assertIn(str(row["path"]), report)
             index = (Path(tmp) / "benchtest" / "index.html").read_text(encoding="utf-8")
             self.assertIn(f"runs/{run_dir.name}/report.html", index)
+
+    def test_runner_compare_flux_km_outputs(self) -> None:
+        with TemporaryDirectory() as tmp:
+            out = run_wafer2d_benchmark(
+                config_name="cvd_steady_min",
+                overrides=[
+                    f"sim.output.root_dir={tmp}",
+                    "sim.output.project=benchtest",
+                ],
+                compare_flux_km=True,
+            )
+            summary = out["summary"]
+            self.assertIn("p1_recommendation", summary)
+            self.assertIn("km_spread_ratio", summary)
+            self.assertIn("flux_relative_delta_mean", summary)
+            rows = out["case_metrics"]
+            self.assertTrue(any("mean_abs_residual_nm_flux_km" in row for row in rows))
+            self.assertTrue(any("relative_delta_flux_minus_free" in row for row in rows))
 
 
 if __name__ == "__main__":

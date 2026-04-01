@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from deposim_schema import SimSpecV2
+from deposim_sim.common.literals import parse_literal_value
+from deposim_sim.common.path_tools import set_attr_path
 from deposim_sim.identifiability import compute_identifiability_diagnostics
 from deposim_sim.pipeline import run_aib_from_spec
 
@@ -48,49 +50,6 @@ def _safe_name(text: str) -> str:
         out.append(ch if ch.isalnum() else "_")
     clean = "".join(out).strip("_")
     return clean or "cond"
-
-
-def _parse_override_value(raw: str) -> Any:
-    text = str(raw).strip()
-    lower = text.lower()
-    if lower in {"true", "false"}:
-        return lower == "true"
-    if lower in {"none", "null"}:
-        return None
-    if text.startswith("[") and text.endswith("]"):
-        body = text[1:-1].strip()
-        if not body:
-            return []
-        return [item.strip().strip("'\"") for item in body.split(",") if item.strip()]
-    try:
-        if any(ch in text for ch in [".", "e", "E"]):
-            return float(text)
-        return int(text)
-    except ValueError:
-        return raw
-
-
-def _set_attr_path(root: Any, path: str, value: Any) -> None:
-    cleaned = str(path)
-    if cleaned.startswith("sim."):
-        cleaned = cleaned[4:]
-    parts = [p for p in cleaned.split(".") if p]
-    if not parts:
-        raise ValueError(f"invalid parameter path: {path!r}")
-
-    cursor = root
-    for key in parts[:-1]:
-        if isinstance(cursor, dict):
-            if key not in cursor:
-                cursor[key] = {}
-            cursor = cursor[key]
-        else:
-            cursor = getattr(cursor, key)
-
-    if isinstance(cursor, dict):
-        cursor[parts[-1]] = value
-    else:
-        setattr(cursor, parts[-1], value)
 
 
 def _hspace_value(item: Mapping[str, Any], *, trial: Any | None = None, rng: Any | None = None, name: str) -> float:
@@ -453,7 +412,7 @@ def _apply_candidate_to_spec(
     trial_spec.measurement.align = dict(condition.align)
 
     for key, value in params.items():
-        _set_attr_path(trial_spec, key, float(value))
+        set_attr_path(trial_spec, key, float(value), strip_sim_prefix=True)
 
     for override in condition.overrides:
         text = str(override).strip()
@@ -462,7 +421,12 @@ def _apply_candidate_to_spec(
         if "=" not in text:
             raise ValueError(f"condition override must use key=value format: {text!r}")
         key, raw = text.split("=", 1)
-        _set_attr_path(trial_spec, key.strip(), _parse_override_value(raw))
+        set_attr_path(
+            trial_spec,
+            key.strip(),
+            parse_literal_value(raw),
+            strip_sim_prefix=True,
+        )
 
     return trial_spec
 

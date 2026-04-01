@@ -8,10 +8,10 @@ from pathlib import Path
 from typing import Any
 
 from deposim_sim.domain import DomainGrid, radial_profile
-from deposim_sim.common.render_tri import render_unstructured_map
 from deposim_sim.output_manifest import artifact_links
 
 from .html_page import render_report_page
+from .map_plot import draw_map, require_plot_deps, save_map
 from .plot_catalog import (
     PlotSpec,
     RUN_REPORT_COMPARISON_MAPS,
@@ -37,47 +37,6 @@ except ModuleNotFoundError:  # pragma: no cover
     plt = None  # type: ignore[assignment]
 
 
-def _map2d(value: Any) -> np.ndarray:
-    arr = np.asarray(value, dtype=float)
-    if arr.ndim == 1:
-        return np.repeat(arr[:, None], 2, axis=1)
-    if arr.ndim != 2:
-        raise ValueError(f"Expected 1D/2D array, got shape {arr.shape}")
-    return arr
-
-
-def _save_map(
-    path: Path,
-    *,
-    grid: DomainGrid,
-    value: Any,
-    title: str,
-    cmap: str = "viridis",
-    xy_mm: np.ndarray | None = None,
-    valid_mask: np.ndarray | None = None,
-    discrete: bool = False,
-) -> None:
-    fig, ax = plt.subplots(figsize=(6, 4))
-    if grid.kind == "from_fluent_xy":
-        if xy_mm is None:
-            raise ValueError("xy_mm is required for from_fluent_xy map rendering")
-        mesh = render_unstructured_map(
-            ax,
-            xy_mm=np.asarray(xy_mm, dtype=float),
-            values=np.asarray(value, dtype=float),
-            valid_mask=valid_mask,
-            cmap=cmap,
-            discrete=discrete,
-        )
-    else:
-        mesh = ax.imshow(_map2d(value), origin="lower", cmap=cmap, aspect="auto")
-    ax.set_title(title)
-    fig.colorbar(mesh, ax=ax, shrink=0.9)
-    fig.tight_layout()
-    fig.savefig(path, dpi=140)
-    plt.close(fig)
-
-
 def write_run_report(
     *,
     run_dir: Path,
@@ -91,8 +50,7 @@ def write_run_report(
 ) -> list[dict[str, Any]]:
     """Generate standard plots and `report.html` for a run directory."""
 
-    if np is None or plt is None:
-        raise RuntimeError("NumPy and Matplotlib are required for report generation.")
+    require_plot_deps()
     plots_dir = run_dir / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
     plot_paths: list[str] = []
@@ -102,7 +60,7 @@ def write_run_report(
     valid_mask = np.asarray(grid.edge_mask, dtype=bool)
 
     def add_map(filename: str, data: Any, title: str, cmap: str = "viridis", *, discrete: bool = False) -> None:
-        _save_map(
+        save_map(
             plots_dir / filename,
             grid=grid,
             value=data,
@@ -201,19 +159,15 @@ def write_run_report(
         (axes[0], diagnostics.get("root_iteration_count", np.zeros(grid.shape)), "Solver Iterations", "magma", False),
         (axes[1], diagnostics.get("root_status_map", np.zeros(grid.shape)), "Solver Status", "tab20", True),
     ):
-        if grid.kind == "from_fluent_xy":
-            if xy_mm is None:
-                raise ValueError("xy_mm is required for from_fluent_xy map rendering")
-            mesh = render_unstructured_map(
-                ax,
-                xy_mm=np.asarray(xy_mm, dtype=float),
-                values=np.asarray(field, dtype=float),
-                valid_mask=valid_mask,
-                cmap=cmap,
-                discrete=discrete,
-            )
-        else:
-            mesh = ax.imshow(_map2d(field), origin="lower", cmap=cmap, aspect="auto")
+        mesh = draw_map(
+            ax,
+            grid=grid,
+            value=field,
+            cmap=cmap,
+            xy_mm=xy_mm,
+            valid_mask=valid_mask,
+            discrete=discrete,
+        )
         ax.set_title(title)
         fig.colorbar(mesh, ax=ax, shrink=0.9)
     fig.tight_layout()
@@ -297,4 +251,4 @@ def write_run_report(
     return plot_records
 
 
-__all__ = ["render_unstructured_map", "write_run_report"]
+__all__ = ["write_run_report"]

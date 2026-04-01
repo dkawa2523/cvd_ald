@@ -38,6 +38,59 @@ class TestPipelineAIB(unittest.TestCase):
         np.savez(path, xy=xy, cref=cref)
         return xy
 
+    def _write_fluent_with_flux(self, path: Path) -> np.ndarray:
+        xy = np.array(
+            [
+                [-20.0, -10.0],
+                [0.0, -5.0],
+                [10.0, 12.0],
+                [25.0, -15.0],
+            ],
+            dtype=float,
+        )
+        cref = np.array(
+            [
+                [1.0, 0.4, 0.2, 0.1],
+                [0.9, 0.5, 0.2, 0.1],
+                [0.7, 0.4, 0.2, 0.1],
+                [0.6, 0.3, 0.2, 0.1],
+            ],
+            dtype=float,
+        )
+        flux_sink = np.array(
+            [
+                [0.10, 0.02, 0.03, 0.01],
+                [0.09, 0.02, 0.03, 0.01],
+                [0.06, 0.02, 0.03, 0.01],
+                [0.05, 0.02, 0.03, 0.01],
+            ],
+            dtype=float,
+        )
+        np.savez(path, xy=xy, cref=cref, flux_sink=flux_sink)
+        return xy
+
+    def _write_fluent_transient(self, path: Path) -> np.ndarray:
+        xy = np.array(
+            [
+                [-20.0, -10.0],
+                [0.0, -5.0],
+                [10.0, 12.0],
+                [25.0, -15.0],
+            ],
+            dtype=float,
+        )
+        time = np.array([0.0, 0.5, 1.0], dtype=float)
+        cref = np.array(
+            [
+                [[1.00, 0.40, 0.10, 0.00], [0.90, 0.50, 0.10, 0.00], [0.70, 0.40, 0.10, 0.00], [0.60, 0.30, 0.10, 0.00]],
+                [[1.05, 0.40, 0.10, 0.00], [0.95, 0.50, 0.10, 0.00], [0.75, 0.40, 0.10, 0.00], [0.65, 0.30, 0.10, 0.00]],
+                [[1.10, 0.40, 0.10, 0.00], [1.00, 0.50, 0.10, 0.00], [0.80, 0.40, 0.10, 0.00], [0.70, 0.30, 0.10, 0.00]],
+            ],
+            dtype=float,
+        )
+        np.savez(path, xy=xy, time=time, cref=cref)
+        return xy
+
     def test_run_aib_from_spec_steady(self) -> None:
         with TemporaryDirectory() as tmp:
             fluent_path = Path(tmp) / "fluent.npz"
@@ -100,6 +153,98 @@ class TestPipelineAIB(unittest.TestCase):
             residual_align = np.asarray(out_align.fields["residual_nm"], dtype=float)
             self.assertGreater(float(np.nanmax(np.abs(residual_no_align - residual_align))), 0.0)
             self.assertIn("measurement_valid_mask", out_align.diagnostics)
+
+    def test_fit_scalar_explicit_matches_default(self) -> None:
+        with TemporaryDirectory() as tmp:
+            fluent_path = Path(tmp) / "fluent.npz"
+            self._write_fluent(fluent_path)
+            base = compose_sim_config("cvd_steady_min", overrides=[f"sim.inputs.fluent.file={fluent_path}"])
+            explicit = compose_sim_config(
+                "cvd_steady_min",
+                overrides=[
+                    f"sim.inputs.fluent.file={fluent_path}",
+                    "sim.model.params.transport.km_source=fit_scalar",
+                ],
+            )
+            out_base = run_aib_from_spec(base)
+            out_explicit = run_aib_from_spec(explicit)
+            self.assertTrue(np.allclose(np.asarray(out_base.thickness), np.asarray(out_explicit.thickness)))
+
+    def test_from_cfd_flux_sink_uses_flux_field(self) -> None:
+        with TemporaryDirectory() as tmp:
+            fluent_path = Path(tmp) / "fluent_flux.npz"
+            self._write_fluent_with_flux(fluent_path)
+            spec = compose_sim_config(
+                "cvd_steady_min",
+                overrides=[
+                    f"sim.inputs.fluent.file={fluent_path}",
+                    "sim.model.params.transport.km_source=from_cfd_flux_sink",
+                    "sim.model.params.transport.gamma_km_A=1.0",
+                    "sim.model.params.transport.from_cfd_flux_sink.flux_negative_policy=error",
+                ],
+            )
+            out = run_aib_from_spec(spec)
+            km_map = np.asarray(out.diagnostics["km_A_map"], dtype=float)
+            self.assertTrue(np.all(np.isfinite(km_map)))
+            self.assertGreater(float(np.nanmax(km_map) - np.nanmin(km_map)), 0.0)
+            self.assertEqual(out.diagnostics["km_source"], "from_cfd_flux_sink")
+
+    def test_from_cfd_flux_sink_requires_flux_input(self) -> None:
+        with TemporaryDirectory() as tmp:
+            fluent_path = Path(tmp) / "fluent_no_flux.npz"
+            self._write_fluent(fluent_path)
+            spec = compose_sim_config(
+                "cvd_steady_min",
+                overrides=[
+                    f"sim.inputs.fluent.file={fluent_path}",
+                    "sim.model.params.transport.km_source=from_cfd_flux_sink",
+                ],
+            )
+            with self.assertRaises(ValueError):
+                run_aib_from_spec(spec)
+
+    def test_run_aib_from_spec_wafer2d_xy_steady(self) -> None:
+        with TemporaryDirectory() as tmp:
+            fluent_path = Path(tmp) / "fluent.npz"
+            self._write_fluent(fluent_path)
+
+            spec = compose_sim_config(
+                "cvd_steady_min",
+                overrides=[
+                    f"sim.inputs.fluent.file={fluent_path}",
+                    "sim.domain.kind=wafer_2d_xy",
+                    "sim.domain.nr=4",
+                    "sim.domain.nx=6",
+                    "sim.domain.ny=5",
+                ],
+            )
+            out = run_aib_from_spec(spec)
+            self.assertEqual(out.grid.kind, "wafer_2d_xy")
+            self.assertEqual(out.thickness.shape, (5, 6))
+            self.assertEqual(np.asarray(out.diagnostics["xy_mm"]).shape, (30, 2))
+            self.assertEqual(np.asarray(out.fields["phi_B"]).shape, (5, 6))
+
+    def test_run_aib_from_spec_wafer2d_xy_transient(self) -> None:
+        with TemporaryDirectory() as tmp:
+            fluent_path = Path(tmp) / "fluent_t.npz"
+            self._write_fluent_transient(fluent_path)
+
+            spec = compose_sim_config(
+                "cvd_steady_min",
+                overrides=[
+                    f"sim.inputs.fluent.file={fluent_path}",
+                    "sim.inputs.fluent.mode=transient",
+                    "sim.time_mode=transient",
+                    "sim.domain.kind=wafer_2d_xy",
+                    "sim.domain.nr=4",
+                    "sim.domain.nx=6",
+                    "sim.domain.ny=5",
+                ],
+            )
+            out = run_aib_from_spec(spec)
+            self.assertEqual(out.grid.kind, "wafer_2d_xy")
+            self.assertEqual(out.thickness.shape, (5, 6))
+            self.assertEqual(out.diagnostics["dispatch_mode"], "transient")
 
 
 if __name__ == "__main__":

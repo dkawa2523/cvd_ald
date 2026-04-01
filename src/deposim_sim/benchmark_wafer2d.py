@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Mapping, Sequence
-import csv
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from html import escape
@@ -16,11 +15,12 @@ from deposim_report.html_page import render_report_page
 from deposim_report.plot_catalog import benchmark_physviz_specs, to_plot_record
 from deposim_schema import compose_and_save_sim_config, compose_sim_config
 
+from .common.csv_io import write_rows_csv
 from .common.overrides import as_bool, normalize_overrides
+from .common.run_artifacts import create_run_layout, finalize_run_outputs
 from .common.render_tri import render_unstructured_map
-from .output_manifest import artifact_links, artifact_paths, build_manifest, write_manifest
+from .output_manifest import artifact_links, artifact_paths, build_manifest
 from .pipeline import run_aib_from_spec
-from .results_index import next_run_dir, update_project_files
 from .validation import validate_run_spec
 
 try:  # pragma: no cover
@@ -291,14 +291,6 @@ def _summarize_result(result: Any) -> dict[str, float]:
     }
 
 
-def _write_csv(path: Path, rows: Sequence[Mapping[str, Any]], fieldnames: Sequence[str]) -> None:
-    with path.open("w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=list(fieldnames))
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({k: row.get(k) for k in fieldnames})
-
-
 def _format_case_cell(row: Mapping[str, Any], key: str) -> str:
     value = row.get(key)
     if key in {"case_id", "class_id"}:
@@ -508,16 +500,19 @@ def run_wafer2d_benchmark(
     if not hasattr(sim, "model") or str(getattr(sim.model, "name", "")) != "aib_ode":
         raise ValueError("wafer2d benchmark requires sim.model.name='aib_ode'")
 
-    project_dir = Path(str(sim.output.root_dir)) / str(sim.output.project)
-    project_dir.mkdir(parents=True, exist_ok=True)
-    run_id, run_dir = next_run_dir(project_dir, str(sim.output.run_name))
-    run_dir.mkdir(parents=True, exist_ok=False)
-    outputs_dir = run_dir / "outputs"
-    outputs_dir.mkdir(parents=True, exist_ok=True)
-    inputs_dir = run_dir / "inputs"
-    inputs_dir.mkdir(parents=True, exist_ok=True)
-    plots_dir = run_dir / "plots"
-    plots_dir.mkdir(parents=True, exist_ok=True)
+    layout = create_run_layout(
+        root_dir=Path(str(sim.output.root_dir)),
+        project=str(sim.output.project),
+        run_name=str(sim.output.run_name),
+        with_inputs_dir=True,
+    )
+    run_id = layout.run_id
+    run_dir = layout.run_dir
+    outputs_dir = layout.outputs_dir
+    inputs_dir = layout.inputs_dir
+    plots_dir = layout.plots_dir
+    if inputs_dir is None:
+        raise RuntimeError("benchmark layout requires inputs_dir")
 
     compose_and_save_sim_config(
         run_dir / "config_resolved.yaml",
@@ -631,10 +626,10 @@ def run_wafer2d_benchmark(
 
     ranking_rows = sorted(case_rows, key=lambda row: float(row["score"]))
     ranking_csv = outputs_dir / "ranking.csv"
-    _write_csv(
+    write_rows_csv(
         ranking_csv,
-        ranking_rows,
-        fieldnames=_RANKING_FIELDNAMES,
+        [dict(row) for row in ranking_rows],
+        fieldnames=list(_RANKING_FIELDNAMES),
     )
 
     class_compare_rows: list[dict[str, Any]] = []
@@ -654,10 +649,10 @@ def run_wafer2d_benchmark(
             }
         )
 
-    _write_csv(
+    write_rows_csv(
         outputs_dir / "class_compare.csv",
         class_compare_rows,
-        fieldnames=("class_id", "best_case_id", "best_score", "mean_h_nm", "mean_phi_B", "mean_f_I"),
+        fieldnames=["class_id", "best_case_id", "best_score", "mean_h_nm", "mean_phi_B", "mean_f_I"],
     )
 
     trend_assertions = evaluate_trend_assertions(case_metrics_by_id)
@@ -770,7 +765,6 @@ def run_wafer2d_benchmark(
         "manifest_path": "outputs/manifest.json",
         "artifact_paths": artifact_map,
     }
-    (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     output_links = artifact_links(manifest)
     write_benchmark_report(
         run_dir=run_dir,
@@ -781,8 +775,7 @@ def run_wafer2d_benchmark(
         output_links=output_links,
         physviz_plots=physviz_rel_paths,
     )
-    write_manifest(run_dir, manifest)
-    update_project_files(project_dir, summary)
+    finalize_run_outputs(layout=layout, summary=summary, manifest=manifest)
 
     return {
         "run_id": run_id,

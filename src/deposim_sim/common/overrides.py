@@ -13,24 +13,13 @@ _LEGACY_PREFIX_MAP: dict[str, str] = {
     "time.mode": "sim.time_mode",
 }
 
-_DROP_PREFIXES = (
-    "domain.nr=",
-    "domain.ntheta=",
-    "domain.kind=",
-)
-
-
 def _map_override(
     override: str,
     *,
     prefix_sim: bool,
-    drop_legacy_domain: bool,
 ) -> str | None:
     text = str(override).strip()
     if not text:
-        return None
-
-    if drop_legacy_domain and text.startswith(_DROP_PREFIXES):
         return None
 
     for old_prefix, new_prefix in _LEGACY_PREFIX_MAP.items():
@@ -47,13 +36,12 @@ def normalize_overrides(
     overrides: Sequence[str] | None,
     *,
     prefix_sim: bool = False,
-    drop_legacy_domain: bool = True,
 ) -> list[str]:
     """Normalize override strings to the SimSpecV2 contract."""
 
     normalized: list[str] = []
     for item in list(overrides or []):
-        mapped = _map_override(str(item), prefix_sim=prefix_sim, drop_legacy_domain=drop_legacy_domain)
+        mapped = _map_override(str(item), prefix_sim=prefix_sim)
         if mapped is None:
             continue
         normalized.append(mapped)

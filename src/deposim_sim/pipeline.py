@@ -9,11 +9,12 @@ from typing import Any
 
 from deposim_schema import compose_sim_config
 
-from .common.overrides import as_bool
-from .domain import DomainGrid
-from .input_builder import apply_roles, build_domain_from_fluent_xy, load_fluent_npz_v2
+from .common.overrides import as_bool, normalize_overrides
+from .domain import DomainGrid, build_domain_grid
+from .input_builder import apply_roles, build_domain_from_fluent_xy, load_fluent_npz_v2, normalize_xy_mm
 from .measurement_adapter import align_point_measurement_to_points
 from .models.aib_ode import compute_diagnostics, step_theta_implicit
+from .transport_provider import CfdFluxSinkKmProvider, FitScalarKmProvider, TransportProvider
 from .validation import validate_run_spec
 
 try:  # pragma: no cover
@@ -54,6 +55,44 @@ def _resolve_param(value: Any, shape: tuple[int, ...], default: float) -> np.nda
     else:
         out = np.broadcast_to(arr, shape).astype(float, copy=True)
     return out
+
+
+def _transport_dict(sim: Any) -> dict[str, Any]:
+    return dict(getattr(sim.model.params, "transport", {}) or {})
+
+
+def _build_transport_provider(
+    *,
+    sim: Any,
+    c_a: np.ndarray,
+    c_b: np.ndarray,
+    flux_a: np.ndarray | None,
+    flux_b: np.ndarray | None,
+) -> tuple[str, TransportProvider]:
+    transport = _transport_dict(sim)
+    km_source = str(transport.get("km_source", "fit_scalar")).strip().lower()
+    reference_shape = tuple(np.asarray(c_a, dtype=float).shape)
+    time_dependent = str(sim.time_mode) == "transient"
+
+    if km_source == "fit_scalar":
+        return km_source, FitScalarKmProvider.from_transport_params(
+            transport=transport,
+            reference_shape=reference_shape,
+            time_dependent=time_dependent,
+        )
+    if km_source == "from_cfd_flux_sink":
+        if flux_a is None:
+            raise ValueError("km_source=from_cfd_flux_sink requires flux_sink input for role A")
+        provider = CfdFluxSinkKmProvider.from_arrays(
+            cref_a=c_a,
+            cref_b=c_b,
+            flux_a=flux_a,
+            flux_b=flux_b,
+            transport=transport,
+            time_dependent=time_dependent,
+        )
+        return km_source, provider
+    raise ValueError(f"unsupported km_source: {km_source}")
 
 
 def _as_xy_pair(value: Any, default: tuple[float, float] = (0.0, 0.0)) -> tuple[float, float]:
@@ -110,6 +149,136 @@ def _load_measurement(sim: Any, *, xy_mm: np.ndarray) -> tuple[np.ndarray | None
         raise ValueError("measurement h must be shape [n_pts] when alignment is disabled")
     valid = np.isfinite(h)
     return h, valid
+
+
+def _grid_xy_points(grid: DomainGrid) -> np.ndarray:
+    if grid.x_grid_mm is not None and grid.y_grid_mm is not None:
+        x = np.asarray(grid.x_grid_mm, dtype=float).reshape(-1)
+        y = np.asarray(grid.y_grid_mm, dtype=float).reshape(-1)
+        return np.stack([x, y], axis=1)
+    if grid.kind == "wafer_2d_polar" and grid.theta_grid_rad is not None:
+        x = np.asarray(grid.r_grid_mm * np.cos(grid.theta_grid_rad), dtype=float).reshape(-1)
+        y = np.asarray(grid.r_grid_mm * np.sin(grid.theta_grid_rad), dtype=float).reshape(-1)
+        return np.stack([x, y], axis=1)
+    if grid.kind == "wafer_1d_radial":
+        x = np.asarray(grid.r_grid_mm, dtype=float).reshape(-1)
+        y = np.zeros_like(x, dtype=float)
+        return np.stack([x, y], axis=1)
+    raise ValueError(f"Unsupported grid kind for XY projection: {grid.kind}")
+
+
+def _project_values_to_grid(
+    values: np.ndarray,
+    *,
+    source_xy_mm: np.ndarray,
+    target_xy_mm: np.ndarray,
+    target_shape: tuple[int, ...],
+) -> np.ndarray:
+    arr = np.asarray(values, dtype=float)
+    if arr.ndim == 1:
+        aligned, _valid = align_point_measurement_to_points(
+            values=arr,
+            source_xy_mm=source_xy_mm,
+            target_xy_mm=target_xy_mm,
+        )
+        return np.asarray(aligned, dtype=float).reshape(target_shape)
+    if arr.ndim == 2:
+        frames: list[np.ndarray] = []
+        for idx in range(arr.shape[0]):
+            aligned, _valid = align_point_measurement_to_points(
+                values=arr[idx],
+                source_xy_mm=source_xy_mm,
+                target_xy_mm=target_xy_mm,
+            )
+            frames.append(np.asarray(aligned, dtype=float).reshape(target_shape))
+        return np.stack(frames, axis=0)
+    raise ValueError(f"Expected [n_pts] or [n_t,n_pts] values for projection, got shape {arr.shape}")
+
+
+def _prepare_domain_inputs(
+    *,
+    sim: Any,
+    fluent: Any,
+) -> tuple[DomainGrid, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray | None, np.ndarray | None]:
+    source_xy_mm = normalize_xy_mm(np.asarray(fluent.xy, dtype=float), sim.domain.xy_unit)
+    c_a_raw, c_i_raw, c_b_raw = apply_roles(
+        cref=fluent.cref,
+        species=fluent.species,
+        role_a=sim.roles.A,
+        role_i=sim.roles.I,
+        role_b=sim.roles.B,
+    )
+
+    flux_a_raw = None
+    flux_b_raw = None
+    if fluent.flux_sink is not None:
+        flux_a_raw, _flux_i_raw, flux_b_raw = apply_roles(
+            cref=fluent.flux_sink,
+            species=fluent.species,
+            role_a=sim.roles.A,
+            role_i=sim.roles.I,
+            role_b=sim.roles.B,
+        )
+
+    if str(sim.domain.kind) == "from_fluent_xy":
+        grid = build_domain_from_fluent_xy(
+            xy=fluent.xy,
+            xy_unit=sim.domain.xy_unit,
+            wafer_radius_mm=float(sim.domain.wafer_radius_mm),
+        )
+        return (
+            grid,
+            np.asarray(source_xy_mm, dtype=float),
+            np.asarray(c_a_raw, dtype=float),
+            np.asarray(c_i_raw, dtype=float),
+            np.asarray(c_b_raw, dtype=float),
+            None if flux_a_raw is None else np.asarray(flux_a_raw, dtype=float),
+            None if flux_b_raw is None else np.asarray(flux_b_raw, dtype=float),
+        )
+
+    grid = build_domain_grid(sim.domain)
+    target_xy_mm = _grid_xy_points(grid)
+    target_shape = tuple(grid.shape)
+
+    c_a = _project_values_to_grid(
+        np.asarray(c_a_raw, dtype=float),
+        source_xy_mm=source_xy_mm,
+        target_xy_mm=target_xy_mm,
+        target_shape=target_shape,
+    )
+    c_i = _project_values_to_grid(
+        np.asarray(c_i_raw, dtype=float),
+        source_xy_mm=source_xy_mm,
+        target_xy_mm=target_xy_mm,
+        target_shape=target_shape,
+    )
+    c_b = _project_values_to_grid(
+        np.asarray(c_b_raw, dtype=float),
+        source_xy_mm=source_xy_mm,
+        target_xy_mm=target_xy_mm,
+        target_shape=target_shape,
+    )
+    flux_a = (
+        None
+        if flux_a_raw is None
+        else _project_values_to_grid(
+            np.asarray(flux_a_raw, dtype=float),
+            source_xy_mm=source_xy_mm,
+            target_xy_mm=target_xy_mm,
+            target_shape=target_shape,
+        )
+    )
+    flux_b = (
+        None
+        if flux_b_raw is None
+        else _project_values_to_grid(
+            np.asarray(flux_b_raw, dtype=float),
+            source_xy_mm=source_xy_mm,
+            target_xy_mm=target_xy_mm,
+            target_shape=target_shape,
+        )
+    )
+    return grid, target_xy_mm, c_a, c_i, c_b, flux_a, flux_b
 
 
 def _simulate_steady(
@@ -192,8 +361,7 @@ def _simulate_transient(
     m_ads: int,
     p_a: int,
     p_star: int,
-    km_a: np.ndarray,
-    km_b: np.ndarray,
+    km_provider: TransportProvider,
     k_ads: np.ndarray,
     k_des: np.ndarray,
     k_rxn: np.ndarray,
@@ -220,6 +388,12 @@ def _simulate_transient(
         c_a_i = c_a[i]
         c_i_i = c_i[i]
         c_b_i = c_b[i]
+        km_a_i = np.asarray(km_provider.get_km("A", t_index=i), dtype=float)
+        km_b_i = (
+            np.asarray(km_provider.get_km("B", t_index=i), dtype=float)
+            if has_b
+            else np.zeros_like(km_a_i, dtype=float)
+        )
 
         for _ in range(n_sub):
             step = step_theta_implicit(
@@ -229,8 +403,8 @@ def _simulate_transient(
                 cref_a=c_a_i,
                 cref_i=c_i_i,
                 cref_b=c_b_i,
-                km_a=km_a,
-                km_b=km_b,
+                km_a=km_a_i,
+                km_b=km_b_i,
                 k_ads=k_ads,
                 k_des=k_des,
                 k_rxn=k_rxn,
@@ -269,7 +443,10 @@ def compose_aib_spec(
 ) -> Any:
     """Compose a SimSpecV2-compatible object for AIB execution."""
 
-    return compose_sim_config(config_name, overrides=overrides)
+    return compose_sim_config(
+        config_name,
+        overrides=normalize_overrides(overrides, prefix_sim=True),
+    )
 
 
 def run_aib_from_config(
@@ -296,30 +473,23 @@ def run_aib_from_spec(run_spec: Any) -> SimRunResult:
         keys=sim.inputs.fluent.keys,
         species=sim.inputs.fluent.species,
     )
-    grid = build_domain_from_fluent_xy(
-        xy=fluent.xy,
-        xy_unit=sim.domain.xy_unit,
-        wafer_radius_mm=float(sim.domain.wafer_radius_mm),
-    )
-
-    c_a, c_i, c_b = apply_roles(
-        cref=fluent.cref,
-        species=fluent.species,
-        role_a=sim.roles.A,
-        role_i=sim.roles.I,
-        role_b=sim.roles.B,
-    )
+    grid, xy_mm, c_a, c_i, c_b, flux_a, flux_b = _prepare_domain_inputs(sim=sim, fluent=fluent)
     has_b = sim.roles.B is not None
+    km_source, km_provider = _build_transport_provider(
+        sim=sim,
+        c_a=c_a,
+        c_b=c_b,
+        flux_a=flux_a,
+        flux_b=flux_b,
+    )
 
-    shape = (fluent.xy.shape[0],)
+    shape = tuple(grid.shape)
     theta = np.full(shape, float(sim.initial_conditions.theta_A.value), dtype=float)
     h = np.full(shape, float(sim.initial_conditions.h_nm.value), dtype=float)
 
     params = sim.model.params
     orders = sim.model.orders
 
-    km_a = _resolve_param(params.transport.get("km_A"), shape, 0.02)
-    km_b = _resolve_param(params.transport.get("km_B"), shape, 0.02)
     gamma_s = _resolve_param(params.transport.get("Gamma_s"), shape, 1.0)
     nu_a = _resolve_param(params.transport.get("nu_A"), shape, 1.0)
 
@@ -331,6 +501,8 @@ def run_aib_from_spec(run_spec: Any) -> SimRunResult:
     c_b_scale = _resolve_param(params.scaling.get("C_B_scale"), shape, 1.0)
 
     if sim.time_mode == "steady":
+        km_a = np.asarray(km_provider.get_km("A", t_index=0), dtype=float)
+        km_b = np.asarray(km_provider.get_km("B", t_index=0), dtype=float) if has_b else np.zeros_like(km_a, dtype=float)
         theta, h, step_diag, non_bracketed_total, root_iteration_count, root_non_bracket_count_map = _simulate_steady(
             sim=sim,
             c_a=c_a,
@@ -368,8 +540,7 @@ def run_aib_from_spec(run_spec: Any) -> SimRunResult:
             m_ads=int(orders.adsorption_site_order),
             p_a=int(orders.reaction_site_order_A),
             p_star=int(orders.reaction_site_order_star),
-            km_a=km_a,
-            km_b=km_b,
+            km_provider=km_provider,
             k_ads=k_ads,
             k_des=k_des,
             k_rxn=k_rxn,
@@ -382,14 +553,34 @@ def run_aib_from_spec(run_spec: Any) -> SimRunResult:
         )
         total_time = float(fluent.time[-1] - fluent.time[0])
 
+    final_t_index = 0 if sim.time_mode == "steady" else int((fluent.time.shape[0] - 1) if fluent.time is not None else 0)
+    km_a_diag = dict(km_provider.get_diagnostics("A", t_index=final_t_index))
+    km_b_diag = (
+        dict(km_provider.get_diagnostics("B", t_index=final_t_index))
+        if has_b
+        else {"km_used": np.full(shape, np.nan, dtype=float), "km_cfd": np.full(shape, np.nan, dtype=float)}
+    )
+    km_a_final = np.asarray(km_a_diag.get("km_used"), dtype=float)
+    km_b_final = np.asarray(km_b_diag.get("km_used"), dtype=float)
+    km_a_cfd = np.asarray(km_a_diag.get("km_cfd", km_a_final), dtype=float)
+    km_b_cfd = np.asarray(km_b_diag.get("km_cfd", km_b_final), dtype=float)
+    z_ref_mm = float(sim.reference_plane.z_ref_mm)
+    tau_a = z_ref_mm / np.maximum(km_a_final, 1.0e-12)
+    tau_b = z_ref_mm / np.maximum(km_b_final, 1.0e-12)
+
     theta_star = np.asarray(step_diag.get("theta_star", np.zeros_like(theta)), dtype=float)
     cs_a = np.asarray(step_diag.get("CsA", np.zeros_like(theta)), dtype=float)
     cs_b = np.asarray(step_diag.get("CsB", np.full(theta.shape, np.nan, dtype=float)), dtype=float)
     r_event = np.asarray(step_diag.get("r_event", np.zeros_like(theta)), dtype=float)
 
-    cref_a_final = c_a if c_a.ndim == 1 else c_a[-1]
-    cref_i_final = c_i if c_i.ndim == 1 else c_i[-1]
-    cref_b_final = c_b if c_b.ndim == 1 else c_b[-1]
+    if sim.time_mode == "steady":
+        cref_a_final = c_a
+        cref_i_final = c_i
+        cref_b_final = c_b
+    else:
+        cref_a_final = c_a[-1]
+        cref_i_final = c_i[-1]
+        cref_b_final = c_b[-1]
 
     diag_fields = compute_diagnostics(
         theta_a=theta,
@@ -401,7 +592,7 @@ def run_aib_from_spec(run_spec: Any) -> SimRunResult:
         cref_i=cref_i_final,
         gamma_s=gamma_s,
         k_rxn=k_rxn,
-        km_b=km_b,
+        km_b=km_b_final,
         c_b_scale=c_b_scale,
         p_a=int(orders.reaction_site_order_A),
         p_star=int(orders.reaction_site_order_star),
@@ -409,8 +600,11 @@ def run_aib_from_spec(run_spec: Any) -> SimRunResult:
         has_b=has_b,
     )
 
-    xy_mm = fluent.xy if sim.domain.xy_unit == "mm" else fluent.xy * 1000.0
     measurement, meas_valid = _load_measurement(sim, xy_mm=xy_mm)
+    if measurement is not None:
+        measurement = np.asarray(measurement, dtype=float).reshape(shape)
+    if meas_valid is not None:
+        meas_valid = np.asarray(meas_valid, dtype=bool).reshape(shape)
     if measurement is None:
         residual = np.full(theta.shape, np.nan, dtype=float)
     else:
@@ -430,11 +624,17 @@ def run_aib_from_spec(run_spec: Any) -> SimRunResult:
         "phi_B": diag_fields["phi_B"],
         "f_I": diag_fields["f_I"],
         "residual_nm": residual,
+        "km_A": km_a_final,
+        "km_B": km_b_final,
+        "tau_A": tau_a,
+        "tau_B": tau_b,
     }
 
     diagnostics = {
         "non_bracketed_total": non_bracketed_total,
         "dispatch_mode": sim.time_mode,
+        "km_source": km_source,
+        "z_ref_mm": z_ref_mm,
         "xy_mm": xy_mm,
         "species": list(fluent.species),
         "roles": {"A": sim.roles.A, "I": sim.roles.I, "B": sim.roles.B},
@@ -448,6 +648,13 @@ def run_aib_from_spec(run_spec: Any) -> SimRunResult:
         "f_I": diag_fields["f_I"],
         "Da_proxy": np.nan_to_num(diag_fields["phi_B"], nan=0.0),
         "R_event": r_event,
+        "km_A_map": km_a_final,
+        "km_B_map": km_b_final,
+        "km_A_cfd_map": km_a_cfd,
+        "km_B_cfd_map": km_b_cfd,
+        "tau_A_map": tau_a,
+        "tau_B_map": tau_b,
+        "transport_units_hint": str(km_a_diag.get("units_hint", "") or km_b_diag.get("units_hint", "")),
         "root_iteration_count": np.asarray(root_iteration_count, dtype=float),
         "root_non_bracket_count_map": np.asarray(root_non_bracket_count_map, dtype=float),
         "root_status_map": np.asarray(np.asarray(root_non_bracket_count_map, dtype=int) > 0, dtype=int),

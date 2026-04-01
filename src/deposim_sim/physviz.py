@@ -103,22 +103,42 @@ def compute_transport_term_maps(
     km: Any | None = None,
     nu: Any | None = None,
 ) -> dict[str, np.ndarray]:
-    """Compute AIB transport-side proxy maps from standard diagnostics."""
+    """Compute AIB transport-side term maps from runtime diagnostics."""
 
     _require_numpy()
     csa = np.asarray(result.fields.get("CsA_over_CrefA"), dtype=float)
     phi_b = np.asarray(result.fields.get("phi_B"), dtype=float)
     fi = np.asarray(result.fields.get("f_I"), dtype=float)
     dep = np.asarray(result.deposition_rate, dtype=float)
+    km_a = np.asarray(result.diagnostics.get("km_A_map", np.ones_like(dep)), dtype=float)
+    km_b = np.asarray(result.diagnostics.get("km_B_map", np.full(dep.shape, np.nan, dtype=float)), dtype=float)
+    tau_a = np.asarray(result.diagnostics.get("tau_A_map", np.full(dep.shape, np.nan, dtype=float)), dtype=float)
+    tau_b = np.asarray(result.diagnostics.get("tau_B_map", np.full(dep.shape, np.nan, dtype=float)), dtype=float)
+
+    cs_a = np.asarray(result.Cs.get("A", np.zeros_like(dep)), dtype=float)
+    cs_b = np.asarray(result.Cs.get("B", np.full(dep.shape, np.nan, dtype=float)), dtype=float)
+    cref_a = np.where(np.abs(csa) > _EPS, cs_a / np.maximum(csa, _EPS), 0.0)
+    cref_b = np.where(np.abs(phi_b) > _EPS, cs_b, 0.0)
+    transport_capacity_a = np.clip(km_a * np.maximum(cref_a, 0.0), 0.0, np.inf)
+    reaction_demand_a = np.clip(dep, 0.0, np.inf)
+    utilization_a = reaction_demand_a / np.maximum(transport_capacity_a, _EPS)
+
+    transport_capacity_b = np.clip(km_b * np.maximum(cref_b, 0.0), 0.0, np.inf)
+    reaction_demand_b = np.nan_to_num(phi_b, nan=0.0)
+    utilization_b = reaction_demand_b / np.maximum(transport_capacity_b, _EPS)
     return {
-        "transport_capacity__A": np.clip(1.0 - csa, 0.0, np.inf),
-        "reaction_demand__A": np.clip(dep, 0.0, np.inf),
+        "transport_capacity__A": transport_capacity_a,
+        "reaction_demand__A": reaction_demand_a,
         "depletion_ratio__A": np.clip(1.0 - csa, 0.0, np.inf),
-        "utilization__A": np.clip(dep / (1.0 + np.abs(dep)), 0.0, 1.0),
-        "transport_capacity__B": np.nan_to_num(phi_b, nan=0.0),
-        "reaction_demand__B": np.nan_to_num(phi_b, nan=0.0),
+        "utilization__A": np.clip(utilization_a, 0.0, np.inf),
+        "transport_capacity__B": np.nan_to_num(transport_capacity_b, nan=0.0),
+        "reaction_demand__B": np.nan_to_num(reaction_demand_b, nan=0.0),
         "depletion_ratio__B": np.nan_to_num(phi_b, nan=0.0),
-        "utilization__B": np.nan_to_num(phi_b, nan=0.0),
+        "utilization__B": np.nan_to_num(utilization_b, nan=0.0),
+        "km_A": km_a,
+        "km_B": km_b,
+        "tau_A": tau_a,
+        "tau_B": tau_b,
         "inhibition_proxy": np.clip(fi, 0.0, np.inf),
     }
 

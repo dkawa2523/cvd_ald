@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+import warnings
 
 from deposim_schema import RunSpec
 
@@ -47,6 +48,11 @@ def run_ald_synthetic(
     """Execute a bounded ALD-like synthetic coverage loop."""
 
     _require_numpy()
+    warnings.warn(
+        "run_ald_synthetic is a legacy compatibility path; use deposim_sim.pipeline AIB execution for active workflows.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     if run_spec.time.mode != "ald_cycle":
         raise ValueError(f"run_ald_synthetic requires time.mode='ald_cycle', got {run_spec.time.mode!r}")
 

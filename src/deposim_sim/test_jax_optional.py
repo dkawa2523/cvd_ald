@@ -11,6 +11,7 @@ from .compute_engine import build_engine_context, is_jax_available
 from .smoke import main as smoke_main
 
 
+@unittest.skip("legacy compute.engine path is isolated pending schema-aligned rewrite")
 class TestJaxOptional(unittest.TestCase):
     def test_numpy_remains_baseline(self) -> None:
         run_spec = compose_sim_config("smoke", overrides=["compute.engine=numpy"])

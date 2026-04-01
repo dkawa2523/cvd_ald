@@ -7,6 +7,7 @@ from collections.abc import Sequence
 
 from deposim_schema import compose_sim_config
 
+from .common.overrides import normalize_overrides
 from .pipeline import run_from_run_spec
 from .run_manager import save_run_outputs
 from .validation import validate_run_spec
@@ -29,14 +30,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("overrides", nargs="*", help="Hydra-style key=value overrides")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
-    run_spec = compose_sim_config(args.config_name, overrides=args.overrides)
+    overrides = normalize_overrides(args.overrides, prefix_sim=True)
+    run_spec = compose_sim_config(args.config_name, overrides=overrides)
     validate_run_spec(run_spec)
 
     result = run_from_run_spec(run_spec)
     run_dir = save_run_outputs(
         run_spec=run_spec,
         config_name=args.config_name,
-        config_overrides=args.overrides,
+        config_overrides=overrides,
         result=result,
     )
     print(f"[smoke] wrote run artifacts to: {run_dir}")

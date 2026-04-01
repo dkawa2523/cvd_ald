@@ -86,6 +86,10 @@ cmd_benchmark_wafer2d_physviz() {
   "$PYTHON" -m deposim_sim.benchmark_wafer2d --config-name cvd_steady_min --with-physviz --physviz-fast "$@"
 }
 
+cmd_benchmark_wafer2d_flux_km() {
+  "$PYTHON" -m deposim_sim.benchmark_wafer2d --config-name cvd_steady_min --compare-flux-km "$@"
+}
+
 cmd_smoke_repro_check() {
   "$PYTHON" - <<'PY'
 import numpy as np
@@ -305,7 +309,7 @@ PY
 }
 
 cmd_measurement_adapter_tests() { cmd_unittest_module "deposim_sim.test_measurement_adapter"; }
-cmd_metrics_tests() { cmd_unittest_module "deposim_sim.test_run_manager"; }
+cmd_metrics_tests() { cmd_unittest_module "deposim_sim.test_metrics"; }
 cmd_report_comparison_tests() { cmd_unittest_module "deposim_sim.test_report_comparison"; }
 cmd_doe_tests() { cmd_unittest_module "deposim_sim.test_doe"; }
 cmd_zref_tests() { cmd_unittest_module "deposim_sim.test_zref_sensitivity"; }
@@ -325,11 +329,16 @@ cmd_opt_tests() {
   cmd_unittest_module "deposim_opt.test_fit_diagnostics"
 }
 cmd_assimilation_tests() { cmd_unittest_module "deposim_opt.test_assimilation"; }
-cmd_ald_tests() { cmd_unittest_module "deposim_sim.test_pipeline_aib"; }
+cmd_ald_tests() { cmd_unittest_module "deposim_sim.test_ald"; }
 cmd_clearml_optional_tests() { cmd_unittest_module "deposim_tracking_clearml.test_optional_clearml"; }
 cmd_io_plugin_tests() { cmd_unittest_module "deposim_sim.test_io_plugins"; }
-cmd_zarr_optional_tests() { cmd_unittest_module "deposim_sim.test_doe"; }
+cmd_zarr_optional_tests() { cmd_unittest_module "deposim_sim.test_zarr_output"; }
 cmd_multiz_tests() { cmd_unittest_module "deposim_sim.test_multiz"; }
+cmd_legacy_tests() {
+  cmd_unittest_module "deposim_sim.test_cvd_steady"
+  cmd_unittest_module "deposim_sim.test_ald"
+  cmd_unittest_module "deposim_sim.test_jax_optional"
+}
 
 cmd_p2_io_e2e_check() {
   "$PYTHON" - <<'PY'
@@ -592,12 +601,17 @@ cmd_test() {
   "$PYTHON" -m unittest discover -s tests -p "test_sim_config_compose.py"
   cmd_unittest_module "deposim_schema.test_sim_config_v2"
   cmd_unittest_module "deposim_sim.test_fluent_loader"
+  cmd_unittest_module "deposim_sim.test_domain"
   cmd_unittest_module "deposim_sim.test_role_validator"
+  cmd_unittest_module "deposim_sim.test_compatibility_validator"
   cmd_unittest_module "deposim_sim.test_aib_ode"
   cmd_unittest_module "deposim_sim.test_measurement_adapter"
+  cmd_unittest_module "deposim_sim.test_metrics"
+  cmd_unittest_module "deposim_sim.test_transport_provider"
   cmd_unittest_module "deposim_sim.test_pipeline_aib"
   cmd_unittest_module "deposim_sim.test_cvd_steady_aib"
   cmd_unittest_module "deposim_sim.test_doe"
+  cmd_unittest_module "deposim_sim.test_zarr_output"
   cmd_unittest_module "deposim_sim.test_multiz"
   cmd_unittest_module "deposim_sim.test_benchmark"
   cmd_unittest_module "deposim_sim.test_phases_driver"
@@ -1374,6 +1388,8 @@ Commands:
   smoke          Run minimal synthetic CVD steady simulation
   benchmark_wafer2d Run wafer-2D AIB benchmark (A/AI/AB/AIB classes)
   benchmark_wafer2d_physviz Run wafer-2D AIB benchmark with physviz outputs
+  benchmark_wafer2d_flux_km Run wafer-2D benchmark with free-km vs flux-km comparison
+  legacy_tests   Run isolated legacy test modules (non-gating)
   test           Run unit tests (stdlib unittest)
   verify_p0      import_check + smoke + test
   verify_p1      Run AIB utility migration gates (P3-013..P3-017, P3-022, P3-029)
@@ -1394,6 +1410,8 @@ case "${1:-}" in
   smoke) shift; cmd_smoke "$@";;
   benchmark_wafer2d) shift; cmd_benchmark_wafer2d "$@";;
   benchmark_wafer2d_physviz) shift; cmd_benchmark_wafer2d_physviz "$@";;
+  benchmark_wafer2d_flux_km) shift; cmd_benchmark_wafer2d_flux_km "$@";;
+  legacy_tests) shift; cmd_legacy_tests "$@";;
   test) shift; cmd_test "$@";;
   verify_p0) shift; cmd_verify_p0 "$@";;
   verify_p1) shift; cmd_verify_p1 "$@";;

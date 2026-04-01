@@ -62,6 +62,8 @@ BENCHMARK_PHYSVIZ_MAPS: tuple[PlotSpec, ...] = (
     PlotSpec("physviz_h_nm", "physviz_h_nm.png", "h_nm", "Representative h_nm", "viridis"),
     PlotSpec("physviz_phi_B", "physviz_phi_B.png", "phi_B", "Representative phi_B", "viridis"),
     PlotSpec("physviz_f_I", "physviz_f_I.png", "f_I", "Representative f_I", "viridis"),
+    PlotSpec("physviz_km_A", "physviz_km_A.png", "km_A", "Representative km_A [m/s]", "magma"),
+    PlotSpec("physviz_tau_A", "physviz_tau_A.png", "tau_A", "Representative tau_A [mm*s/m]", "plasma"),
 )
 
 DOE_KPI_MAPS: tuple[PlotSpec, ...] = (

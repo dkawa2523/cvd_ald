@@ -77,6 +77,10 @@ Physviz extension command (time-space maps + term-importance plots):
 
 - `./scripts/commands.sh benchmark_wafer2d_physviz`
 
+Flux-km comparison command (free-km vs flux-km judge):
+
+- `./scripts/commands.sh benchmark_wafer2d_flux_km`
+
 ## P2 Gate
 
 Run AIB contract/output gates:

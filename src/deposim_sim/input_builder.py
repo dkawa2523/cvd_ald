@@ -20,16 +20,36 @@ def _require_numpy() -> None:
         raise RuntimeError("NumPy is required for deposim_sim.input_builder")
 
 
+def normalize_xy_mm(xy: np.ndarray, xy_unit: str) -> np.ndarray:
+    """Convert XY coordinates to millimeter units."""
+
+    _require_numpy()
+    xy_arr = np.asarray(xy, dtype=float)
+    if xy_unit == "m":
+        return xy_arr * 1000.0
+    if xy_unit == "mm":
+        return xy_arr
+    raise ValueError("xy_unit must be mm|m")
+
+
 @dataclass(frozen=True)
 class FluentData:
     mode: str
     cref: np.ndarray
+    flux_sink: np.ndarray | None
     xy: np.ndarray
     time: np.ndarray | None
     species: tuple[str, ...]
 
 
-def _validate_fluent_shapes(mode: str, cref: np.ndarray, xy: np.ndarray, time: np.ndarray | None, species: Sequence[str]) -> None:
+def _validate_fluent_shapes(
+    mode: str,
+    cref: np.ndarray,
+    flux_sink: np.ndarray | None,
+    xy: np.ndarray,
+    time: np.ndarray | None,
+    species: Sequence[str],
+) -> None:
     if xy.ndim != 2 or xy.shape[1] != 2:
         raise ValueError(f"fluent xy must be shape [n_pts,2], got {xy.shape}")
     n_pts = int(xy.shape[0])
@@ -41,6 +61,13 @@ def _validate_fluent_shapes(mode: str, cref: np.ndarray, xy: np.ndarray, time: n
             raise ValueError(
                 f"steady cref shape mismatch: expected {(n_pts, n_species)} from xy/species, got {cref.shape}"
             )
+        if flux_sink is not None:
+            if flux_sink.ndim != 2:
+                raise ValueError(f"steady flux_sink must be shape [n_pts,n_species], got {flux_sink.shape}")
+            if flux_sink.shape != (n_pts, n_species):
+                raise ValueError(
+                    f"steady flux_sink shape mismatch: expected {(n_pts, n_species)} from xy/species, got {flux_sink.shape}"
+                )
         if time is not None:
             raise ValueError("steady fluent input must not include time array")
     elif mode == "transient":
@@ -56,6 +83,13 @@ def _validate_fluent_shapes(mode: str, cref: np.ndarray, xy: np.ndarray, time: n
             raise ValueError(f"transient time must be 1D, got {time.shape}")
         if time.shape[0] != cref.shape[0]:
             raise ValueError("transient time length must match cref first axis")
+        if flux_sink is not None:
+            if flux_sink.ndim != 3:
+                raise ValueError(f"transient flux_sink must be shape [n_t,n_pts,n_species], got {flux_sink.shape}")
+            if flux_sink.shape != cref.shape:
+                raise ValueError(
+                    "transient flux_sink shape mismatch: expected [n_t,n_pts,n_species] aligned to cref"
+                )
     else:
         raise ValueError("fluent mode must be steady|transient")
 
@@ -78,15 +112,19 @@ def load_fluent_npz_v2(
         cref = np.asarray(data[getattr(keys, "cref", "cref")], dtype=float)
         xy = np.asarray(data[getattr(keys, "xy", "xy")], dtype=float)
         time = None
+        flux_sink = None
         if mode == "transient":
             time = np.asarray(data[getattr(keys, "time", "time")], dtype=float)
+        flux_key = str(getattr(keys, "flux_sink", "flux_sink"))
+        if flux_key in data.files:
+            flux_sink = np.asarray(data[flux_key], dtype=float)
 
     if np.any(cref < 0.0):
         warnings.warn("Negative Fluent concentration values were clipped to zero.", RuntimeWarning, stacklevel=2)
         cref = np.clip(cref, 0.0, np.inf)
 
-    _validate_fluent_shapes(mode, cref, xy, time, species)
-    return FluentData(mode=mode, cref=cref, xy=xy, time=time, species=tuple(str(s) for s in species))
+    _validate_fluent_shapes(mode, cref, flux_sink, xy, time, species)
+    return FluentData(mode=mode, cref=cref, flux_sink=flux_sink, xy=xy, time=time, species=tuple(str(s) for s in species))
 
 
 def build_domain_from_fluent_xy(
@@ -103,13 +141,7 @@ def build_domain_from_fluent_xy(
     if wafer_radius_mm <= 0.0:
         raise ValueError("wafer_radius_mm must be > 0")
 
-    xy_arr = np.asarray(xy, dtype=float)
-    if xy_unit == "m":
-        xy_mm = xy_arr * 1000.0
-    elif xy_unit == "mm":
-        xy_mm = xy_arr
-    else:
-        raise ValueError("xy_unit must be mm|m")
+    xy_mm = normalize_xy_mm(np.asarray(xy, dtype=float), xy_unit)
 
     x_mm = xy_mm[:, 0]
     y_mm = xy_mm[:, 1]
@@ -191,4 +223,5 @@ __all__ = [
     "load_fluent_npz_v2",
     "build_domain_from_fluent_xy",
     "apply_roles",
+    "normalize_xy_mm",
 ]

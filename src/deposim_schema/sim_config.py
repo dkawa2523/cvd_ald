@@ -34,6 +34,7 @@ _ALLOWED_ORDERS_P_STAR = {0, 1, 2}
 _ALLOWED_OPT_ENGINES = {"optuna", "random"}
 _ALLOWED_OPT_SAMPLERS = {"tpe", "cmaes", "random"}
 _ALLOWED_OPT_PRUNERS = {"none", "median", "hyperband"}
+_ALLOWED_DOMAIN_KINDS = {"from_fluent_xy", "wafer_2d_xy", "wafer_2d_polar", "wafer_1d_radial"}
 
 
 def _ensure(cond: bool, message: str) -> None:
@@ -53,6 +54,7 @@ class FluentKeysSpec:
     cref: str = "cref"
     xy: str = "xy"
     time: str = "time"
+    flux_sink: str = "flux_sink"
 
 
 @dataclass
@@ -98,11 +100,28 @@ class DomainSpec:
     kind: str = "from_fluent_xy"
     xy_unit: str = "mm"
     wafer_radius_mm: float = 150.0
+    nr: int = 64
+    ntheta: int = 128
+    nx: int = 128
+    ny: int = 128
+    edge_exclusion_mm: float = 0.0
 
     def __post_init__(self) -> None:
-        _ensure(self.kind == "from_fluent_xy", "sim.domain.kind must be 'from_fluent_xy'")
+        _ensure(
+            self.kind in _ALLOWED_DOMAIN_KINDS,
+            f"sim.domain.kind must be one of {_ALLOWED_DOMAIN_KINDS}",
+        )
         _ensure(self.xy_unit in {"mm", "m"}, "sim.domain.xy_unit must be mm|m")
         _ensure(float(self.wafer_radius_mm) > 0.0, "sim.domain.wafer_radius_mm must be > 0")
+        _ensure(float(self.edge_exclusion_mm) >= 0.0, "sim.domain.edge_exclusion_mm must be >= 0")
+
+        if self.kind in {"wafer_2d_xy", "wafer_2d_polar", "wafer_1d_radial"}:
+            _ensure(int(self.nr) >= 2, "sim.domain.nr must be >= 2")
+        if self.kind == "wafer_2d_polar":
+            _ensure(int(self.ntheta) >= 2, "sim.domain.ntheta must be >= 2")
+        if self.kind == "wafer_2d_xy":
+            _ensure(int(self.nx) >= 2, "sim.domain.nx must be >= 2")
+            _ensure(int(self.ny) >= 2, "sim.domain.ny must be >= 2")
 
 
 @dataclass
@@ -138,10 +157,19 @@ class AIBOrdersSpec:
 class AIBModelParamsSpec:
     transport: dict[str, Any] = field(
         default_factory=lambda: {
+            "km_source": "fit_scalar",
             "km_A": {"mode": "constant", "value": 0.02},
             "km_B": {"mode": "constant", "value": 0.02},
             "Gamma_s": 1.0,
             "nu_A": 1.0,
+            "gamma_km_A": 1.0,
+            "gamma_km_B": 1.0,
+            "from_cfd_flux_sink": {
+                "eps_cref": 1.0e-12,
+                "km_clip": [1.0e-8, 1.0e4],
+                "flux_negative_policy": "error",
+                "units_hint": "",
+            },
         }
     )
     kinetics: dict[str, Any] = field(default_factory=lambda: {"k_ads": 1.0, "k_des": 0.1, "k_rxn": 0.01})

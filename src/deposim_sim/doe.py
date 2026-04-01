@@ -15,10 +15,11 @@ from deposim_report.plot_catalog import DOE_KPI_MAPS, DOE_ZREF_PLOT, to_plot_rec
 from deposim_schema import compose_and_save_sim_config, compose_sim_config
 
 from .common.overrides import normalize_overrides, normalize_sweep
+from .common.run_artifacts import create_run_layout, finalize_run_outputs
 from .metrics import compute_kpi_metrics
 from .output_manifest import artifact_links, artifact_paths, build_manifest, load_manifest, write_manifest
 from .pipeline import run_aib_from_spec
-from .results_index import next_run_dir, update_project_files
+from .results_index import update_project_files
 from .validation import validate_run_spec
 from .zarr_output import load_array_store, save_array_store
 
@@ -135,15 +136,17 @@ def run_doe(
 
     base_spec = compose_sim_config(config_name, overrides=base_norm)
     sim = getattr(base_spec, "sim", base_spec)
-    project_dir = Path(sim.output.root_dir) / sim.output.project
-    project_dir.mkdir(parents=True, exist_ok=True)
     root_name = run_dir_name or f"{sim.output.run_name}_doe"
-    run_id, run_dir = next_run_dir(project_dir, root_name)
-    run_dir.mkdir(parents=True, exist_ok=False)
-    outputs_dir = run_dir / "outputs"
-    outputs_dir.mkdir(parents=True, exist_ok=True)
-    plots_dir = run_dir / "plots"
-    plots_dir.mkdir(parents=True, exist_ok=True)
+    layout = create_run_layout(
+        root_dir=Path(sim.output.root_dir),
+        project=str(sim.output.project),
+        run_name=str(root_name),
+        with_inputs_dir=False,
+    )
+    run_id = layout.run_id
+    run_dir = layout.run_dir
+    outputs_dir = layout.outputs_dir
+    plots_dir = layout.plots_dir
 
     compose_and_save_sim_config(
         run_dir / "config_resolved.yaml",
@@ -268,8 +271,6 @@ def run_doe(
         "manifest_path": "outputs/manifest.json",
         "artifact_paths": artifact_map,
     }
-    (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-
     ranking_rows = "".join(
         f"<tr><td>{row['rank']}</td><td>{row['case_index']}</td><td>{row['nu_percent']:.8g}</td></tr>"
         for row in ranking
@@ -294,9 +295,7 @@ def run_doe(
         ],
     )
     (run_dir / "report.html").write_text(report_html, encoding="utf-8")
-    write_manifest(run_dir, manifest)
-
-    update_project_files(project_dir, summary)
+    finalize_run_outputs(layout=layout, summary=summary, manifest=manifest)
     return DoeRunResult(run_dir=run_dir, case_count=len(cases), summary=summary)
 
 

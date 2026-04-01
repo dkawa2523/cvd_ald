@@ -12,26 +12,27 @@ class TestCompatibilityValidator(unittest.TestCase):
         spec = compose_sim_config("smoke")
         validate_run_spec(spec)
 
-    def test_rotating_disk_zero_omega_error_guard_fails(self) -> None:
-        spec = compose_sim_config(
-            "smoke",
-            overrides=[
-                "model.mass_transfer_name=rotating_disk",
-                "+model.mass_transfer_params.omega_zero_guard=error",
-                "+model.mass_transfer_params.diffusivity_m2_s=1e-4",
-                "+model.mass_transfer_params.nu_m2_s=1e-6",
-                "inputs.omega_rad_s=0.0",
-            ],
-        )
+    def test_domain_kind_validation(self) -> None:
+        spec = compose_sim_config("smoke", overrides=["sim.domain.kind=wafer_2d_xy"])
+        validate_run_spec(spec)
+
+    def test_invalid_xy_grid_shape_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
+            spec = compose_sim_config(
+                "smoke",
+                overrides=[
+                    "sim.domain.kind=wafer_2d_xy",
+                    "sim.domain.nx=1",
+                ],
+            )
             validate_run_spec(spec)
 
-    def test_dynamic_state_rejected_for_steady_mode(self) -> None:
+    def test_flux_policy_validation(self) -> None:
         spec = compose_sim_config(
             "smoke",
             overrides=[
-                "model.state_name=dynamic_ode",
-                "time.mode=cvd_steady",
+                "sim.model.params.transport.km_source=from_cfd_flux_sink",
+                "sim.model.params.transport.from_cfd_flux_sink.flux_negative_policy=invalid",
             ],
         )
         with self.assertRaises(ValueError):
