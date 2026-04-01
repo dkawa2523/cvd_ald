@@ -6,6 +6,7 @@ Last sync: 2026-02-23
 - AIB replacement/output contract execution chain added (`D-006..D-009`, `P3-001..P3-045`).
 - Optimization selective-adoption chain added (`D-010`, `P3-046..P3-052`).
 - improve2 selective-adoption chain added (`D-011`, `P3-053..P3-057`).
+- Runtime dependency bootstrap decision added (`D-012`).
 
 | Requirement | Tasks |
 |---|---|

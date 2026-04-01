@@ -3217,6 +3217,39 @@
       ]
     },
     {
+      "task_id": "D-012",
+      "title": "Decision: runtime dependency bootstrap policy for benchmark execution",
+      "milestone": "POST",
+      "type": "decision",
+      "stop_after": false,
+      "estimated_minutes": 45,
+      "description": "Record benchmark runtime prerequisite policy for hydra-core/omegaconf and define local/offline dependency provisioning boundaries under AGENTS no-network task rules.",
+      "acceptance_criteria": [
+        "ADR 0016 is added and accepted",
+        "Dependency bootstrap policy documents local/offline provisioning and no-network task constraint",
+        "Verification command for D-012 passes"
+      ],
+      "depends_on": [
+        "D-011"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 220,
+        "allowed_dirs": [
+          "docs/adr/",
+          "tasks/",
+          "scripts/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task D-012'"
+      ]
+    },
+    {
       "task_id": "P3-053",
       "title": "P3 add role stability and role-identifiability diagnostics to fit outputs",
       "milestone": "P3",

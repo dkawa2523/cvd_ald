@@ -1109,6 +1109,12 @@ PY
       grep -q "improve2.md" "$ROOT_DIR/docs/adr/0014-improve2-selective-adoption-p0.md"
       grep -q "AIB" "$ROOT_DIR/docs/adr/0014-improve2-selective-adoption-p0.md"
       ;;
+    D-012)
+      test -f "$ROOT_DIR/docs/adr/0016-runtime-dependency-bootstrap-policy.md"
+      grep -qi "hydra-core" "$ROOT_DIR/docs/adr/0016-runtime-dependency-bootstrap-policy.md"
+      grep -qi "omegaconf" "$ROOT_DIR/docs/adr/0016-runtime-dependency-bootstrap-policy.md"
+      grep -qi "Decision task: D-012" "$ROOT_DIR/docs/adr/0016-runtime-dependency-bootstrap-policy.md"
+      ;;
     P3-001)
       "$PYTHON" -c "import deposim_schema"
       cmd_unittest_module "deposim_schema.test_sim_config_v2"
