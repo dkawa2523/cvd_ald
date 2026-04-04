@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from copy import deepcopy
 from typing import Any
 
-from .common.nested_path import get_nested, set_nested
+from .common.path_tools import get_attr_path, set_attr_path
 from .pipeline import run_aib_from_spec
 
 try:  # pragma: no cover
@@ -64,15 +64,15 @@ def compute_identifiability_diagnostics(
     norms: dict[str, float] = {}
 
     for path in parameter_paths:
-        base_value = float(get_nested(run_spec, path))
+        base_value = float(get_attr_path(run_spec, path))
         step = relative_step * max(abs(base_value), 1.0)
         if step <= 0.0:
             step = relative_step
 
         plus_spec = deepcopy(run_spec)
         minus_spec = deepcopy(run_spec)
-        set_nested(plus_spec, path, base_value + step)
-        set_nested(minus_spec, path, base_value - step)
+        set_attr_path(plus_spec, path, base_value + step, create_missing_mappings=False)
+        set_attr_path(minus_spec, path, base_value - step, create_missing_mappings=False)
 
         plus = _thickness_vector(plus_spec)
         minus = _thickness_vector(minus_spec)

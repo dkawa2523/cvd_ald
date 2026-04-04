@@ -397,3 +397,138 @@ This is a human-readable summary of `tasks/tasks.json`.
 - Acceptance:
   - Decision is recorded with ADOPT/DEFERRED/ADR_REQUIRED classification
   - MODEL_GAP references D-005 and decision outcome
+
+## Post-P3 Refactor Chain
+### D-013: Decision: staged refactor policy for compact/readable AIB codebase
+- Type: decision
+- Stop after: False
+- Estimated: 45 min
+- Depends on: D-012
+- Acceptance:
+  - ADR 0017 is added and accepted
+  - Code-only deletion boundary is documented
+  - Compatibility/commonization constraints are documented
+
+### P3-058: P3 unify output contract finalization across run_manager/doe/run_fit/benchmark
+- Type: implement
+- Stop after: False
+- Estimated: 150 min
+- Depends on: D-013
+- Acceptance:
+  - Shared helper centralizes manifest+summary envelope
+  - summary/manifest/report contracts remain compatible
+
+### P3-059: P3 simplify benchmark_wafer2d orchestration by extracting case execution helpers
+- Type: implement
+- Stop after: False
+- Estimated: 140 min
+- Depends on: P3-058
+- Acceptance:
+  - Case execution and flux compare logic are helperized
+  - Existing benchmark behavior remains compatible
+
+### P3-060: P3 unify benchmark physviz rendering with shared map/plot-record utilities
+- Type: implement
+- Stop after: False
+- Estimated: 130 min
+- Depends on: P3-059
+- Acceptance:
+  - benchmark physviz rendering uses shared `save_map` + `to_plot_record`
+  - Local duplicate rendering helpers are removed
+
+### P3-061: P3 consolidate dot-path utilities with canonical path_tools API
+- Type: implement
+- Stop after: False
+- Estimated: 120 min
+- Depends on: P3-059
+- Acceptance:
+  - Canonical get/set path API is used by key modules
+  - nested_path is reduced to compatibility wrappers
+
+### P3-062: P3 evidence-based cleanup of unused private helpers (code-only deletion)
+- Type: implement
+- Stop after: False
+- Estimated: 90 min
+- Depends on: P3-060, P3-061
+- Acceptance:
+  - Unused private helper code is removed based on search+tests
+  - No top-level artifact cleanup is performed
+
+### P3-063: P3 synchronize D-013/P3-058..P3-063 task routing and traceability/eval gates
+- Type: implement
+- Stop after: False
+- Estimated: 100 min
+- Depends on: P3-062
+- Acceptance:
+  - verify_task supports D-013 and P3-058..P3-063
+  - TRACEABILITY/EVAL_PROTOCOL and verify_task_contracts are synced
+
+### D-014: Decision: quick/full gate policy, skip handling, and generated-file boundary
+- Type: decision
+- Stop after: False
+- Estimated: 45 min
+- Depends on: D-013
+- Acceptance:
+  - ADR 0018 is added and accepted
+  - `verify_p2_quick` + `verify_p2` full policy is documented
+  - generated boundary includes `scripts/env.sh` and `.wslbin`
+
+### P3-064: P3 simplify commands.sh gate routing with quick/full task-set helpers
+- Type: implement
+- Stop after: False
+- Estimated: 120 min
+- Depends on: D-014
+- Acceptance:
+  - `verify_p2_quick` exists and runs quick task-set
+  - `verify_p2` remains full and backward-compatible
+  - repeated gate routing is reduced via shared helper
+
+### P3-065: P3 add explicit unittest skip_policy (warn/fail) and optional-optuna handling
+- Type: implement
+- Stop after: False
+- Estimated: 90 min
+- Depends on: P3-064
+- Acceptance:
+  - `cmd_unittest_module` supports `skip_policy=auto|warn|fail`
+  - optional `fit_optuna` skip behavior is explicit `warn`
+  - mandatory skip-fail callers remain fail-fast
+
+### P3-066: P3 enforce generated-file hygiene for scripts/env.sh and .wslbin
+- Type: implement
+- Stop after: False
+- Estimated: 80 min
+- Depends on: P3-064
+- Acceptance:
+  - `.gitignore` includes `scripts/env.sh` and `.wslbin`
+  - generated runtime files no longer create tracked-noise drift
+  - `P3-030` remains stable for normal generated artifacts
+
+### P3-067: P3 complete benchmark_wafer2d responsibility split for readability
+- Type: implement
+- Stop after: False
+- Estimated: 150 min
+- Depends on: P3-059
+- Acceptance:
+  - benchmark public API remains compatible
+  - benchmark internals are split into smaller responsibilities
+  - benchmark/physviz tests remain green
+
+### P3-068: P3 finish output/report commonization across run_manager/doe/run_fit/benchmark
+- Type: implement
+- Stop after: False
+- Estimated: 140 min
+- Depends on: P3-058, P3-067
+- Acceptance:
+  - artifact-row construction is commonized across key runners
+  - minimal HTML report generation duplication is reduced
+  - output contract keys remain unchanged
+
+### P3-069: P3 evidence-based cleanup closeout with quick gate + benchmark rerun
+- Type: implement
+- Stop after: False
+- Estimated: 120 min
+- Depends on: P3-065, P3-066, P3-068
+- Acceptance:
+  - cleanup removes only unreferenced private helper code
+  - `verify_task_contracts` + `verify_p2_quick` pass
+  - flux-km physviz benchmark rerun completes with `overall_passed=True`

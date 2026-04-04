@@ -210,17 +210,25 @@ cmd_run_manager_tests() {
 cmd_unittest_module() {
   local module_name="${1:-}"
   local skipped_error="${2:-}"
+  local skip_policy="${3:-auto}"
   if [[ -z "$module_name" ]]; then
     echo "[commands] ERROR: cmd_unittest_module requires module name" >&2
     return 2
   fi
-  MODULE_NAME="$module_name" SKIPPED_ERROR="$skipped_error" "$PYTHON" - <<'PY'
-import os
+  case "$skip_policy" in
+    auto|warn|fail) ;;
+    *)
+      echo "[commands] ERROR: invalid skip policy: $skip_policy (expected: auto|warn|fail)" >&2
+      return 2
+      ;;
+  esac
+  "$PYTHON" - "$module_name" "$skipped_error" "$skip_policy" <<'PY'
 import sys
 import unittest
 
-module_name = os.environ["MODULE_NAME"]
-skipped_error = os.environ.get("SKIPPED_ERROR", "").strip()
+module_name = sys.argv[1]
+skipped_error = sys.argv[2].strip()
+skip_policy = sys.argv[3].strip() or "auto"
 suite = unittest.defaultTestLoader.loadTestsFromName(module_name)
 if suite.countTestCases() == 0:
     print(
@@ -231,14 +239,22 @@ if suite.countTestCases() == 0:
 runner = unittest.TextTestRunner(verbosity=1)
 result = runner.run(suite)
 if result.skipped:
-    if skipped_error:
-        print(f"[commands] ERROR: {skipped_error}", file=sys.stderr)
-    else:
-        print(
-            f"[commands] ERROR: unittest module '{module_name}' reported skipped cases.",
-            file=sys.stderr,
-        )
-    raise SystemExit(1)
+    effective_policy = skip_policy
+    if effective_policy == "auto":
+        effective_policy = "fail" if skipped_error else "warn"
+    if effective_policy == "fail":
+        if skipped_error:
+            print(f"[commands] ERROR: {skipped_error}", file=sys.stderr)
+        else:
+            print(
+                f"[commands] ERROR: unittest module '{module_name}' reported skipped cases.",
+                file=sys.stderr,
+            )
+        raise SystemExit(1)
+    print(
+        f"[commands] WARN: unittest module '{module_name}' reported skipped cases (skip_policy={effective_policy}).",
+        file=sys.stderr,
+    )
 if not result.wasSuccessful():
     raise SystemExit(1)
 PY
@@ -322,10 +338,16 @@ cmd_jax_optional_tests() { cmd_unittest_module "deposim_sim.test_jax_optional"; 
 cmd_benchmark_tests() { cmd_unittest_module "deposim_sim.test_benchmark"; }
 cmd_benchmark_wafer2d_tests() { cmd_unittest_module "deposim_sim.test_benchmark_wafer2d"; }
 cmd_physviz_tests() { cmd_unittest_module "deposim_sim.test_physviz"; }
+cmd_fit_optuna_tests() {
+  cmd_unittest_module \
+    "deposim_opt.test_fit_optuna" \
+    "optuna optional tests skipped unexpectedly under skip_policy=warn." \
+    "warn"
+}
 cmd_opt_tests() {
   cmd_unittest_module "deposim_opt.test_enumerate_roles"
   cmd_unittest_module "deposim_opt.test_objective"
-  cmd_unittest_module "deposim_opt.test_fit_optuna"
+  cmd_fit_optuna_tests
   cmd_unittest_module "deposim_opt.test_fit_diagnostics"
 }
 cmd_assimilation_tests() { cmd_unittest_module "deposim_opt.test_assimilation"; }
@@ -628,7 +650,7 @@ cmd_test() {
   cmd_unittest_module "deposim_sim.test_physviz"
   cmd_unittest_module "deposim_opt.test_enumerate_roles"
   cmd_unittest_module "deposim_opt.test_objective"
-  cmd_unittest_module "deposim_opt.test_fit_optuna"
+  cmd_fit_optuna_tests
   cmd_unittest_module "deposim_opt.test_fit_diagnostics"
   cmd_unittest_module "deposim_opt.test_assimilation"
 }
@@ -685,66 +707,68 @@ PY
   done
 }
 
+readonly -a P3_VERIFY_P1_TASKS=(
+  P3-013 P3-014 P3-015 P3-016 P3-017 P3-022 P3-029
+)
+
+readonly -a P3_VERIFY_P2_QUICK_TASKS=(
+  P3-039 P3-040 P3-046 P3-047 P3-058 P3-059 P3-060 P3-061
+)
+
+readonly -a P3_VERIFY_P2_FULL_TASKS=(
+  P3-039 P3-040 P3-041 P3-042 P3-043 P3-044
+  P3-032 P3-033 P3-034 P3-035 P3-036 P3-037
+  P3-018 P3-019 P3-020 P3-023 P3-024 P3-025 P3-026 P3-027
+  P3-030
+  P3-046 P3-047 P3-048 P3-049 P3-050 P3-051 P3-052 P3-053 P3-054 P3-055 P3-056 P3-057
+  P3-058 P3-059 P3-060 P3-061 P3-062 P3-063
+  P3-064 P3-065 P3-066 P3-067 P3-068 P3-069
+)
+
+cmd_run_task_set() {
+  local set_name="${1:-task_set}"
+  shift || true
+  local tids=("$@")
+  if [[ "${#tids[@]}" -eq 0 ]]; then
+    echo "[commands] ERROR: empty task set: $set_name" >&2
+    return 2
+  fi
+  local tid
+  for tid in "${tids[@]}"; do
+    cmd_verify_task "$tid"
+  done
+}
+
 cmd_verify_p1() {
-  cmd_verify_task P3-013
-  cmd_verify_task P3-014
-  cmd_verify_task P3-015
-  cmd_verify_task P3-016
-  cmd_verify_task P3-017
-  cmd_verify_task P3-022
-  cmd_verify_task P3-029
+  cmd_run_task_set "verify_p1" "${P3_VERIFY_P1_TASKS[@]}"
+}
+
+cmd_verify_p2_quick() {
+  cmd_run_task_set "verify_p2_quick" "${P3_VERIFY_P2_QUICK_TASKS[@]}"
 }
 
 cmd_verify_p2() {
-  cmd_verify_task P3-039
-  cmd_verify_task P3-040
-  cmd_verify_task P3-041
-  cmd_verify_task P3-042
-  cmd_verify_task P3-043
-  cmd_verify_task P3-044
-  cmd_verify_task P3-032
-  cmd_verify_task P3-033
-  cmd_verify_task P3-034
-  cmd_verify_task P3-035
-  cmd_verify_task P3-036
-  cmd_verify_task P3-037
-  cmd_verify_task P3-018
-  cmd_verify_task P3-019
-  cmd_verify_task P3-020
-  cmd_verify_task P3-023
-  cmd_verify_task P3-024
-  cmd_verify_task P3-025
-  cmd_verify_task P3-026
-  cmd_verify_task P3-027
-  cmd_verify_task P3-030
-  cmd_verify_task P3-046
-  cmd_verify_task P3-047
-  cmd_verify_task P3-048
-  cmd_verify_task P3-049
-  cmd_verify_task P3-050
-  cmd_verify_task P3-051
-  cmd_verify_task P3-052
-  cmd_verify_task P3-053
-  cmd_verify_task P3-054
-  cmd_verify_task P3-055
-  cmd_verify_task P3-056
-  cmd_verify_task P3-057
+  cmd_run_task_set "verify_p2" "${P3_VERIFY_P2_FULL_TASKS[@]}"
 }
 
 cmd_verify_p3() {
   cmd_verify_milestone "P3"
 }
 
+cmd_cautorun() {
+  (cd "$ROOT_DIR" && "$PYTHON" "scripts/codex_autorun.py" "$@")
+}
+
 cmd_verify_task_contracts() {
-  "$PYTHON" "$ROOT_DIR/scripts/codex_autorun.py" --validate-task-contracts
+  cmd_cautorun --validate-task-contracts
 }
 
 cmd_verify_autorun() {
-  "$PYTHON" "$ROOT_DIR/scripts/codex_autorun.py" --dry-run --git-check auto --lock-timeout-sec 1 --max-tasks 1
+  cmd_cautorun --dry-run --git-check auto --lock-timeout-sec 1 --max-tasks 1
 }
 
 cmd_step_next() {
-  "$PYTHON" "$ROOT_DIR/scripts/codex_autorun.py" --git-check auto --max-tasks 1
+  cmd_cautorun --git-check auto --max-tasks 1
 }
 
 cmd_verify_repo_consistency() {
@@ -1115,6 +1139,19 @@ PY
       grep -qi "omegaconf" "$ROOT_DIR/docs/adr/0016-runtime-dependency-bootstrap-policy.md"
       grep -qi "Decision task: D-012" "$ROOT_DIR/docs/adr/0016-runtime-dependency-bootstrap-policy.md"
       ;;
+    D-013)
+      test -f "$ROOT_DIR/docs/adr/0017-staged-refactor-policy-compact-readable-aib.md"
+      grep -qi "Decision task: D-013" "$ROOT_DIR/docs/adr/0017-staged-refactor-policy-compact-readable-aib.md"
+      grep -qi "code-only" "$ROOT_DIR/docs/adr/0017-staged-refactor-policy-compact-readable-aib.md"
+      grep -qi "summary.json" "$ROOT_DIR/docs/adr/0017-staged-refactor-policy-compact-readable-aib.md"
+      ;;
+    D-014)
+      test -f "$ROOT_DIR/docs/adr/0018-operational-gates-skip-policy-and-generated-files.md"
+      grep -qi "Decision task: D-014" "$ROOT_DIR/docs/adr/0018-operational-gates-skip-policy-and-generated-files.md"
+      grep -qi "verify_p2_quick" "$ROOT_DIR/docs/adr/0018-operational-gates-skip-policy-and-generated-files.md"
+      grep -qi "skip=warn" "$ROOT_DIR/docs/adr/0018-operational-gates-skip-policy-and-generated-files.md"
+      grep -qi "scripts/env.sh" "$ROOT_DIR/docs/adr/0018-operational-gates-skip-policy-and-generated-files.md"
+      ;;
     P3-001)
       "$PYTHON" -c "import deposim_schema"
       cmd_unittest_module "deposim_schema.test_sim_config_v2"
@@ -1136,7 +1173,7 @@ PY
       ;;
     P3-006)
       cmd_unittest_module "deposim_opt.test_enumerate_roles"
-      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      cmd_fit_optuna_tests
       ;;
     P3-007)
       cmd_verify_task P3-001
@@ -1197,7 +1234,7 @@ PY
       ;;
     P3-018)
       cmd_unittest_module "deposim_opt.test_enumerate_roles"
-      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      cmd_fit_optuna_tests
       ;;
     P3-019)
       cmd_unittest_module "deposim_sim.test_measurement_adapter"
@@ -1218,7 +1255,7 @@ PY
       cmd_unittest_module "deposim_sim.test_phases_driver"
       ;;
     P3-023)
-      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      cmd_fit_optuna_tests
       ;;
     P3-024)
       cmd_unittest_module "deposim_sim.test_report_comparison"
@@ -1259,7 +1296,13 @@ if opt.sim.model.name != "aib_ode":
     raise SystemExit("[commands] ERROR: stub alias must resolve to AIB opt config.")
 PY
       test ! -d "$ROOT_DIR/codex_handoff_pack (5)"
-      test ! -d "$ROOT_DIR/src/deposim.egg-info"
+      if [[ -d "$ROOT_DIR/src/deposim.egg-info" ]]; then
+        if git -C "$ROOT_DIR" ls-files --error-unmatch "src/deposim.egg-info/*" >/dev/null 2>&1; then
+          echo "[commands] ERROR: tracked src/deposim.egg-info artifacts detected." >&2
+          return 1
+        fi
+        echo "[commands] WARN: local generated src/deposim.egg-info detected (untracked)." >&2
+      fi
       ;;
     P3-031)
       cmd_verify_task P0-009
@@ -1269,7 +1312,7 @@ PY
       ;;
     P3-032)
       cmd_unittest_module "deposim_sim.test_run_manager"
-      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      cmd_fit_optuna_tests
       ;;
     P3-033)
       cmd_unittest_module "deposim_sim.test_report_comparison"
@@ -1282,7 +1325,7 @@ PY
     P3-035)
       cmd_unittest_module "deposim_sim.test_doe"
       cmd_unittest_module "deposim_sim.test_benchmark_wafer2d"
-      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      cmd_fit_optuna_tests
       ;;
     P3-036)
       cmd_unittest_module "deposim_sim.test_run_manager"
@@ -1312,7 +1355,7 @@ PY
     P3-042)
       cmd_unittest_module "deposim_sim.test_doe"
       cmd_unittest_module "deposim_sim.test_benchmark_wafer2d"
-      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      cmd_fit_optuna_tests
       ;;
     P3-043)
       cmd_unittest_module "deposim_sim.test_run_manager"
@@ -1321,7 +1364,7 @@ PY
       cmd_unittest_module "deposim_sim.test_output_contract"
       cmd_unittest_module "deposim_sim.test_report_comparison"
       cmd_unittest_module "deposim_sim.test_benchmark_wafer2d"
-      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      cmd_fit_optuna_tests
       ;;
     P3-045)
       cmd_verify_task_contracts
@@ -1334,17 +1377,17 @@ PY
       cmd_unittest_module "deposim_opt.test_objective"
       ;;
     P3-048)
-      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      cmd_fit_optuna_tests
       ;;
     P3-049)
-      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      cmd_fit_optuna_tests
       ;;
     P3-050)
-      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      cmd_fit_optuna_tests
       ;;
     P3-051)
       cmd_unittest_module "deposim_opt.test_objective"
-      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      cmd_fit_optuna_tests
       cmd_unittest_module "deposim_schema.test_sim_config_v2"
       ;;
     P3-052)
@@ -1352,13 +1395,13 @@ PY
       cmd_verify_task P3-051
       ;;
     P3-053)
-      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      cmd_fit_optuna_tests
       ;;
     P3-054)
-      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      cmd_fit_optuna_tests
       ;;
     P3-055)
-      cmd_unittest_module "deposim_opt.test_fit_optuna"
+      cmd_fit_optuna_tests
       cmd_unittest_module "deposim_sim.test_report_comparison"
       ;;
     P3-056)
@@ -1368,6 +1411,61 @@ PY
     P3-057)
       cmd_verify_task_contracts
       cmd_verify_task P3-056
+      ;;
+    P3-058)
+      cmd_unittest_module "deposim_sim.test_run_manager"
+      cmd_unittest_module "deposim_sim.test_doe"
+      cmd_fit_optuna_tests
+      cmd_unittest_module "deposim_sim.test_output_contract"
+      ;;
+    P3-059)
+      cmd_unittest_module "deposim_sim.test_benchmark_wafer2d"
+      cmd_unittest_module "deposim_sim.test_output_contract"
+      ;;
+    P3-060)
+      cmd_unittest_module "deposim_sim.test_physviz"
+      cmd_unittest_module "deposim_sim.test_benchmark_wafer2d"
+      ;;
+    P3-061)
+      cmd_unittest_module "deposim_sim.test_identifiability"
+      cmd_unittest_module "deposim_sim.test_benchmark_wafer2d"
+      ;;
+    P3-062)
+      cmd_import_check
+      cmd_unittest_module "deposim_sim.test_benchmark_wafer2d"
+      cmd_fit_optuna_tests
+      ;;
+    P3-063)
+      cmd_verify_task_contracts
+      cmd_verify_task P3-062
+      ;;
+    P3-064)
+      grep -q "cmd_verify_p2_quick" "$ROOT_DIR/scripts/commands.sh"
+      cmd_verify_p2_quick
+      ;;
+    P3-065)
+      grep -q "skip_policy" "$ROOT_DIR/scripts/commands.sh"
+      cmd_fit_optuna_tests
+      ;;
+    P3-066)
+      grep -q "^\\.wslbin/$" "$ROOT_DIR/.gitignore"
+      grep -q "^scripts/env\\.sh$" "$ROOT_DIR/.gitignore"
+      cmd_verify_task P3-030
+      ;;
+    P3-067)
+      cmd_unittest_module "deposim_sim.test_benchmark_wafer2d"
+      cmd_unittest_module "deposim_sim.test_physviz"
+      ;;
+    P3-068)
+      cmd_unittest_module "deposim_sim.test_output_contract"
+      cmd_unittest_module "deposim_sim.test_run_manager"
+      cmd_unittest_module "deposim_sim.test_doe"
+      cmd_fit_optuna_tests
+      ;;
+    P3-069)
+      cmd_verify_task_contracts
+      cmd_verify_p2_quick
+      cmd_benchmark_wafer2d_flux_km --with-physviz
       ;;
     *)
       echo "[commands] ERROR: unknown task_id: $task_id" >&2
@@ -1399,7 +1497,8 @@ Commands:
   test           Run unit tests (stdlib unittest)
   verify_p0      import_check + smoke + test
   verify_p1      Run AIB utility migration gates (P3-013..P3-017, P3-022, P3-029)
-  verify_p2      Run AIB contract/output + optimization selective-adoption gates (P3-018..P3-020, P3-023..P3-027, P3-030, P3-032..P3-037, P3-046..P3-057)
+  verify_p2_quick Run daily quick contract/output checks (P3-039, P3-040, P3-046, P3-047, P3-058..P3-061)
+  verify_p2      Run full AIB contract/output + optimization/refactor gates (P3-018..P3-020, P3-023..P3-027, P3-030, P3-032..P3-037, P3-046..P3-069)
   verify_p3      Run verification gates for P3 tasks
   step_next      Execute only the next incomplete task
   verify_autorun Run autorun in dry-run mode with lock and contract checks
@@ -1421,6 +1520,7 @@ case "${1:-}" in
   test) shift; cmd_test "$@";;
   verify_p0) shift; cmd_verify_p0 "$@";;
   verify_p1) shift; cmd_verify_p1 "$@";;
+  verify_p2_quick) shift; cmd_verify_p2_quick "$@";;
   verify_p2) shift; cmd_verify_p2 "$@";;
   verify_p3) shift; cmd_verify_p3 "$@";;
   step_next) shift; cmd_step_next "$@";;

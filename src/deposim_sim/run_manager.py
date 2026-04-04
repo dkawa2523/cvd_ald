@@ -13,8 +13,12 @@ from deposim_report import write_run_report
 from deposim_schema import compose_and_save_sim_config
 
 from .metrics import compute_kpi_metrics
-from .common.run_artifacts import create_run_layout, finalize_run_outputs
-from .output_manifest import artifact_paths, build_manifest
+from .common.run_artifacts import (
+    build_manifest_and_summary,
+    create_run_layout,
+    finalize_run_outputs,
+    standard_artifact_rows,
+)
 
 try:  # pragma: no cover
     import numpy as np
@@ -96,25 +100,23 @@ def save_run_outputs(
     metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
 
     report_enabled = bool(sim.output.report.get("enabled", True))
-    artifact_rows = [
-        {"id": "config", "path": "config_resolved.yaml", "kind": "yaml", "required": True},
-        {"id": "summary", "path": "summary.json", "kind": "json", "required": True},
-        {"id": "manifest", "path": "outputs/manifest.json", "kind": "json", "required": True},
-        {"id": "fields", "path": "outputs/fields.npz", "kind": "npz", "required": True},
-        {"id": "metrics", "path": "outputs/metrics.json", "kind": "json", "required": True},
-    ]
-    if report_enabled:
-        artifact_rows.append({"id": "report", "path": "report.html", "kind": "html", "required": True})
-    provisional_manifest = build_manifest(
+    artifact_rows = standard_artifact_rows(
+        include_report=report_enabled,
+        extra_rows=[
+            {"id": "fields", "path": "outputs/fields.npz", "kind": "npz", "required": True},
+            {"id": "metrics", "path": "outputs/metrics.json", "kind": "json", "required": True},
+        ],
+    )
+    common_metadata = {
+        "dispatch_mode": result.diagnostics.get("dispatch_mode"),
+        "non_bracketed_total": int(result.diagnostics.get("non_bracketed_total", 0)),
+    }
+    provisional_manifest, _ = build_manifest_and_summary(
         run_id=run_id,
         mode="simulation",
-        created_at_utc=timestamp_utc,
         artifacts=artifact_rows,
-        plots=[],
-        metadata={
-            "dispatch_mode": result.diagnostics.get("dispatch_mode"),
-            "non_bracketed_total": int(result.diagnostics.get("non_bracketed_total", 0)),
-        },
+        metadata=common_metadata,
+        timestamp_utc=timestamp_utc,
     )
     plot_records: list[dict[str, Any]] = []
     if report_enabled:
@@ -138,29 +140,20 @@ def save_run_outputs(
             manifest=provisional_manifest,
         )
 
-    manifest = build_manifest(
+    manifest, summary = build_manifest_and_summary(
         run_id=run_id,
         mode="simulation",
-        created_at_utc=timestamp_utc,
         artifacts=artifact_rows,
         plots=plot_records,
-        metadata={
-            "dispatch_mode": result.diagnostics.get("dispatch_mode"),
-            "non_bracketed_total": int(result.diagnostics.get("non_bracketed_total", 0)),
-        },
-    )
-    artifact_map = artifact_paths(manifest)
-    summary = {
-        "run_id": run_id,
-        "timestamp_utc": timestamp_utc,
-        "mode": "simulation",
+        metadata=common_metadata,
+        timestamp_utc=timestamp_utc,
+        summary_fields={
         "thickness_min": float(np.nanmin(result.thickness)),
         "thickness_mean": float(np.nanmean(result.thickness)),
         "thickness_max": float(np.nanmax(result.thickness)),
         "kpi": kpi,
-        "manifest_path": "outputs/manifest.json",
-        "artifact_paths": artifact_map,
-    }
+        },
+    )
     finalize_run_outputs(layout=layout, summary=summary, manifest=manifest)
     return run_dir
 

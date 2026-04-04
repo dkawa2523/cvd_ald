@@ -15,7 +15,12 @@ from deposim_report.plot_catalog import DOE_KPI_MAPS, DOE_ZREF_PLOT, to_plot_rec
 from deposim_schema import compose_and_save_sim_config, compose_sim_config
 
 from .common.overrides import normalize_overrides, normalize_sweep
-from .common.run_artifacts import create_run_layout, finalize_run_outputs
+from .common.run_artifacts import (
+    build_manifest_and_summary,
+    create_run_layout,
+    finalize_run_outputs,
+    standard_artifact_rows,
+)
 from .metrics import compute_kpi_metrics
 from .output_manifest import artifact_links, artifact_paths, build_manifest, load_manifest, write_manifest
 from .pipeline import run_aib_from_spec
@@ -236,28 +241,22 @@ def run_doe(
         _plot_metric(center_edge_arr, plots_dir / DOE_KPI_MAPS[1].filename, ylabel=DOE_KPI_MAPS[1].title)
         plot_records.append(to_plot_record(DOE_KPI_MAPS[1], rel_path=f"plots/{DOE_KPI_MAPS[1].filename}"))
 
-    artifact_rows = [
-        {"id": "config", "path": "config_resolved.yaml", "kind": "yaml", "required": True},
-        {"id": "summary", "path": "summary.json", "kind": "json", "required": True},
-        {"id": "report", "path": "report.html", "kind": "html", "required": True},
-        {"id": "manifest", "path": "outputs/manifest.json", "kind": "json", "required": True},
-        {"id": "doe_cases_store", "path": doe_store_rel, "kind": str(doe_store["store_used"]), "required": True},
-        {"id": "doe_cases_json", "path": "outputs/doe_cases.json", "kind": "json", "required": True},
-        {"id": "doe_sweep", "path": "doe_sweep.json", "kind": "json", "required": True},
-    ]
-    manifest = build_manifest(
+    artifact_rows = standard_artifact_rows(
+        include_report=True,
+        extra_rows=[
+            {"id": "doe_cases_store", "path": doe_store_rel, "kind": str(doe_store["store_used"]), "required": True},
+            {"id": "doe_cases_json", "path": "outputs/doe_cases.json", "kind": "json", "required": True},
+            {"id": "doe_sweep", "path": "doe_sweep.json", "kind": "json", "required": True},
+        ],
+    )
+    manifest, summary = build_manifest_and_summary(
         run_id=run_id,
         mode="doe",
-        created_at_utc=timestamp_utc,
         artifacts=artifact_rows,
         plots=plot_records,
         metadata={"sampling": sampling_mode, "case_count": int(len(cases))},
-    )
-    artifact_map = artifact_paths(manifest)
-    summary = {
-        "run_id": run_id,
-        "timestamp_utc": timestamp_utc,
-        "mode": "doe",
+        timestamp_utc=timestamp_utc,
+        summary_fields={
         "sampling": sampling_mode,
         "case_count": int(len(cases)),
         "grid_shape": list(grid_shape or ()),
@@ -268,9 +267,8 @@ def run_doe(
         "ranking_top_nu": ranking,
         "doe_cases_store_used": doe_store["store_used"],
         "doe_cases_store_path": doe_store_rel,
-        "manifest_path": "outputs/manifest.json",
-        "artifact_paths": artifact_map,
-    }
+        },
+    )
     ranking_rows = "".join(
         f"<tr><td>{row['rank']}</td><td>{row['case_index']}</td><td>{row['nu_percent']:.8g}</td></tr>"
         for row in ranking

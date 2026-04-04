@@ -68,11 +68,11 @@ class TestWafer2DBenchmark(unittest.TestCase):
             artifact_ids = {row["id"] for row in manifest["artifacts"]}
             self.assertTrue({"ranking", "class_compare", "benchmark_case_metrics", "benchmark_cases"}.issubset(artifact_ids))
 
-            payload = np.load(run_dir / "outputs" / "benchmark_cases.npz")
-            self.assertIn("phi_B", payload.files)
-            self.assertIn("f_I", payload.files)
-            self.assertIn("residual_nm", payload.files)
-            self.assertEqual(payload["h_nm"].shape[0], len(build_wafer2d_cases()))
+            with np.load(run_dir / "outputs" / "benchmark_cases.npz") as payload:
+                self.assertIn("phi_B", payload.files)
+                self.assertIn("f_I", payload.files)
+                self.assertIn("residual_nm", payload.files)
+                self.assertEqual(payload["h_nm"].shape[0], len(build_wafer2d_cases()))
 
             rows = json.loads((run_dir / "outputs" / "benchmark_case_metrics.json").read_text(encoding="utf-8"))
             self.assertEqual(len(rows), len(build_wafer2d_cases()))
@@ -137,14 +137,26 @@ class TestWafer2DBenchmark(unittest.TestCase):
                     "sim.output.project=benchtest",
                 ],
                 compare_flux_km=True,
+                calibrate_flux_km=True,
+                flux_gamma_grid=[0.5, 1.0],
             )
             summary = out["summary"]
             self.assertIn("p1_recommendation", summary)
             self.assertIn("km_spread_ratio", summary)
             self.assertIn("flux_relative_delta_mean", summary)
+            self.assertIn("flux_delta_calibrated_mean", summary)
+            self.assertIn("flux_gamma_best", summary)
+            self.assertEqual(summary.get("flux_gamma_grid"), [0.5, 1.0])
+            self.assertIn("flux_km_judge", summary)
+            judge = dict(summary["flux_km_judge"])
+            self.assertIn(judge.get("status"), {"PASS", "WARN", "FAIL"})
+            self.assertEqual(judge.get("basis"), summary.get("flux_eval_basis"))
             rows = out["case_metrics"]
             self.assertTrue(any("mean_abs_residual_nm_flux_km" in row for row in rows))
             self.assertTrue(any("relative_delta_flux_minus_free" in row for row in rows))
+            self.assertTrue(any("mean_abs_residual_nm_flux_km_calibrated" in row for row in rows))
+            run_dir = Path(out["run_dir"])
+            self.assertTrue((run_dir / "outputs" / "flux_gamma_scan.csv").exists())
 
 
 if __name__ == "__main__":

@@ -27,6 +27,9 @@ choose_python() {
   local -a py3_candidates=()
   local -a py_candidates=()
 
+  if [[ -x "$ROOT_DIR/.wslbin/python3" ]]; then
+    py3_candidates+=("$ROOT_DIR/.wslbin/python3")
+  fi
   if command -v python3 >/dev/null 2>&1; then
     py3_candidates+=("$(command -v python3)")
   fi

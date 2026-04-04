@@ -2,11 +2,13 @@
 This table maps each requirement ID to at least one task ID in `tasks/tasks.json`.
 100% coverage is required.
 
-Last sync: 2026-02-23
+Last sync: 2026-04-04
 - AIB replacement/output contract execution chain added (`D-006..D-009`, `P3-001..P3-045`).
 - Optimization selective-adoption chain added (`D-010`, `P3-046..P3-052`).
 - improve2 selective-adoption chain added (`D-011`, `P3-053..P3-057`).
 - Runtime dependency bootstrap decision added (`D-012`).
+- Refactor stabilization chain added (`D-013`, `P3-058..P3-063`).
+- Operational quick/full gate + generated-file policy chain added (`D-014`, `P3-064..P3-069`).
 
 | Requirement | Tasks |
 |---|---|
@@ -48,10 +50,10 @@ Last sync: 2026-02-23
 | MUST-055 | P1-001 |
 | MUST-056 | P1-002, P1-003 |
 | MUST-057 | P3-004, P3-005, P3-006, P3-008, P3-009, P3-010, P3-019, P3-020 |
-| MUST-058 | P3-013, P3-014, P3-015, P3-016, P3-017, P3-018, P3-019, P3-020, P3-021, P3-022, P3-023, P3-024, P3-025, P3-026, P3-027, P3-028, P3-029, P3-030, P3-031, P3-038, P3-045, P3-052, P3-057 |
+| MUST-058 | P3-013, P3-014, P3-015, P3-016, P3-017, P3-018, P3-019, P3-020, P3-021, P3-022, P3-023, P3-024, P3-025, P3-026, P3-027, P3-028, P3-029, P3-030, P3-031, P3-038, P3-045, P3-052, P3-057, P3-058, P3-059, P3-060, P3-061, P3-062, P3-063, P3-064, P3-065, P3-066, P3-067, P3-068, P3-069 |
 | MUST-059 | P3-001, P3-004 |
 | MUST-060 | P1-014, P2-004, P2-006, P2-999 |
-| MUST-061 | D-008, D-009, P3-032, P3-035, P3-037, P3-039, P3-040, P3-042, P3-044, P3-045 |
+| MUST-061 | D-008, D-009, D-013, D-014, P3-032, P3-035, P3-037, P3-039, P3-040, P3-042, P3-044, P3-045, P3-058, P3-059, P3-060, P3-063, P3-064, P3-065, P3-068 |
 | MUST-062 | P3-047, P3-050, P3-051, P3-053 |
 | MUST-063 | D-010, D-011, P3-046, P3-048, P3-049, P3-051, P3-052, P3-054, P3-056 |
 | SHOULD-029 | P1-007 |

@@ -11,8 +11,14 @@ from typing import Any
 
 from deposim_schema import compose_and_save_opt_config, compose_opt_config
 from deposim_sim.common.csv_io import write_rows_csv
-from deposim_sim.common.run_artifacts import create_run_layout, finalize_run_outputs
-from deposim_sim.output_manifest import artifact_links, artifact_paths, build_manifest
+from deposim_sim.common.report_html import write_artifact_list_report
+from deposim_sim.common.run_artifacts import (
+    build_manifest_and_summary,
+    create_run_layout,
+    finalize_run_outputs,
+    standard_artifact_rows,
+)
+from deposim_sim.output_manifest import artifact_links
 
 from .class_compare import build_class_compare, build_role_stability
 from .enumerate_orders import enumerate_orders
@@ -149,32 +155,25 @@ def run_fit(
     }
     (outputs_dir / "fit_diagnostics.json").write_text(json.dumps(fit_diagnostics, indent=2), encoding="utf-8")
 
-    artifact_rows = [
-        {"id": "config", "path": "config_resolved.yaml", "kind": "yaml", "required": True},
-        {"id": "summary", "path": "summary.json", "kind": "json", "required": True},
-        {"id": "report", "path": "report.html", "kind": "html", "required": True},
-        {"id": "manifest", "path": "outputs/manifest.json", "kind": "json", "required": True},
-        {"id": "ranking", "path": "tables/ranking.csv", "kind": "csv", "required": True},
-        {"id": "class_compare", "path": "tables/class_compare.csv", "kind": "csv", "required": True},
-        {"id": "topk_assignments", "path": "tables/topk_assignments.csv", "kind": "csv", "required": True},
-        {"id": "role_stability", "path": "tables/role_stability.csv", "kind": "csv", "required": bool(role_stability_enabled)},
-        {"id": "fit_diagnostics", "path": "outputs/fit_diagnostics.json", "kind": "json", "required": True},
-    ]
+    artifact_rows = standard_artifact_rows(
+        include_report=True,
+        extra_rows=[
+            {"id": "ranking", "path": "tables/ranking.csv", "kind": "csv", "required": True},
+            {"id": "class_compare", "path": "tables/class_compare.csv", "kind": "csv", "required": True},
+            {"id": "topk_assignments", "path": "tables/topk_assignments.csv", "kind": "csv", "required": True},
+            {"id": "role_stability", "path": "tables/role_stability.csv", "kind": "csv", "required": bool(role_stability_enabled)},
+            {"id": "fit_diagnostics", "path": "outputs/fit_diagnostics.json", "kind": "json", "required": True},
+        ],
+    )
     timestamp_utc = datetime.now(timezone.utc).isoformat()
-    manifest = build_manifest(
+    manifest, summary = build_manifest_and_summary(
         run_id=run_id,
         mode="fit",
-        created_at_utc=timestamp_utc,
         artifacts=artifact_rows,
         plots=[],
         metadata={"task": str(opt.task)},
-    )
-    artifact_map = artifact_paths(manifest)
-
-    summary = {
-        "run_id": run_id,
-        "timestamp_utc": timestamp_utc,
-        "mode": "fit",
+        timestamp_utc=timestamp_utc,
+        summary_fields={
         "candidate_count": len(all_records),
         "class_count": len(class_rows),
         "topk_overall": topk_overall,
@@ -189,29 +188,28 @@ def run_fit(
         "diagnostics_path": "outputs/fit_diagnostics.json",
         "role_identifiability_warning": role_identifiability_warning,
         "cache_stats": cache_totals,
-        "manifest_path": "outputs/manifest.json",
-        "artifact_paths": artifact_map,
-    }
+        },
+    )
     output_links = artifact_links(manifest)
-    output_items = "".join(f"<li><a href='{path}'>{path}</a></li>" for path in output_links)
-    warning_html = ""
+    warning_msgs: list[str] = []
     if role_identifiability_warning:
-        warning_html += "<p><strong>Warning:</strong> role identifiability is weak in near-best candidates.</p>"
+        warning_msgs.append("role identifiability is weak in near-best candidates.")
     if bool(best_identifiability.get("degeneracy_warning", False)):
-        warning_html += "<p><strong>Warning:</strong> identifiability diagnostics detected high correlation / degeneracy.</p>"
-    cache_html = (
-        f"<p>Cache stats: trial_hits={cache_totals['trial_hits']}, "
-        f"global_hits={cache_totals['global_hits']}, misses={cache_totals['misses']}</p>"
+        warning_msgs.append("identifiability diagnostics detected high correlation / degeneracy.")
+    note_lines = [
+        (
+            f"Cache stats: trial_hits={cache_totals['trial_hits']}, "
+            f"global_hits={cache_totals['global_hits']}, misses={cache_totals['misses']}"
+        )
+    ]
+    write_artifact_list_report(
+        run_dir=run_dir,
+        run_id=run_id,
+        title="AIB Fit Report",
+        artifact_links=output_links,
+        warnings=warning_msgs,
+        notes=note_lines,
     )
-    report = (
-        "<!doctype html><html><head><meta charset='utf-8'><title>AIB fit report</title></head><body>"
-        f"<h1>AIB Fit Report: {run_id}</h1>"
-        f"{warning_html}"
-        f"{cache_html}"
-        f"<ul>{output_items}</ul>"
-        "</body></html>"
-    )
-    (run_dir / "report.html").write_text(report, encoding="utf-8")
     finalize_run_outputs(layout=layout, summary=summary, manifest=manifest)
     return {"run_id": run_id, "run_dir": str(run_dir), "summary": summary}
 

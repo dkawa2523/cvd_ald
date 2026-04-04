@@ -53,10 +53,10 @@ class TestDoeRunner(unittest.TestCase):
             self.assertTrue((run_dir / "report.html").exists())
             self.assertEqual(result.case_count, 4)
 
-            arr = np.load(run_dir / "outputs" / "doe_cases.npz")
-            self.assertEqual(arr["thickness"].shape[0], 4)
-            self.assertEqual(arr["deposition_rate"].shape[0], 4)
-            self.assertEqual(arr["nu_percent"].shape[0], 4)
+            with np.load(run_dir / "outputs" / "doe_cases.npz") as arr:
+                self.assertEqual(arr["thickness"].shape[0], 4)
+                self.assertEqual(arr["deposition_rate"].shape[0], 4)
+                self.assertEqual(arr["nu_percent"].shape[0], 4)
 
             summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["case_count"], 4)

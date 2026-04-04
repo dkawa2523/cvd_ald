@@ -3410,6 +3410,474 @@
       "verification_commands": [
         "bash -lc './scripts/commands.sh verify_task P3-057'"
       ]
+    },
+    {
+      "task_id": "D-013",
+      "title": "Decision: staged refactor policy for compact/readable AIB codebase",
+      "milestone": "POST",
+      "type": "decision",
+      "stop_after": false,
+      "estimated_minutes": 45,
+      "description": "Record refactor boundaries for code-only deletion, full CLI/output contract compatibility, and duplication-driven commonization thresholds.",
+      "acceptance_criteria": [
+        "ADR 0017 is added and accepted",
+        "Deletion boundary is explicitly limited to code paths (no top-level artifact cleanup)",
+        "Commonization criteria and compatibility constraints are documented"
+      ],
+      "depends_on": [
+        "D-012"
+      ],
+      "scope_limits": {
+        "max_changed_files": 3,
+        "max_diff_lines": 220,
+        "allowed_dirs": [
+          "docs/adr/",
+          "tasks/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task D-013'"
+      ]
+    },
+    {
+      "task_id": "P3-058",
+      "title": "P3 unify output contract finalization across run_manager/doe/run_fit/benchmark",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 150,
+      "description": "Centralize run_id/timestamp/mode/manifest_path/artifact_paths envelope creation and manifest+summary finalization into shared helper(s).",
+      "acceptance_criteria": [
+        "run_manager/doe/run_fit/benchmark use shared summary+manifest envelope helper",
+        "summary.json and outputs/manifest.json key contracts remain backward-compatible",
+        "Contract tests for output artifacts still pass"
+      ],
+      "depends_on": [
+        "D-013"
+      ],
+      "scope_limits": {
+        "max_changed_files": 8,
+        "max_diff_lines": 520,
+        "allowed_dirs": [
+          "src/deposim_sim/common/",
+          "src/deposim_sim/",
+          "src/deposim_opt/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-058'"
+      ]
+    },
+    {
+      "task_id": "P3-059",
+      "title": "P3 simplify benchmark_wafer2d orchestration by extracting case execution helpers",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 140,
+      "description": "Refactor benchmark_wafer2d flow into helper functions for case execution, flux comparison, and calibrated aggregation while preserving CLI/output compatibility.",
+      "acceptance_criteria": [
+        "benchmark_wafer2d case-loop branching is reduced via helper extraction",
+        "Flux compare/calibration behavior remains identical for existing tests",
+        "benchmark_wafer2d command remains backward-compatible"
+      ],
+      "depends_on": [
+        "P3-058"
+      ],
+      "scope_limits": {
+        "max_changed_files": 5,
+        "max_diff_lines": 420,
+        "allowed_dirs": [
+          "src/deposim_sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-059'"
+      ]
+    },
+    {
+      "task_id": "P3-060",
+      "title": "P3 unify benchmark physviz rendering with shared map/plot-record utilities",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 130,
+      "description": "Replace benchmark-local map rendering helpers with deposim_report map_plot.save_map + to_plot_record flow and keep physviz artifact names stable.",
+      "acceptance_criteria": [
+        "benchmark physviz maps are rendered through shared save_map path",
+        "Local duplicate helper(s) for map save/plot-record assembly are removed",
+        "test_physviz and benchmark output-contract tests remain green"
+      ],
+      "depends_on": [
+        "P3-059"
+      ],
+      "scope_limits": {
+        "max_changed_files": 5,
+        "max_diff_lines": 360,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_report/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-060'"
+      ]
+    },
+    {
+      "task_id": "P3-061",
+      "title": "P3 consolidate dot-path utilities with canonical path_tools API",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Promote common/path_tools.py as canonical get/set path API and shrink nested_path module to compatibility wrappers.",
+      "acceptance_criteria": [
+        "path_tools exposes canonical get/set API used by identifiability/physviz",
+        "nested_path remains compatible wrapper with reduced internal duplication",
+        "Identifiability and physviz tests remain green"
+      ],
+      "depends_on": [
+        "P3-059"
+      ],
+      "scope_limits": {
+        "max_changed_files": 6,
+        "max_diff_lines": 360,
+        "allowed_dirs": [
+          "src/deposim_sim/common/",
+          "src/deposim_sim/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-061'"
+      ]
+    },
+    {
+      "task_id": "P3-062",
+      "title": "P3 evidence-based cleanup of unused private helpers (code-only deletion)",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 90,
+      "description": "Delete unused private helper code only when repo search and tests confirm no runtime/test dependency; avoid directory-level cleanup.",
+      "acceptance_criteria": [
+        "Deleted helpers are confirmed unreferenced by code search",
+        "No top-level artifacts/directories are removed by this task",
+        "Core benchmark/report/fit tests continue to pass"
+      ],
+      "depends_on": [
+        "P3-060",
+        "P3-061"
+      ],
+      "scope_limits": {
+        "max_changed_files": 5,
+        "max_diff_lines": 260,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_opt/",
+          "src/deposim_report/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-062'"
+      ]
+    },
+    {
+      "task_id": "P3-063",
+      "title": "P3 synchronize D-013/P3-058..P3-063 task routing and traceability/eval gates",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 100,
+      "description": "Wire new decision/refactor tasks into verify_task routing, verify_p2 aggregate gate, and docs (TRACEABILITY/EVAL_PROTOCOL).",
+      "acceptance_criteria": [
+        "verify_task supports D-013 and P3-058..P3-063",
+        "verify_p2 and docs reference the new refactor chain",
+        "verify_task_contracts passes"
+      ],
+      "depends_on": [
+        "P3-062"
+      ],
+      "scope_limits": {
+        "max_changed_files": 6,
+        "max_diff_lines": 320,
+        "allowed_dirs": [
+          "tasks/",
+          "docs/",
+          "scripts/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-063'"
+      ]
+    },
+    {
+      "task_id": "D-014",
+      "title": "Decision: quick/full gate policy, skip handling, and generated-file boundary",
+      "milestone": "P3",
+      "type": "decision",
+      "stop_after": false,
+      "estimated_minutes": 45,
+      "description": "Record operational policy for optional skip handling (warn), two-stage verify_p2 gates (quick/full), and generated-file Git boundary (.wslbin, scripts/env.sh).",
+      "acceptance_criteria": [
+        "ADR 0018 is added and accepted",
+        "verify_p2_quick plus verify_p2(full) policy is documented",
+        "generated file boundary includes scripts/env.sh and .wslbin"
+      ],
+      "depends_on": [
+        "D-013"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 260,
+        "allowed_dirs": [
+          "docs/adr/",
+          "tasks/",
+          "scripts/",
+          ".gitignore"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task D-014'"
+      ]
+    },
+    {
+      "task_id": "P3-064",
+      "title": "P3 simplify commands.sh gate routing with quick/full task-set helpers",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Add verify_p2_quick and task-set execution helpers so verify_p2 remains full while repetitive cmd_verify_task chains are reduced.",
+      "acceptance_criteria": [
+        "verify_p2_quick command exists and runs the documented quick task set",
+        "verify_p2 remains full gate and backward-compatible",
+        "commands.sh gate routing repetition is reduced via shared helper"
+      ],
+      "depends_on": [
+        "D-014"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 300,
+        "allowed_dirs": [
+          "scripts/",
+          "tasks/",
+          "docs/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-064'"
+      ]
+    },
+    {
+      "task_id": "P3-065",
+      "title": "P3 add explicit unittest skip_policy (warn/fail) and optional-optuna handling",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 90,
+      "description": "Introduce skip_policy in cmd_unittest_module and make optional dependency tests explicitly use warn policy while preserving fail behavior for mandatory gates.",
+      "acceptance_criteria": [
+        "cmd_unittest_module supports skip_policy=auto|warn|fail",
+        "fit_optuna optional skip behavior is explicit and logged as warn",
+        "mandatory skip-fail callers remain fail-fast"
+      ],
+      "depends_on": [
+        "P3-064"
+      ],
+      "scope_limits": {
+        "max_changed_files": 3,
+        "max_diff_lines": 220,
+        "allowed_dirs": [
+          "scripts/",
+          "tasks/",
+          "docs/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-065'"
+      ]
+    },
+    {
+      "task_id": "P3-066",
+      "title": "P3 enforce generated-file hygiene for scripts/env.sh and .wslbin",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 80,
+      "description": "Move scripts/env.sh and .wslbin under explicit generated/local ignore policy and keep P3-030 checks focused on tracked contamination only.",
+      "acceptance_criteria": [
+        ".gitignore includes scripts/env.sh and .wslbin",
+        "scripts/env.sh is treated as generated runtime state",
+        "P3-030 check remains stable for normal generated artifacts"
+      ],
+      "depends_on": [
+        "P3-064"
+      ],
+      "scope_limits": {
+        "max_changed_files": 4,
+        "max_diff_lines": 220,
+        "allowed_dirs": [
+          ".gitignore",
+          "scripts/",
+          "tasks/",
+          "docs/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-066'"
+      ]
+    },
+    {
+      "task_id": "P3-067",
+      "title": "P3 complete benchmark_wafer2d responsibility split for readability",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 150,
+      "description": "Split benchmark_wafer2d internals into orchestration vs evaluation/report helpers while preserving public benchmark functions and CLI behavior.",
+      "acceptance_criteria": [
+        "run_wafer2d_benchmark remains public and compatible",
+        "benchmark internal flow is split into smaller helper responsibilities",
+        "benchmark/physviz tests stay green"
+      ],
+      "depends_on": [
+        "P3-059"
+      ],
+      "scope_limits": {
+        "max_changed_files": 7,
+        "max_diff_lines": 520,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "tasks/",
+          "docs/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-067'"
+      ]
+    },
+    {
+      "task_id": "P3-068",
+      "title": "P3 finish output/report commonization across run_manager/doe/run_fit/benchmark",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 140,
+      "description": "Factor shared artifact-row and minimal report utilities to reduce repeated output-contract code while keeping summary/manifest/report/index contracts unchanged.",
+      "acceptance_criteria": [
+        "artifact-row construction is commonized across key runners",
+        "minimal HTML report generation duplication is reduced",
+        "output contract tests remain green with unchanged key structure"
+      ],
+      "depends_on": [
+        "P3-058",
+        "P3-067"
+      ],
+      "scope_limits": {
+        "max_changed_files": 8,
+        "max_diff_lines": 560,
+        "allowed_dirs": [
+          "src/deposim_sim/common/",
+          "src/deposim_sim/",
+          "src/deposim_opt/",
+          "tasks/",
+          "docs/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-068'"
+      ]
+    },
+    {
+      "task_id": "P3-069",
+      "title": "P3 evidence-based cleanup closeout with quick gate + benchmark rerun",
+      "milestone": "P3",
+      "type": "implement",
+      "stop_after": false,
+      "estimated_minutes": 120,
+      "description": "Delete only unreferenced private helpers (code-only) and close with contract checks, quick gate, and production benchmark rerun.",
+      "acceptance_criteria": [
+        "cleanup only removes code paths proven unused by search/tests",
+        "verify_task_contracts and verify_p2_quick pass",
+        "benchmark_wafer2d flux-km physviz run completes with overall_passed=True"
+      ],
+      "depends_on": [
+        "P3-065",
+        "P3-066",
+        "P3-068"
+      ],
+      "scope_limits": {
+        "max_changed_files": 8,
+        "max_diff_lines": 420,
+        "allowed_dirs": [
+          "src/deposim_sim/",
+          "src/deposim_opt/",
+          "src/deposim_report/",
+          "scripts/",
+          "tasks/",
+          "docs/"
+        ],
+        "forbidden_actions": [
+          "network_enable",
+          "mass_refactor"
+        ]
+      },
+      "verification_commands": [
+        "bash -lc './scripts/commands.sh verify_task P3-069'"
+      ]
     }
   ]
 }

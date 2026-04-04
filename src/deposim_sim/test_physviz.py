@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import subprocess
 from tempfile import TemporaryDirectory
@@ -46,7 +47,10 @@ class TestPhysViz(unittest.TestCase):
         runs_dir = repo_root / "results" / "demo" / "runs"
         runs_dir.mkdir(parents=True, exist_ok=True)
         before = sorted([p.name for p in runs_dir.glob("benchmark_wafer2d*") if p.is_dir()])
-        cmd = ["./scripts/commands.sh", "benchmark_wafer2d_physviz"]
+        if os.name == "nt":
+            cmd = ["bash", "-lc", "./scripts/commands.sh benchmark_wafer2d_physviz"]
+        else:
+            cmd = ["./scripts/commands.sh", "benchmark_wafer2d_physviz"]
         completed = subprocess.run(cmd, cwd=repo_root, check=False, capture_output=True, text=True)
         self.assertEqual(
             completed.returncode,

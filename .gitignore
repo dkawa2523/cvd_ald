@@ -6,3 +6,5 @@ __pycache__/
 .DS_Store
 *.zip
 *.egg-info/
+.wslbin/
+scripts/env.sh

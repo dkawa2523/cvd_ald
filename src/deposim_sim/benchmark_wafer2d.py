@@ -3,25 +3,30 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from html import escape
 import json
 from pathlib import Path
 from typing import Any
 
-from deposim_report.html_page import render_report_page
-from deposim_report.plot_catalog import benchmark_physviz_specs, to_plot_record
+from deposim_report.plot_catalog import PlotSpec, benchmark_physviz_specs
 from deposim_schema import compose_and_save_sim_config, compose_sim_config
 
+from .benchmark_wafer2d_core import (
+    _add_physviz_plot,
+    _apply_flux_calibration,
+    _build_flux_km_judge,
+    _normalize_flux_gamma_grid,
+    _parse_flux_gamma_grid_arg,
+    _run_benchmark_case,
+    evaluate_trend_assertions,
+    write_benchmark_report,
+)
 from .common.csv_io import write_rows_csv
 from .common.overrides import as_bool, normalize_overrides
-from .common.run_artifacts import create_run_layout, finalize_run_outputs
-from .common.render_tri import render_unstructured_map
-from .output_manifest import artifact_links, artifact_paths, build_manifest
-from .pipeline import run_aib_from_spec
-from .validation import validate_run_spec
+from .common.run_artifacts import build_manifest_and_summary, create_run_layout, finalize_run_outputs, standard_artifact_rows
+from .output_manifest import artifact_links
 
 try:  # pragma: no cover
     import numpy as np
@@ -54,27 +59,12 @@ _RANKING_FIELDNAMES: tuple[str, ...] = (
     "mean_km_A_flux_km",
     "delta_score_flux_minus_free",
     "relative_delta_flux_minus_free",
+    "mean_abs_residual_nm_flux_km_calibrated",
+    "mean_km_A_flux_km_calibrated",
+    "delta_score_flux_calibrated_minus_free",
+    "relative_delta_flux_calibrated_minus_free",
     "score",
 )
-
-_CASE_TABLE_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("case_id", "case_id"),
-    ("class_id", "class"),
-    ("mean_h_nm", "mean_h_nm"),
-    ("mean_phi_B", "mean_phi_B"),
-    ("mean_f_I", "mean_f_I"),
-    ("mean_CsA_over_CrefA", "mean_CsA_over_CrefA"),
-    ("mean_CsB_over_CrefB", "mean_CsB_over_CrefB"),
-    ("mean_abs_residual_nm", "mean_abs_residual_nm"),
-    ("mean_km_A", "mean_km_A"),
-    ("mean_tau_A", "mean_tau_A"),
-    ("mean_abs_residual_nm_flux_km", "mean_abs_residual_nm_flux_km"),
-    ("mean_km_A_flux_km", "mean_km_A_flux_km"),
-    ("delta_score_flux_minus_free", "delta_score_flux_minus_free"),
-    ("relative_delta_flux_minus_free", "relative_delta_flux_minus_free"),
-    ("score", "score"),
-)
-
 
 def _require_numpy() -> None:
     if np is None:
@@ -217,256 +207,6 @@ def write_case_input_npz(
     return payload_path, xy_mm, cref, flux_sink
 
 
-def _masked_mean(
-    values: Any,
-    mask: np.ndarray,
-    *,
-    weights: np.ndarray | None = None,
-    take_abs: bool = False,
-) -> float:
-    arr = np.asarray(values, dtype=float)
-    valid = np.asarray(mask, dtype=bool) & np.isfinite(arr)
-    w = None
-    if weights is not None:
-        w = np.asarray(weights, dtype=float)
-        valid &= np.isfinite(w) & (w > 0.0)
-    if not np.any(valid):
-        return float("nan")
-    sample = np.abs(arr[valid]) if take_abs else arr[valid]
-    if w is None:
-        return float(np.mean(sample))
-    wv = np.asarray(w[valid], dtype=float)
-    denom = float(np.sum(wv))
-    if denom <= _EPS:
-        return float("nan")
-    return float(np.sum(sample * wv) / denom)
-
-
-def _build_case_overrides(
-    *,
-    base_overrides: Sequence[str],
-    normalized_overrides: Sequence[str],
-    payload_path: Path,
-    meas_path: Path,
-    case: BenchmarkCase,
-    extra_overrides: Sequence[str] | None = None,
-) -> list[str]:
-    out = [
-        *list(base_overrides),
-        *list(normalized_overrides),
-        f"sim.inputs.fluent.file={payload_path.as_posix()}",
-        "sim.inputs.fluent.mode=steady",
-        "sim.roles.A=s0",
-        "sim.measurement.enabled=true",
-        f"sim.measurement.file={meas_path.as_posix()}",
-        *list(case.overrides),
-    ]
-    if case.role_i is not None:
-        out.append(f"sim.roles.I={case.role_i}")
-    if case.role_b is not None:
-        out.append(f"sim.roles.B={case.role_b}")
-    if extra_overrides:
-        out.extend(list(extra_overrides))
-    return out
-
-
-def _run_case_spec(*, config_name: str, overrides: Sequence[str]) -> Any:
-    spec = compose_sim_config(config_name, overrides=list(overrides))
-    validate_run_spec(spec)
-    return run_aib_from_spec(spec)
-
-
-def _summarize_result(result: Any) -> dict[str, float]:
-    edge_mask = np.asarray(result.grid.edge_mask, dtype=bool)
-    area_w = np.asarray(result.grid.area_weights_mm2, dtype=float)
-    return {
-        "mean_h_nm": _masked_mean(result.fields["h_nm"], edge_mask, weights=area_w),
-        "mean_phi_B": _masked_mean(result.fields["phi_B"], edge_mask, weights=area_w),
-        "mean_f_I": _masked_mean(result.fields["f_I"], edge_mask, weights=area_w),
-        "mean_CsA_over_CrefA": _masked_mean(result.fields["CsA_over_CrefA"], edge_mask, weights=area_w),
-        "mean_CsB_over_CrefB": _masked_mean(result.fields["CsB_over_CrefB"], edge_mask, weights=area_w),
-        "mean_abs_residual_nm": _masked_mean(result.fields["residual_nm"], edge_mask, weights=area_w, take_abs=True),
-        "mean_km_A": _masked_mean(result.diagnostics.get("km_A_map"), edge_mask, weights=area_w),
-        "mean_tau_A": _masked_mean(result.diagnostics.get("tau_A_map"), edge_mask, weights=area_w),
-    }
-
-
-def _format_case_cell(row: Mapping[str, Any], key: str) -> str:
-    value = row.get(key)
-    if key in {"case_id", "class_id"}:
-        return escape(str(value))
-    try:
-        return f"{float(value):.8g}"
-    except (TypeError, ValueError):
-        return "nan"
-
-
-def _save_physviz_map(path: Path, xy_mm: np.ndarray, values: np.ndarray, title: str) -> None:
-    if plt is None:
-        return
-    fig, ax = plt.subplots(figsize=(6, 4))
-    mesh = render_unstructured_map(
-        ax,
-        xy_mm=np.asarray(xy_mm, dtype=float),
-        values=np.asarray(values, dtype=float),
-        valid_mask=np.ones(np.asarray(values).shape, dtype=bool),
-        cmap="viridis",
-        discrete=False,
-    )
-    ax.set_title(title)
-    fig.colorbar(mesh, ax=ax, shrink=0.9)
-    fig.tight_layout()
-    fig.savefig(path, dpi=140)
-    plt.close(fig)
-
-
-def _add_extra_physviz_plot(
-    *,
-    plots_dir: Path,
-    xy_mm: np.ndarray,
-    values: np.ndarray,
-    filename: str,
-    title: str,
-    cmap: str,
-    rel_paths: list[str],
-    records: list[dict[str, Any]],
-) -> None:
-    _save_physviz_map(plots_dir / filename, xy_mm, values, title)
-    rel = f"plots/{filename}"
-    rel_paths.append(rel)
-    records.append(
-        {
-            "plot_id": filename[:-4] if filename.endswith(".png") else filename,
-            "path": rel,
-            "source_key": (filename[8:-4] if filename.startswith("physviz_") and filename.endswith(".png") else filename),
-            "cmap": cmap,
-            "discrete": False,
-        }
-    )
-
-
-def evaluate_trend_assertions(case_metrics: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
-    """Evaluate AIB benchmark trend assertions."""
-
-    required = ("CASE-A", "CASE-AI", "CASE-AB", "CASE-AIB")
-    for case_id in required:
-        if case_id not in case_metrics:
-            raise ValueError(f"missing benchmark metrics for case {case_id}")
-
-    a = case_metrics["CASE-A"]
-    ai = case_metrics["CASE-AI"]
-    ab = case_metrics["CASE-AB"]
-    aib = case_metrics["CASE-AIB"]
-
-    checks: dict[str, bool] = {
-        "assert_class_coverage": True,
-        "assert_ai_inhibition": float(ai["mean_f_I"]) < float(a["mean_f_I"]),
-        "assert_aib_inhibition_vs_ab": float(aib["mean_h_nm"]) < float(ab["mean_h_nm"]),
-        "assert_ab_phi_b_finite": bool(np.isfinite(float(ab["mean_phi_B"]))),
-        "assert_aib_phi_b_finite": bool(np.isfinite(float(aib["mean_phi_B"]))),
-        "assert_a_phi_b_nan": bool(not np.isfinite(float(a["mean_phi_B"]))),
-        "assert_ai_phi_b_nan": bool(not np.isfinite(float(ai["mean_phi_B"]))),
-    }
-    flux_deltas = np.asarray(
-        [
-            float(case_metrics[cid].get("delta_score_flux_minus_free", float("nan")))
-            for cid in required
-        ],
-        dtype=float,
-    )
-    flux_relative = np.asarray(
-        [
-            float(case_metrics[cid].get("relative_delta_flux_minus_free", float("nan")))
-            for cid in required
-        ],
-        dtype=float,
-    )
-    if np.any(np.isfinite(flux_deltas)):
-        checks["assert_flux_km_mean_not_worse"] = bool(float(np.nanmean(flux_deltas)) <= 0.0)
-    if np.any(np.isfinite(flux_relative)):
-        checks["assert_flux_km_relative_not_worse"] = bool(float(np.nanmean(flux_relative)) <= 0.0)
-    mandatory = {k: v for k, v in checks.items() if not k.startswith("assert_flux_km_")}
-    overall = all(mandatory.values())
-    return {
-        "delta_f_I_A_minus_AI": float(a["mean_f_I"]) - float(ai["mean_f_I"]),
-        "delta_h_AB_minus_AIB": float(ab["mean_h_nm"]) - float(aib["mean_h_nm"]),
-        **checks,
-        "overall_passed": overall,
-    }
-
-
-def write_benchmark_report(
-    *,
-    run_dir: Path,
-    run_id: str,
-    summary: Mapping[str, Any],
-    case_rows: Sequence[Mapping[str, Any]],
-    trend_assertions: Mapping[str, Any],
-    output_links: Sequence[str],
-    physviz_plots: Sequence[str] | None,
-) -> Path:
-    """Write benchmark HTML report to run directory."""
-
-    assertion_rows = "".join(
-        (
-            f"<tr><th>{escape(str(name))}</th><td>{'PASS' if bool(value) else 'FAIL'}</td></tr>"
-            if isinstance(value, bool)
-            else f"<tr><th>{escape(str(name))}</th><td>{escape(str(value))}</td></tr>"
-        )
-        for name, value in trend_assertions.items()
-    )
-
-    case_table_rows = "".join(
-        "<tr>"
-        + "".join(f"<td>{_format_case_cell(row, key)}</td>" for key, _title in _CASE_TABLE_COLUMNS)
-        + "</tr>"
-        for row in case_rows
-    )
-
-    artifact_links = "".join(f'<li><a href="{escape(str(path))}">{escape(str(path))}</a></li>' for path in output_links)
-    if not artifact_links:
-        artifact_links = "<li>None</li>"
-
-    sections: list[str] = [
-        "<h2>Summary</h2>"
-        "<ul>"
-        f"<li>case_count: {summary.get('case_count')}</li>"
-        f"<li>overall_passed: {summary.get('trend_assertions', {}).get('overall_passed')}</li>"
-        f"<li>km_spread_ratio: {summary.get('km_spread_ratio')}</li>"
-        f"<li>flux_delta_mean: {summary.get('flux_delta_mean')}</li>"
-        f"<li>flux_relative_delta_mean: {summary.get('flux_relative_delta_mean')}</li>"
-        f"<li>p1_recommendation: {summary.get('p1_recommendation')}</li>"
-        "</ul>",
-        "<h2>Trend Assertions</h2>"
-        f"<table>{assertion_rows}</table>",
-        "<h2>Case Metrics</h2>"
-        "<table>"
-        f"<tr>{''.join(f'<th>{escape(title)}</th>' for _key, title in _CASE_TABLE_COLUMNS)}</tr>"
-        f"{case_table_rows}</table>",
-        f"<h2>Artifacts</h2><ul>{artifact_links}</ul>",
-    ]
-
-    if physviz_plots:
-        plot_items = "".join(f'<li><a href="{escape(p)}">{escape(p)}</a></li>' for p in physviz_plots)
-        sections.append(f"<h2>Physviz Maps</h2><ul>{plot_items}</ul>")
-
-    style = (
-        "body { font-family: sans-serif; margin: 1.2rem 1.8rem; }"
-        "table { border-collapse: collapse; margin-bottom: 1rem; }"
-        "th, td { border: 1px solid #ccc; padding: 0.3rem 0.5rem; text-align: left; }"
-    )
-
-    page = render_report_page(
-        title=f"Wafer2D AIB Benchmark: {run_id}",
-        heading=f"Wafer2D AIB Benchmark: {run_id}",
-        style=style,
-        sections=sections,
-    )
-    out = run_dir / "report.html"
-    out.write_text(page, encoding="utf-8")
-    return out
-
-
 def run_wafer2d_benchmark(
     config_name: str = "cvd_steady_min",
     overrides: Sequence[str] | None = None,
@@ -474,8 +214,15 @@ def run_wafer2d_benchmark(
     with_physviz: bool = False,
     physviz_fast: bool = False,
     compare_flux_km: bool = False,
+    calibrate_flux_km: bool = True,
+    flux_gamma_grid: Sequence[float] | None = None,
 ) -> dict[str, Any]:
-    """Run AIB wafer benchmark and persist artifacts."""
+    """Run AIB wafer benchmark and persist artifacts.
+
+    When compare_flux_km is enabled, this runner always evaluates flux-km with
+    gamma=1.0 and can optionally run a gamma mini-search for calibrated
+    free-vs-flux comparison.
+    """
 
     _require_numpy()
 
@@ -532,6 +279,12 @@ def run_wafer2d_benchmark(
     residual_stack: list[np.ndarray] = []
 
     representative: dict[str, Any] | None = None
+    flux_gamma_scan: tuple[float, ...] = ()
+    flux_gamma_scores: dict[float, list[float]] = {}
+    flux_gamma_case_summaries: dict[str, dict[float, dict[str, float]]] = {}
+    if compare_flux_km and calibrate_flux_km:
+        flux_gamma_scan = _normalize_flux_gamma_grid(flux_gamma_grid)
+        flux_gamma_scores = {float(g): [] for g in flux_gamma_scan}
 
     for case in cases:
         payload_path, xy_mm, _cref, _flux = write_case_input_npz(case=case, output_dir=inputs_dir)
@@ -540,45 +293,23 @@ def run_wafer2d_benchmark(
         meas_path = inputs_dir / f"{case.case_id.lower()}_meas.npz"
         np.savez(meas_path, h_nm=meas_h, xy=xy_mm)
 
-        case_overrides = _build_case_overrides(
+        result, summary_free, row_flux, case_gamma_rows = _run_benchmark_case(
+            config_name=selected_config,
             base_overrides=base_overrides,
             normalized_overrides=normalized_overrides,
             payload_path=payload_path,
             meas_path=meas_path,
             case=case,
+            compare_flux_km=bool(compare_flux_km),
+            flux_gamma_scan=flux_gamma_scan,
         )
-        result = _run_case_spec(config_name=selected_config, overrides=case_overrides)
-        summary_free = _summarize_result(result)
 
         complexity = int(case.role_i is not None) + int(case.role_b is not None)
         score = float(summary_free["mean_abs_residual_nm"]) + 0.05 * complexity
-        row_flux: dict[str, float] = {}
-        if compare_flux_km:
-            flux_overrides = _build_case_overrides(
-                base_overrides=base_overrides,
-                normalized_overrides=normalized_overrides,
-                payload_path=payload_path,
-                meas_path=meas_path,
-                case=case,
-                extra_overrides=(
-                    "sim.model.params.transport.km_source=from_cfd_flux_sink",
-                    "sim.model.params.transport.gamma_km_A=1.0",
-                    "sim.model.params.transport.gamma_km_B=1.0",
-                    "sim.model.params.transport.from_cfd_flux_sink.flux_negative_policy=error",
-                ),
-            )
-            flux_result = _run_case_spec(config_name=selected_config, overrides=flux_overrides)
-            summary_flux = _summarize_result(flux_result)
-            mean_resid_flux = float(summary_flux["mean_abs_residual_nm"])
-            mean_km_flux = float(summary_flux["mean_km_A"])
-            mean_resid_abs = float(summary_free["mean_abs_residual_nm"])
-            rel_delta = (mean_resid_flux - mean_resid_abs) / max(abs(mean_resid_abs), _EPS)
-            row_flux = {
-                "mean_abs_residual_nm_flux_km": float(mean_resid_flux),
-                "mean_km_A_flux_km": float(mean_km_flux),
-                "delta_score_flux_minus_free": float(mean_resid_flux - mean_resid_abs),
-                "relative_delta_flux_minus_free": float(rel_delta),
-            }
+        if flux_gamma_scan:
+            flux_gamma_case_summaries[case.case_id] = case_gamma_rows
+            for gamma, gamma_row in case_gamma_rows.items():
+                flux_gamma_scores[float(gamma)].append(float(gamma_row["mean_abs_residual_nm"]))
 
         row = {
             "case_id": case.case_id,
@@ -601,6 +332,7 @@ def run_wafer2d_benchmark(
 
         if case.case_id == "CASE-AIB":
             representative = {
+                "grid": result.grid,
                 "xy_mm": np.asarray(result.diagnostics.get("xy_mm"), dtype=float),
                 "h_nm": np.asarray(result.fields["h_nm"], dtype=float),
                 "phi_B": np.asarray(result.fields["phi_B"], dtype=float),
@@ -611,6 +343,31 @@ def run_wafer2d_benchmark(
                 "input_cref_A": np.asarray(_cref[:, 0], dtype=float),
                 "input_flux_A": np.asarray(_flux[:, 0], dtype=float),
             }
+
+    flux_gamma_scan_rows: list[dict[str, Any]] = []
+    flux_gamma_best: float | None = None
+    if flux_gamma_scores:
+        finite_rows: list[tuple[float, float]] = []
+        for gamma in flux_gamma_scan:
+            values = np.asarray(flux_gamma_scores.get(float(gamma), []), dtype=float)
+            mean_residual = float(np.nanmean(values)) if np.any(np.isfinite(values)) else float("nan")
+            flux_gamma_scan_rows.append(
+                {
+                    "gamma_km": float(gamma),
+                    "mean_abs_residual_nm": mean_residual,
+                    "case_count": int(values.size),
+                }
+            )
+            if np.isfinite(mean_residual):
+                finite_rows.append((float(gamma), mean_residual))
+        if finite_rows:
+            flux_gamma_best = min(finite_rows, key=lambda row: row[1])[0]
+
+    _apply_flux_calibration(
+        case_rows=case_rows,
+        flux_gamma_best=flux_gamma_best,
+        flux_gamma_case_summaries=flux_gamma_case_summaries,
+    )
 
     np.savez(
         outputs_dir / "benchmark_cases.npz",
@@ -623,6 +380,12 @@ def run_wafer2d_benchmark(
     )
 
     (outputs_dir / "benchmark_case_metrics.json").write_text(json.dumps(case_rows, indent=2), encoding="utf-8")
+    if flux_gamma_scan_rows:
+        write_rows_csv(
+            outputs_dir / "flux_gamma_scan.csv",
+            [dict(row) for row in flux_gamma_scan_rows],
+            fieldnames=["gamma_km", "mean_abs_residual_nm", "case_count"],
+        )
 
     ranking_rows = sorted(case_rows, key=lambda row: float(row["score"]))
     ranking_csv = outputs_dir / "ranking.csv"
@@ -660,8 +423,11 @@ def run_wafer2d_benchmark(
         [
             float(
                 row.get(
-                    "mean_km_A_flux_km",
-                    row.get("mean_km_A", float("nan")),
+                    "mean_km_A_flux_km_calibrated",
+                    row.get(
+                        "mean_km_A_flux_km",
+                        row.get("mean_km_A", float("nan")),
+                    ),
                 )
             )
             for row in case_rows
@@ -677,9 +443,36 @@ def run_wafer2d_benchmark(
         dtype=float,
     )
     flux_relative_delta_mean = float(np.nanmean(flux_rel_delta)) if np.any(np.isfinite(flux_rel_delta)) else float("nan")
+    flux_cal_delta = np.asarray(
+        [float(row.get("delta_score_flux_calibrated_minus_free", float("nan"))) for row in case_rows],
+        dtype=float,
+    )
+    flux_delta_calibrated_mean = (
+        float(np.nanmean(flux_cal_delta)) if np.any(np.isfinite(flux_cal_delta)) else float("nan")
+    )
+    flux_cal_rel_delta = np.asarray(
+        [float(row.get("relative_delta_flux_calibrated_minus_free", float("nan"))) for row in case_rows],
+        dtype=float,
+    )
+    flux_relative_delta_calibrated_mean = (
+        float(np.nanmean(flux_cal_rel_delta)) if np.any(np.isfinite(flux_cal_rel_delta)) else float("nan")
+    )
+    flux_eval_basis = "default"
+    flux_eval_delta_mean = flux_delta_mean
+    if np.isfinite(flux_delta_calibrated_mean):
+        flux_eval_basis = "calibrated"
+        flux_eval_delta_mean = flux_delta_calibrated_mean
+    flux_km_judge = _build_flux_km_judge(
+        compare_flux_km=bool(compare_flux_km),
+        flux_delta_mean=float(flux_delta_mean),
+        flux_delta_calibrated_mean=float(flux_delta_calibrated_mean),
+        flux_eval_basis=flux_eval_basis,
+        flux_gamma_best=flux_gamma_best,
+        flux_gamma_grid=flux_gamma_scan,
+    )
     p1_recommendation = bool(np.isfinite(km_spread_ratio) and km_spread_ratio >= 10.0)
-    if np.isfinite(flux_delta_mean):
-        p1_recommendation = p1_recommendation or bool(flux_delta_mean < 0.0)
+    if np.isfinite(flux_eval_delta_mean):
+        p1_recommendation = p1_recommendation or bool(flux_eval_delta_mean < 0.0)
     timestamp_utc = datetime.now(timezone.utc).isoformat()
     physviz_rel_paths: list[str] = []
     plot_records: list[dict[str, Any]] = []
@@ -703,57 +496,63 @@ def run_wafer2d_benchmark(
                 values = representative.get(spec.source_key)
                 if values is None:
                     continue
-                _save_physviz_map(plots_dir / spec.filename, representative["xy_mm"], values, spec.title)
-                rel = f"plots/{spec.filename}"
-                physviz_rel_paths.append(rel)
-                plot_records.append(to_plot_record(spec, rel_path=rel))
-            _add_extra_physviz_plot(
-                plots_dir=plots_dir,
-                xy_mm=representative["xy_mm"],
-                values=representative["input_cref_A"],
-                filename="physviz_input_cref_A.png",
-                title="Input Cref(A) [a.u.]",
-                cmap="viridis",
-                rel_paths=physviz_rel_paths,
-                records=plot_records,
-            )
-            _add_extra_physviz_plot(
-                plots_dir=plots_dir,
-                xy_mm=representative["xy_mm"],
-                values=representative["input_flux_A"],
-                filename="physviz_input_flux_A.png",
-                title="Input flux_sink(A) [a.u.]",
-                cmap="magma",
-                rel_paths=physviz_rel_paths,
-                records=plot_records,
-            )
+                _add_physviz_plot(
+                    plots_dir=plots_dir,
+                    grid=representative["grid"],
+                    xy_mm=representative["xy_mm"],
+                    values=values,
+                    spec=spec,
+                    rel_paths=physviz_rel_paths,
+                    records=plot_records,
+                )
+            for spec in (
+                PlotSpec(
+                    plot_id="physviz_input_cref_A",
+                    filename="physviz_input_cref_A.png",
+                    source_key="input_cref_A",
+                    title="Input Cref(A) [a.u.]",
+                    cmap="viridis",
+                ),
+                PlotSpec(
+                    plot_id="physviz_input_flux_A",
+                    filename="physviz_input_flux_A.png",
+                    source_key="input_flux_A",
+                    title="Input flux_sink(A) [a.u.]",
+                    cmap="magma",
+                ),
+            ):
+                _add_physviz_plot(
+                    plots_dir=plots_dir,
+                    grid=representative["grid"],
+                    xy_mm=representative["xy_mm"],
+                    values=representative[spec.source_key],
+                    spec=spec,
+                    rel_paths=physviz_rel_paths,
+                    records=plot_records,
+                )
 
-    artifact_rows: list[dict[str, Any]] = [
-        {"id": "config", "path": "config_resolved.yaml", "kind": "yaml", "required": True},
-        {"id": "summary", "path": "summary.json", "kind": "json", "required": True},
-        {"id": "report", "path": "report.html", "kind": "html", "required": True},
-        {"id": "manifest", "path": "outputs/manifest.json", "kind": "json", "required": True},
-        {"id": "benchmark_cases", "path": "outputs/benchmark_cases.npz", "kind": "npz", "required": True},
-        {"id": "benchmark_case_metrics", "path": "outputs/benchmark_case_metrics.json", "kind": "json", "required": True},
-        {"id": "class_compare", "path": "outputs/class_compare.csv", "kind": "csv", "required": True},
-        {"id": "ranking", "path": "outputs/ranking.csv", "kind": "csv", "required": True},
-    ]
+    artifact_rows = standard_artifact_rows(
+        include_report=True,
+        extra_rows=[
+            {"id": "benchmark_cases", "path": "outputs/benchmark_cases.npz", "kind": "npz", "required": True},
+            {"id": "benchmark_case_metrics", "path": "outputs/benchmark_case_metrics.json", "kind": "json", "required": True},
+            {"id": "class_compare", "path": "outputs/class_compare.csv", "kind": "csv", "required": True},
+            {"id": "ranking", "path": "outputs/ranking.csv", "kind": "csv", "required": True},
+        ],
+    )
+    if flux_gamma_scan_rows:
+        artifact_rows.append({"id": "flux_gamma_scan", "path": "outputs/flux_gamma_scan.csv", "kind": "csv", "required": True})
     if with_physviz and representative is not None:
         artifact_rows.append({"id": "physviz_maps", "path": "outputs/physviz_maps.npz", "kind": "npz", "required": True})
 
-    manifest = build_manifest(
+    manifest, summary = build_manifest_and_summary(
         run_id=run_id,
         mode="benchmark_wafer2d",
-        created_at_utc=timestamp_utc,
         artifacts=artifact_rows,
         plots=plot_records,
         metadata={"sim_model": "aib_ode"},
-    )
-    artifact_map = artifact_paths(manifest)
-    summary: dict[str, Any] = {
-        "run_id": run_id,
-        "timestamp_utc": timestamp_utc,
-        "mode": "benchmark_wafer2d",
+        timestamp_utc=timestamp_utc,
+        summary_fields={
         "sim_model": "aib_ode",
         "case_count": len(case_rows),
         "case_ids": [row["case_id"] for row in case_rows],
@@ -761,10 +560,15 @@ def run_wafer2d_benchmark(
         "km_spread_ratio": km_spread_ratio,
         "flux_delta_mean": flux_delta_mean,
         "flux_relative_delta_mean": flux_relative_delta_mean,
+        "flux_delta_calibrated_mean": flux_delta_calibrated_mean,
+        "flux_relative_delta_calibrated_mean": flux_relative_delta_calibrated_mean,
+        "flux_eval_basis": flux_eval_basis,
+        "flux_gamma_best": flux_gamma_best,
+        "flux_gamma_grid": list(flux_gamma_scan) if flux_gamma_scan else [],
+        "flux_km_judge": flux_km_judge,
         "p1_recommendation": p1_recommendation,
-        "manifest_path": "outputs/manifest.json",
-        "artifact_paths": artifact_map,
-    }
+        },
+    )
     output_links = artifact_links(manifest)
     write_benchmark_report(
         run_dir=run_dir,
@@ -791,8 +595,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--with-physviz", action="store_true")
     parser.add_argument("--physviz-fast", action="store_true")
     parser.add_argument("--compare-flux-km", action="store_true")
+    parser.add_argument("--flux-calibrate", dest="flux_calibrate", action="store_true", default=True)
+    parser.add_argument("--no-flux-calibrate", dest="flux_calibrate", action="store_false")
+    parser.add_argument("--flux-gamma-grid", default="0.1,0.15,0.2,0.25,0.3,0.4,0.5,0.6,0.8,1.0")
     parser.add_argument("overrides", nargs="*", help="Hydra-style key=value overrides")
     args = parser.parse_args(list(argv) if argv is not None else None)
+
+    flux_gamma_grid = _parse_flux_gamma_grid_arg(args.flux_gamma_grid)
 
     result = run_wafer2d_benchmark(
         config_name=args.config_name,
@@ -800,6 +609,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         with_physviz=bool(args.with_physviz),
         physviz_fast=bool(args.physviz_fast),
         compare_flux_km=bool(args.compare_flux_km),
+        calibrate_flux_km=bool(args.flux_calibrate),
+        flux_gamma_grid=flux_gamma_grid,
     )
     run_dir = result["run_dir"]
     overall = bool(result["summary"]["trend_assertions"]["overall_passed"])

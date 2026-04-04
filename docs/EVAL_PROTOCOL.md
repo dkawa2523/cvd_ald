@@ -85,6 +85,7 @@ Flux-km comparison command (free-km vs flux-km judge):
 
 Run AIB contract/output gates:
 
+- `./scripts/commands.sh verify_p2_quick`
 - `./scripts/commands.sh verify_p2`
 
 This gate includes:
@@ -94,6 +95,11 @@ This gate includes:
 - Measurement alignment integration checks
 - Output contract strictness checks (`save_fields`, manifest validation, report map generation)
 - ranking/full-candidate + tri-rendering + IO/run_manager + non-mainline test convergence checks
+
+Recommended usage:
+
+- Daily/dev loop: `./scripts/commands.sh verify_p2_quick`
+- Pre-release/full validation: `./scripts/commands.sh verify_p2`
 
 Final AIB gate:
 
@@ -134,6 +140,23 @@ improve2 selective-adoption gates:
 - `./scripts/commands.sh verify_task P3-055`
 - `./scripts/commands.sh verify_task P3-056`
 - `./scripts/commands.sh verify_task P3-057`
+
+Refactor stabilization gates:
+
+- `./scripts/commands.sh verify_task D-013`
+- `./scripts/commands.sh verify_task D-014`
+- `./scripts/commands.sh verify_task P3-058`
+- `./scripts/commands.sh verify_task P3-059`
+- `./scripts/commands.sh verify_task P3-060`
+- `./scripts/commands.sh verify_task P3-061`
+- `./scripts/commands.sh verify_task P3-062`
+- `./scripts/commands.sh verify_task P3-063`
+- `./scripts/commands.sh verify_task P3-064`
+- `./scripts/commands.sh verify_task P3-065`
+- `./scripts/commands.sh verify_task P3-066`
+- `./scripts/commands.sh verify_task P3-067`
+- `./scripts/commands.sh verify_task P3-068`
+- `./scripts/commands.sh verify_task P3-069`
 
 ## Contract Gate
 

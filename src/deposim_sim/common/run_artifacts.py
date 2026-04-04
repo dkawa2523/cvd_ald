@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import json
 from pathlib import Path
+from collections.abc import Mapping, Sequence
 from typing import Any
 
-from ..output_manifest import write_manifest
+from ..output_manifest import artifact_paths, build_manifest, write_manifest
 from ..results_index import next_run_dir, update_project_files
 
 
@@ -64,4 +66,61 @@ def finalize_run_outputs(
     update_project_files(layout.project_dir, summary)
 
 
-__all__ = ["RunLayout", "create_run_layout", "finalize_run_outputs"]
+def build_manifest_and_summary(
+    *,
+    run_id: str,
+    mode: str,
+    artifacts: Sequence[Mapping[str, Any]],
+    summary_fields: Mapping[str, Any] | None = None,
+    plots: Sequence[Mapping[str, Any]] | None = None,
+    metadata: Mapping[str, Any] | None = None,
+    timestamp_utc: str | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Build a validated output manifest plus canonical summary envelope."""
+
+    created_at = str(timestamp_utc or datetime.now(timezone.utc).isoformat())
+    manifest = build_manifest(
+        run_id=run_id,
+        mode=mode,
+        created_at_utc=created_at,
+        artifacts=artifacts,
+        plots=plots or [],
+        metadata=metadata or {},
+    )
+    summary: dict[str, Any] = {
+        "run_id": str(run_id),
+        "timestamp_utc": created_at,
+        "mode": str(mode),
+        **dict(summary_fields or {}),
+        "manifest_path": "outputs/manifest.json",
+        "artifact_paths": artifact_paths(manifest),
+    }
+    return manifest, summary
+
+
+def standard_artifact_rows(
+    *,
+    include_report: bool = True,
+    extra_rows: Sequence[Mapping[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Build standard artifact rows with optional report and extra artifacts."""
+
+    rows: list[dict[str, Any]] = [
+        {"id": "config", "path": "config_resolved.yaml", "kind": "yaml", "required": True},
+        {"id": "summary", "path": "summary.json", "kind": "json", "required": True},
+    ]
+    if include_report:
+        rows.append({"id": "report", "path": "report.html", "kind": "html", "required": True})
+    rows.append({"id": "manifest", "path": "outputs/manifest.json", "kind": "json", "required": True})
+    for row in extra_rows or ():
+        rows.append(dict(row))
+    return rows
+
+
+__all__ = [
+    "RunLayout",
+    "create_run_layout",
+    "finalize_run_outputs",
+    "build_manifest_and_summary",
+    "standard_artifact_rows",
+]

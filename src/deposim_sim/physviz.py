@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from copy import deepcopy
 from typing import Any
 
-from .common.nested_path import get_nested, set_nested
+from .common.path_tools import get_attr_path, set_attr_path
 from .pipeline import run_aib_from_spec
 
 try:  # pragma: no cover
@@ -201,13 +201,13 @@ def compute_reaction_term_importance(
             "status": "ok",
         }
         try:
-            base_param = float(get_nested(run_spec, path))
+            base_param = float(get_attr_path(run_spec, path))
             step = max(abs(base_param), 1.0) * float(relative_step)
             if do_sens:
                 plus = deepcopy(run_spec)
                 minus = deepcopy(run_spec)
-                set_nested(plus, path, base_param + step)
-                set_nested(minus, path, max(base_param - step, _EPS))
+                set_attr_path(plus, path, base_param + step, create_missing_mappings=False)
+                set_attr_path(minus, path, max(base_param - step, _EPS), create_missing_mappings=False)
                 out_plus = run_aib_from_spec(plus)
                 out_minus = run_aib_from_spec(minus)
                 sens_map = (
@@ -220,7 +220,7 @@ def compute_reaction_term_importance(
             if do_ablation:
                 ablated = deepcopy(run_spec)
                 off_value = 0.0 if term_name != "k_des" else base_param
-                set_nested(ablated, path, off_value)
+                set_attr_path(ablated, path, off_value, create_missing_mappings=False)
                 out_abl = run_aib_from_spec(ablated)
                 delta = base_h - np.asarray(out_abl.thickness, dtype=float)
                 ablation_maps[term_name] = delta
