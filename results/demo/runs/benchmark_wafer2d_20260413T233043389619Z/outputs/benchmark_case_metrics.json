@@ -1,0 +1,78 @@
+[
+  {
+    "case_id": "CASE-A",
+    "class_id": "A",
+    "description": "Base adsorption/reaction without inhibitor/byproduct role.",
+    "roles": {
+      "A": "s0",
+      "I": null,
+      "B": null
+    },
+    "mean_h_nm": 0.08499742564950036,
+    "mean_phi_B": NaN,
+    "mean_f_I": 1.0,
+    "mean_CsA_over_CrefA": 0.11620241565463615,
+    "mean_CsB_over_CrefB": NaN,
+    "mean_abs_residual_nm": 0.07651725567782898,
+    "mean_km_A": 0.020000000000000007,
+    "mean_tau_A": 50.000000000000014,
+    "score": 0.07651725567782898
+  },
+  {
+    "case_id": "CASE-AI",
+    "class_id": "AI",
+    "description": "Inhibitor role enabled with stronger inhibition coupling.",
+    "roles": {
+      "A": "s0",
+      "I": "s1",
+      "B": null
+    },
+    "mean_h_nm": 0.07808974320864524,
+    "mean_phi_B": NaN,
+    "mean_f_I": 0.35208314361217075,
+    "mean_CsA_over_CrefA": 0.2710747233604497,
+    "mean_CsB_over_CrefB": NaN,
+    "mean_abs_residual_nm": 0.06960957323697385,
+    "mean_km_A": 0.020000000000000007,
+    "mean_tau_A": 50.000000000000014,
+    "score": 0.11960957323697385
+  },
+  {
+    "case_id": "CASE-AB",
+    "class_id": "AB",
+    "description": "Byproduct role enabled with transport feedback.",
+    "roles": {
+      "A": "s0",
+      "I": null,
+      "B": "s2"
+    },
+    "mean_h_nm": 0.08093856868454814,
+    "mean_phi_B": 0.3084981840611657,
+    "mean_f_I": 1.0,
+    "mean_CsA_over_CrefA": 0.11821032323323566,
+    "mean_CsB_over_CrefB": 0.7652453148376315,
+    "mean_abs_residual_nm": 0.07245839871287676,
+    "mean_km_A": 0.020000000000000007,
+    "mean_tau_A": 50.000000000000014,
+    "score": 0.12245839871287677
+  },
+  {
+    "case_id": "CASE-AIB",
+    "class_id": "AIB",
+    "description": "Inhibitor + byproduct roles jointly enabled.",
+    "roles": {
+      "A": "s0",
+      "I": "s1",
+      "B": "s2"
+    },
+    "mean_h_nm": 0.07450414903105347,
+    "mean_phi_B": 0.2689211391679209,
+    "mean_f_I": 0.3123109373580818,
+    "mean_CsA_over_CrefA": 0.29747968277002745,
+    "mean_CsB_over_CrefB": 0.7888788447406828,
+    "mean_abs_residual_nm": 0.06602397905938208,
+    "mean_km_A": 0.020000000000000007,
+    "mean_tau_A": 50.000000000000014,
+    "score": 0.1660239790593821
+  }
+]

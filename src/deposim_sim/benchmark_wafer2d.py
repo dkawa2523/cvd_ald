@@ -140,24 +140,19 @@ def build_wafer2d_cases() -> list[BenchmarkCase]:
 
 
 def _base_xy_points() -> np.ndarray:
-    # Non-collinear deterministic point cloud for from_fluent_xy.
-    return np.asarray(
-        [
-            [-45.0, -45.0],
-            [-45.0, 0.0],
-            [-45.0, 45.0],
-            [0.0, -45.0],
-            [0.0, 0.0],
-            [0.0, 45.0],
-            [45.0, -45.0],
-            [45.0, 0.0],
-            [45.0, 45.0],
-            [-20.0, 20.0],
-            [20.0, -20.0],
-            [30.0, 20.0],
-        ],
-        dtype=float,
-    )
+    # Dense deterministic wafer cloud for smooth from_fluent_xy triangulation.
+    radii = np.asarray([0.0, 18.0, 36.0, 54.0, 72.0, 90.0, 108.0, 126.0, 144.0], dtype=float)
+    counts = (1, 16, 24, 32, 40, 48, 56, 64, 72)
+    points: list[tuple[float, float]] = []
+    for idx, (radius, count) in enumerate(zip(radii, counts, strict=True)):
+        if count == 1:
+            points.append((0.0, 0.0))
+            continue
+        offset = (idx % 2) * np.pi / float(count)
+        theta = np.linspace(0.0, 2.0 * np.pi, int(count), endpoint=False, dtype=float) + offset
+        for angle in theta:
+            points.append((float(radius * np.cos(angle)), float(radius * np.sin(angle))))
+    return np.asarray(points, dtype=float)
 
 
 def _build_cref(case: BenchmarkCase, xy_mm: np.ndarray) -> np.ndarray:

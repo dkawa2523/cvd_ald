@@ -1,0 +1,58 @@
+{
+  "run_id": "benchmark_wafer2d_20260413T233043389619Z",
+  "timestamp_utc": "2026-04-13T23:31:13.362975+00:00",
+  "mode": "benchmark_wafer2d",
+  "sim_model": "aib_ode",
+  "case_count": 4,
+  "case_ids": [
+    "CASE-A",
+    "CASE-AI",
+    "CASE-AB",
+    "CASE-AIB"
+  ],
+  "trend_assertions": {
+    "delta_f_I_A_minus_AI": 0.6479168563878293,
+    "delta_h_AB_minus_AIB": 0.006434419653494672,
+    "assert_class_coverage": true,
+    "assert_ai_inhibition": true,
+    "assert_aib_inhibition_vs_ab": true,
+    "assert_ab_phi_b_finite": true,
+    "assert_aib_phi_b_finite": true,
+    "assert_a_phi_b_nan": true,
+    "assert_ai_phi_b_nan": true,
+    "overall_passed": true
+  },
+  "km_spread_ratio": 1.0,
+  "flux_delta_mean": NaN,
+  "flux_relative_delta_mean": NaN,
+  "flux_delta_calibrated_mean": NaN,
+  "flux_relative_delta_calibrated_mean": NaN,
+  "flux_eval_basis": "default",
+  "flux_gamma_best": null,
+  "flux_gamma_grid": [],
+  "flux_km_judge": {
+    "status": "SKIP",
+    "basis": "disabled",
+    "delta_mean": NaN,
+    "reason_codes": [
+      "compare_flux_km_disabled"
+    ]
+  },
+  "p1_recommendation": false,
+  "workflow_name": "benchmark_wafer2d",
+  "input_fingerprint": "fe935ab37d930f4df41384fabe2f1bea549c58961fef2c2b0c77017da4daa908",
+  "config_fingerprint": "c1087686771596f945446fbc1bfea7da7fbb69761ee90970f2a48b805d1d16e8",
+  "code_version": "188c4209cbf829207c379aa6549531c5ff7ebb7c",
+  "manifest_path": "outputs/manifest.json",
+  "artifact_paths": {
+    "config": "config_resolved.yaml",
+    "summary": "summary.json",
+    "report": "report.html",
+    "manifest": "outputs/manifest.json",
+    "benchmark_cases": "outputs/benchmark_cases.npz",
+    "benchmark_case_metrics": "outputs/benchmark_case_metrics.json",
+    "class_compare": "outputs/class_compare.csv",
+    "ranking": "outputs/ranking.csv",
+    "physviz_maps": "outputs/physviz_maps.npz"
+  }
+}
