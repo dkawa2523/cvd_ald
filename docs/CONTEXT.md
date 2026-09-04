@@ -159,3 +159,34 @@ These diagnostics are required for:
 - model validation
 - extrapolation safety assessment
 - later data assimilation and ML residual modeling
+
+---
+
+## Current code boundary in this repo
+
+In the current `deposim_*` implementation, the practical boundary is:
+
+- upstream Fluent-like data preparation provides canonical runtime inputs through
+  `xy`, `cref`, optional `time`, and optional `flux_sink`
+- `deposim_sim.io_plugins` and `deposim_sim.input_builder` are responsible for loading
+  and validating that input contract
+- `deposim_sim.transport_provider` is responsible for transport-closure behavior
+  (`fit_scalar` or `from_cfd_flux_sink`)
+- `deposim_opt.enumerate_roles` is responsible for raw-species to A/I/B role
+  candidate enumeration when the reaction roles are unknown
+- `deposim_sim.models.process_models` is the small process-model registry for
+  CVD/ALD-facing model names
+- `deposim_sim.models.aib_ode` is the current compatibility implementation for
+  role-based surface-state / kinetics updates
+- ALD readiness work should build on the minimal `role_ald_state`
+  role-assimilation model described in ADR 0020 instead of tuning the
+  compatibility alias
+- ADR 0021 makes role B genuinely optional in `role_ald_state`, separates train
+  and holdout scoring, and requires ordinary error-unit and complexity-sensitivity
+  diagnostics before role adoption
+- `deposim_sim.pipeline` is responsible for orchestration only: it maps validated
+  inputs onto domains, dispatches transport + kinetics, and assembles diagnostics
+
+This repo does not auto-classify Knudsen regime or solve a new chamber-scale transport
+model downstream of Fluent. When `km_source=fit_scalar`, effective transport assumptions
+must already be encoded in the provided inputs and parameter choices.

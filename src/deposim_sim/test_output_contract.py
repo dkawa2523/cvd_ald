@@ -110,6 +110,8 @@ class TestOutputContract(unittest.TestCase):
             payload = json.loads(manifest_path.read_text(encoding="utf-8"))
             validate_manifest(payload)
             self.assertEqual(payload["schema_version"], SCHEMA_VERSION)
+            self.assertEqual(payload["metadata"]["workflow_name"], "simulation")
+            self.assertIn("config_fingerprint", payload["metadata"])
 
     def test_benchmark_manifest_written_and_valid(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -125,6 +127,7 @@ class TestOutputContract(unittest.TestCase):
             artifact_ids = {row["id"] for row in payload["artifacts"]}
             self.assertIn("ranking", artifact_ids)
             self.assertIn("class_compare", artifact_ids)
+            self.assertEqual(payload["metadata"]["workflow_name"], "benchmark_wafer2d")
 
 
 if __name__ == "__main__":

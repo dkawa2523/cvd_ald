@@ -1,0 +1,74 @@
+sim:
+  process: ald
+  time_mode: transient
+
+  reference_plane:
+    z_ref_mm: 1.0
+
+  inputs:
+    fluent:
+      mode: transient
+      file: data/fluent_ald_transient.npz
+      keys:
+        cref: cref
+        xy: xy
+        time: time
+        flux_sink: flux_sink
+      species: [s0, s1, s2, s3]
+    temperature:
+      mode: scalar
+      value_K: 550.0
+
+  domain:
+    kind: from_fluent_xy
+    xy_unit: mm
+    wafer_radius_mm: 150.0
+
+  roles:
+    mode: fixed
+    A: s0
+    I: s2
+    B: s1
+
+  model:
+    name: role_ald_state
+    orders:
+      adsorption_site_order: 1
+      reaction_site_order_A: 1
+      reaction_site_order_star: 0
+      enforce_total_order_le: 3
+    params:
+      transport:
+        km_source: fit_scalar
+        km_A: {mode: constant, value: 10.0}
+        km_B: {mode: constant, value: 0.04}
+      kinetics:
+        k_store_A: 10.0
+        k_release_A: 0.05
+        k_convert_A: 0.30
+        k_convert_AB: 0.30
+      inhibitor:
+        k_store_I: 0.10
+        k_release_I: 0.05
+      thickness:
+        alpha_h: 1.0
+
+  time:
+    t_proc_s: 1.0
+    dt_s: 0.005
+    solver:
+      name: explicit_substep_bounded
+      max_iter: 60
+      theta_tol: 1.0e-10
+
+  initial_conditions:
+    theta_A: {mode: scalar, value: 0.0}
+    h_nm: {mode: scalar, value: 0.0}
+
+  output:
+    project: demo
+    run_name: ald_state_min
+    root_dir: results
+    store: {format: npz}
+    save_fields: [h_nm, theta_A, theta_I, theta_free, theta_star, CsA_over_CrefA, CsB_over_CrefB, phi_B, f_I, residual_nm]
+    report: {enabled: true, index_html: true}

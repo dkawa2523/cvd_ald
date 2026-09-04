@@ -44,9 +44,9 @@ class TestZrefSensitivity(unittest.TestCase):
             plot_path = run_dir / "plots" / "zref_sensitivity.png"
             self.assertTrue(npz_path.exists())
             self.assertTrue(plot_path.exists())
-            payload = np.load(npz_path)
-            self.assertEqual(payload["z_ref_mm"].shape[0], 3)
-            self.assertEqual(payload["nu_percent"].shape[0], 3)
+            with np.load(npz_path) as payload:
+                self.assertEqual(payload["z_ref_mm"].shape[0], 3)
+                self.assertEqual(payload["nu_percent"].shape[0], 3)
             report = (run_dir / "report.html").read_text(encoding="utf-8")
             self.assertIn("z_ref Sensitivity", report)
             self.assertIn("outputs/zref_sensitivity.npz", report)

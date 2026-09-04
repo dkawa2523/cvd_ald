@@ -13,6 +13,18 @@ class RoleCandidate:
     B: str | None
     class_id: str
 
+    @property
+    def effect_groups(self) -> dict[str, list[str]]:
+        # In the state models A and B have different kinetic responsibilities.
+        # Never canonicalize them as an unordered pair.
+        return {slot: [value] for slot in ("A", "I", "B")
+                if (value := getattr(self, slot)) is not None}
+
+    @property
+    def reduced_effect_groups(self) -> list[dict[str, list[str]]]:
+        return [{key: value for key, value in self.effect_groups.items() if key != slot}
+                for slot in ("I", "B") if getattr(self, slot) is not None]
+
 
 def class_id_from_roles(*, I: str | None, B: str | None) -> str:
     if I is None and B is None:

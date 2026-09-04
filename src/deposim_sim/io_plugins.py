@@ -19,6 +19,7 @@ except ModuleNotFoundError:  # pragma: no cover
 class MeasurementData:
     xy: np.ndarray
     h: np.ndarray
+    sigma: np.ndarray | None = None
 
 
 def _require_numpy() -> None:
@@ -127,13 +128,19 @@ def _load_measurement_npz(path: Path, *, keys: Any) -> MeasurementData:
     with np.load(path, allow_pickle=False) as data:
         xy_key = _as_key(keys, "xy", "xy")
         h_key = _as_key(keys, "h", "h_nm")
+        missing = [key for key in (xy_key, h_key) if key not in data.files]
+        if missing:
+            available = ", ".join(sorted(str(name) for name in data.files))
+            raise ValueError(f"measurement npz missing required keys {missing} in {path}; available keys: [{available}]")
         xy = np.asarray(data[xy_key], dtype=float)
         h = np.asarray(data[h_key], dtype=float).reshape(-1)
+        sigma_key = _as_key(keys, "sigma", "")
+        sigma = np.asarray(data[sigma_key], dtype=float).reshape(-1) if sigma_key else None
     if xy.ndim != 2 or xy.shape[1] != 2:
         raise ValueError(f"measurement xy must be shape [n_pts,2], got {xy.shape}")
     if h.shape[0] != xy.shape[0]:
         raise ValueError("measurement h length must match xy rows")
-    return MeasurementData(xy=xy, h=h)
+    return MeasurementData(xy=xy, h=h, sigma=sigma)
 
 
 def _load_measurement_csv(path: Path, *, keys: Any) -> MeasurementData:
@@ -146,7 +153,9 @@ def _load_measurement_csv(path: Path, *, keys: Any) -> MeasurementData:
         raise ValueError(f"measurement csv missing required columns: {missing}")
     xy = np.stack([np.asarray(table[x_key], dtype=float), np.asarray(table[y_key], dtype=float)], axis=1)
     h = np.asarray(table[h_key], dtype=float).reshape(-1)
-    return MeasurementData(xy=xy, h=h)
+    sigma_key = _as_key(keys, "sigma", "")
+    sigma = np.asarray(table[sigma_key], dtype=float).reshape(-1) if sigma_key else None
+    return MeasurementData(xy=xy, h=h, sigma=sigma)
 
 
 def load_measurement_input(
@@ -171,7 +180,8 @@ def load_measurement_input(
 def load_fluent_from_run_spec(run_spec: Any, path: str | Path | None = None) -> FluentData:
     sim = getattr(run_spec, "sim", run_spec)
     source = Path(path) if path is not None else Path(sim.inputs.fluent.file)
-    loader = str(getattr(sim.inputs, "io_loader_name", source.suffix.lstrip(".") or "npz")).lower()
+    explicit_loader = str(getattr(sim.inputs.fluent, "io_loader_name", "")).strip().lower()
+    loader = explicit_loader or source.suffix.lstrip(".") or "npz"
     return load_fluent_input(
         loader_name=loader,
         path=source,
@@ -184,7 +194,8 @@ def load_fluent_from_run_spec(run_spec: Any, path: str | Path | None = None) -> 
 def load_measurement_from_run_spec(run_spec: Any, path: str | Path | None = None) -> MeasurementData:
     sim = getattr(run_spec, "sim", run_spec)
     source = Path(path) if path is not None else Path(sim.measurement.file)
-    loader = str(getattr(sim.measurement, "io_loader_name", source.suffix.lstrip(".") or "npz")).lower()
+    explicit_loader = str(getattr(sim.measurement, "io_loader_name", "")).strip().lower()
+    loader = explicit_loader or source.suffix.lstrip(".") or "npz"
     return load_measurement_input(loader_name=loader, path=source, keys=sim.measurement.keys)
 
 

@@ -3,17 +3,45 @@ from __future__ import annotations
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 
 from deposim_report import write_run_report
 from deposim_schema import compose_sim_config
 
-from .identifiability import compute_identifiability_diagnostics
+from .identifiability import analyze_sensitivities, compute_identifiability_diagnostics
 from .pipeline import run_aib_from_spec
 
 
 class TestIdentifiability(unittest.TestCase):
+    def test_joint_dependence_is_found_without_high_pairwise_correlation(self):
+        out = analyze_sensitivities(np.array([[1., 0.], [0., 1.], [1., 1.]]), ["a", "b", "c"])
+        self.assertFalse(out["high_correlation_pairs"])
+        self.assertEqual(out["effective_rank"], 2)
+        self.assertTrue(out["degeneracy_warning"])
+        self.assertEqual(len(out["weak_parameter_combinations"]), 1)
+
+    def test_complementary_conditions_resolve_parameters_in_observation_space(self):
+        def simulate(spec):
+            observed = np.array([spec.a + spec.sign * spec.b]) * spec.unit
+            # The unobserved mesh value must not improve identifiability.
+            return SimpleNamespace(thickness=np.r_[observed, spec.b], fields={}, diagnostics={
+                "observation": {"residual_nm": observed - 2 * spec.unit,
+                                "target_nm": np.array([2 * spec.unit]), "sigma_nm": None}})
+        first = SimpleNamespace(a=2., b=1., sign=1., unit=1.)
+        second = SimpleNamespace(a=2., b=1., sign=-1., unit=1.)
+        with patch("deposim_sim.identifiability.run_sim_from_spec", side_effect=simulate):
+            single = compute_identifiability_diagnostics(first, parameter_paths=["a", "b"])
+            joint = compute_identifiability_diagnostics(first, run_specs=[first, second], parameter_paths=["a", "b"])
+            first.unit = second.unit = 1.0e-6
+            scaled = compute_identifiability_diagnostics(first, run_specs=[first, second], parameter_paths=["a", "b"])
+        self.assertEqual(single["effective_rank"], 1)
+        self.assertEqual(joint["effective_rank"], 2)
+        self.assertEqual(joint["observation_count"], 2)
+        np.testing.assert_allclose(joint["singular_values"], scaled["singular_values"])
+
     def _run_spec(self):
         tmp = TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

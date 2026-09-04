@@ -1,4 +1,4 @@
-"""Structured simulation/optimization configs for AIB-ODE workflows."""
+"""Structured simulation/optimization configs for role-based deposition workflows."""
 
 from __future__ import annotations
 
@@ -35,6 +35,8 @@ _ALLOWED_OPT_ENGINES = {"optuna", "random"}
 _ALLOWED_OPT_SAMPLERS = {"tpe", "cmaes", "random"}
 _ALLOWED_OPT_PRUNERS = {"none", "median", "hyperband"}
 _ALLOWED_DOMAIN_KINDS = {"from_fluent_xy", "wafer_2d_xy", "wafer_2d_polar", "wafer_1d_radial"}
+_ALLOWED_IO_LOADERS = {"", "npz", "csv"}
+_ALLOWED_PROCESS_MODELS = {"aib_ode", "role_cvd_aib", "role_ald_compat", "role_ald_state"}
 
 
 def _ensure(cond: bool, message: str) -> None:
@@ -61,12 +63,17 @@ class FluentKeysSpec:
 class FluentInputSpec:
     mode: str = "steady"
     file: str = ""
+    io_loader_name: str = ""
     keys: FluentKeysSpec = field(default_factory=FluentKeysSpec)
     species: list[str] = field(default_factory=lambda: ["s0"])
 
     def __post_init__(self) -> None:
         _ensure(self.mode in _ALLOWED_FLUENT_MODES, f"sim.inputs.fluent.mode must be one of {_ALLOWED_FLUENT_MODES}")
         _ensure(bool(self.file), "sim.inputs.fluent.file must be non-empty")
+        _ensure(
+            str(self.io_loader_name).strip().lower() in _ALLOWED_IO_LOADERS,
+            f"sim.inputs.fluent.io_loader_name must be one of {_ALLOWED_IO_LOADERS}",
+        )
         _ensure(bool(self.species), "sim.inputs.fluent.species must be non-empty")
         _ensure(len(set(self.species)) == len(self.species), "sim.inputs.fluent.species must not contain duplicates")
 
@@ -185,7 +192,10 @@ class AIBModelSpec:
     params: AIBModelParamsSpec = field(default_factory=AIBModelParamsSpec)
 
     def __post_init__(self) -> None:
-        _ensure(self.name == "aib_ode", "sim.model.name must be 'aib_ode'")
+        _ensure(
+            self.name in _ALLOWED_PROCESS_MODELS,
+            f"sim.model.name must be one of {_ALLOWED_PROCESS_MODELS}",
+        )
 
 
 @dataclass
@@ -195,7 +205,10 @@ class TimeSolverSpec:
     theta_tol: float = 1.0e-10
 
     def __post_init__(self) -> None:
-        _ensure(self.name == "implicit_euler_bisect", "sim.time.solver.name must be implicit_euler_bisect")
+        _ensure(
+            self.name in {"implicit_euler_bisect", "explicit_substep_bounded"},
+            "sim.time.solver.name must be implicit_euler_bisect|explicit_substep_bounded",
+        )
         _ensure(self.max_iter >= 8, "sim.time.solver.max_iter must be >= 8")
         _ensure(self.theta_tol > 0.0, "sim.time.solver.theta_tol must be > 0")
 
@@ -230,6 +243,10 @@ class InitialConditionsSpec:
 class MeasurementSpec:
     enabled: bool = False
     file: str = ""
+    io_loader_name: str = ""
+    quantity: str = "thickness"
+    sigma: float | None = None
+    xy_unit: str = "mm"
     keys: dict[str, str] = field(default_factory=lambda: {"h": "h_nm", "xy": "xy"})
     align: dict[str, Any] = field(
         default_factory=lambda: {
@@ -239,6 +256,15 @@ class MeasurementSpec:
             "mask_radius_mm": 150.0,
         }
     )
+
+    def __post_init__(self) -> None:
+        _ensure(self.quantity in {"thickness", "mean_rate"}, "measurement.quantity must be thickness|mean_rate")
+        _ensure(self.xy_unit in {"m", "mm"}, "measurement.xy_unit must be m|mm")
+        _ensure(self.sigma is None or self.sigma > 0.0, "measurement.sigma must be positive")
+        _ensure(
+            str(self.io_loader_name).strip().lower() in _ALLOWED_IO_LOADERS,
+            f"sim.measurement.io_loader_name must be one of {_ALLOWED_IO_LOADERS}",
+        )
 
 
 @dataclass
@@ -287,6 +313,16 @@ class SimSpecV2:
             total_order <= self.model.orders.enforce_total_order_le,
             "order constraint violated: p_A + p_* + m_B must be <= 3",
         )
+        if self.model.name == "role_ald_state":
+            _ensure(
+                self.time.solver.name == "explicit_substep_bounded",
+                "role_ald_state requires sim.time.solver.name=explicit_substep_bounded",
+            )
+        else:
+            _ensure(
+                self.time.solver.name == "implicit_euler_bisect",
+                "AIB compatibility models require sim.time.solver.name=implicit_euler_bisect",
+            )
 
 
 @dataclass
@@ -326,10 +362,9 @@ class ParameterFitSpec:
     )
     analysis: dict[str, Any] = field(
         default_factory=lambda: {
-            "role_stability": {"enabled": True, "topk_window": 10, "score_epsilon": 1.0e-6},
+            "role_stability": {"enabled": True, "score_epsilon": 1.0e-6},
             "identifiability": {
                 "enabled": False,
-                "max_paths": 3,
                 "relative_step": 1.0e-2,
                 "low_sensitivity_threshold": 1.0e-10,
                 "correlation_threshold": 0.98,
@@ -483,17 +518,17 @@ def _resolve_defaults_block(
 
 
 def _parse_override_value(raw: str) -> Any:
+    text = raw.strip()
+    if text.lower() in {"null", "none", "~"}:
+        return None
+    if text.lower() == "true":
+        return True
+    if text.lower() == "false":
+        return False
     try:
         parsed = OmegaConf.create({"v": raw})
         return OmegaConf.to_container(parsed, resolve=True)["v"]
     except Exception:
-        text = raw.strip()
-        if text.lower() in {"null", "none"}:
-            return None
-        if text.lower() == "true":
-            return True
-        if text.lower() == "false":
-            return False
         return raw
 
 
@@ -548,6 +583,10 @@ def _build_sim_spec(data: Mapping[str, Any], *, project_root: Path) -> SimSpecV2
     file_raw = str(fluent_obj.get("file", "")).strip()
     if file_raw:
         payload.setdefault("inputs", {}).setdefault("fluent", {})["file"] = _to_abs(project_root, file_raw)
+    meas_obj = payload.get("measurement", {})
+    meas_file_raw = str(meas_obj.get("file", "")).strip()
+    if meas_file_raw:
+        payload.setdefault("measurement", {})["file"] = _to_abs(project_root, meas_file_raw)
 
     return SimSpecV2(
         process=str(payload.get("process", "cvd")),
@@ -557,6 +596,7 @@ def _build_sim_spec(data: Mapping[str, Any], *, project_root: Path) -> SimSpecV2
             fluent=FluentInputSpec(
                 mode=str(payload.get("inputs", {}).get("fluent", {}).get("mode", "steady")),
                 file=str(payload.get("inputs", {}).get("fluent", {}).get("file", "")),
+                io_loader_name=str(payload.get("inputs", {}).get("fluent", {}).get("io_loader_name", "")),
                 keys=FluentKeysSpec(**dict(payload.get("inputs", {}).get("fluent", {}).get("keys", {}))),
                 species=list(payload.get("inputs", {}).get("fluent", {}).get("species", ["s0"])),
             ),

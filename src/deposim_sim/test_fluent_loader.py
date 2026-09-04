@@ -74,6 +74,33 @@ class TestFluentLoader(unittest.TestCase):
             with self.assertRaises(ValueError):
                 load_fluent_npz_v2(path=path, mode="steady", keys=keys, species=["s0", "s1"])
 
+    def test_load_missing_required_key_raises_with_context(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "steady_missing_xy.npz"
+            cref = np.array([[1.0, 0.5], [0.2, 0.1]], dtype=float)
+            np.savez(path, cref=cref)
+
+            keys = type("Keys", (), {"cref": "cref", "xy": "xy", "time": "time"})()
+            with self.assertRaisesRegex(ValueError, "available keys"):
+                load_fluent_npz_v2(path=path, mode="steady", keys=keys, species=["s0", "s1"])
+
+    def test_transient_missing_time_key_raises_with_context(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "transient_missing_time.npz"
+            xy = np.array([[0.0, 0.0], [1.0, 2.0]], dtype=float)
+            cref = np.array(
+                [
+                    [[1.0, 0.5], [0.2, 0.1]],
+                    [[0.9, 0.4], [0.3, 0.2]],
+                ],
+                dtype=float,
+            )
+            np.savez(path, xy=xy, cref=cref)
+
+            keys = type("Keys", (), {"cref": "cref", "xy": "xy", "time": "time"})()
+            with self.assertRaisesRegex(ValueError, "fluent time key"):
+                load_fluent_npz_v2(path=path, mode="transient", keys=keys, species=["s0", "s1"])
+
 
 if __name__ == "__main__":
     unittest.main()

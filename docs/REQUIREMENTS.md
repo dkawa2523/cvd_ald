@@ -40,9 +40,9 @@ The platform MUST run when omega_rad_s=0; rotation affects km models/averaging b
 
 Mass-transfer coefficient (k_m) MUST be selected via registry and YAML, supporting at least stagnant-film and rotating-disk options with omega guards.
 
-### MUST-007: Unified AIB-ODE core is the only primary kinetics path
+### MUST-007: Role-based CVD/ALD model paths are the primary kinetics contract
 
-The primary simulation path MUST use a single `aib_ode` model with role-based class selection (A/AI/AB/AIB), and MUST NOT require legacy `power_law/lhhw` model selection for primary execution.
+The primary simulation path MUST use role-based model selection with A/AI/AB/AIB role discovery and validation. `aib_ode` remains the current compatibility implementation, but future CVD/ALD work MUST NOT treat `sim.model.name = aib_ode` as the permanent public contract. Legacy `power_law/lhhw` model selection MUST NOT return as a primary execution route.
 
 ### MUST-008: Role contract is fixed and validated
 
@@ -56,9 +56,12 @@ Outputs MUST include `CsA_over_CrefA`, `CsB_over_CrefB` (NaN when B absent), `ph
 
 Concentrations must be nonnegative; coverage must be in [0,1]; thickness sign convention must be consistent (deposit positive, etch negative).
 
-### MUST-011: ODE-first update with implicit Euler+bisection is implemented
+### MUST-011: Process-specific bounded state updates are declared and implemented
 
-The theta state update MUST use implicit Euler with bisection in `[0,1]` and preserve bounded state behavior.
+CVD AIB compatibility models MUST use implicit Euler with bisection in `[0,1]`.
+`role_ald_state` MUST declare and use bounded explicit substeps, including state
+projection diagnostics. A config MUST NOT advertise a solver different from the
+one executed by its process model.
 
 ### MUST-012: Non-bracket fallback behavior is mandatory
 
@@ -76,9 +79,9 @@ The code MUST include tests verifying behavior in reaction-limited and transport
 
 NumPy CPU baseline MUST exist. JAX is optional but planned; engine selection must be YAML-controlled.
 
-### MUST-016: Time modes are `steady` and `transient` with shared AIB core
+### MUST-016: Time modes are `steady` and `transient` with shared role-input contract
 
-CVD steady and transient MUST both run through the same AIB-ODE core; ALD baseline execution MUST use transient concentration time series.
+CVD steady/transient and ALD transient execution MUST share the same Fluent input and role-assignment contract. CVD and ALD MAY dispatch to different role-based process models.
 
 ### MUST-017: Drivers: support time/space varying external input modification
 
@@ -96,9 +99,9 @@ Configs MUST use YAML composition with `configs/sim/` and `configs/opt/`, and ru
 
 Numerical simulation and optimization/ML MUST be separated into packages/modules with clear dependency direction.
 
-### MUST-021: Model registry supports adding models without refactor
+### MUST-021: Model registry supports adding process models without refactor
 
-Models MUST be registered by name and discoverable, allowing later extension with minimal file/directory growth.
+Mass-transfer models and process models MUST be registered by name and discoverable, allowing later CVD/ALD model extensions with minimal file/directory growth.
 
 ### MUST-022: Compute resources are user-selected (no forced auto policy)
 
@@ -122,7 +125,11 @@ Generate thickness map, radial profile, Cs ratios, `phi_B`/`f_I` maps, and HTML 
 
 ### MUST-027: Numerical health metrics are logged
 
-Implicit solver non-bracket counts, bounded-state checks, and validation violations MUST be recorded and visualizable. Solver health maps MUST be driven by runtime diagnostics (not placeholder defaults).
+Implicit solver non-bracket counts, bounded-state checks, state projections, and
+validation violations MUST be recorded and visualizable. Root-solver metrics MUST
+state whether they are applicable; non-applicable ALD root metrics MUST NOT be
+reported as successful zero counts. Solver health maps MUST be driven by runtime
+diagnostics rather than placeholder defaults.
 
 ### MUST-061: Output contract must be versioned and machine-readable
 
@@ -131,11 +138,27 @@ Each run MUST emit `outputs/manifest.json` with `schema_version=\"output.v1\"`, 
 
 ### MUST-062: Optimization objective must emit decomposed score components
 
-`deposim_opt` fitting outputs MUST include decomposed score columns (`loss_data`, `penalty_solver`, `penalty_phys`, `penalty_prior`, `penalty_complexity`, `score_total`) for auditability and reproducible ranking explanations.
+`deposim_opt` fitting outputs MUST include decomposed score columns (`loss_data`,
+`penalty_solver`, `penalty_phys`, `penalty_prior`, `penalty_complexity`,
+`score_total`) plus RMSE, MAE, and maximum absolute error in nanometer units.
+Role selection MUST distinguish training loss from refitted prediction error.
+When condition refits are available, they determine selection, with preference
+for simpler candidates within paired error uncertainty. The existing complexity
+penalty sweep remains a training-score diagnostic. Adoption MUST be withheld for
+failed baseline comparisons, unresolved alternative roles, unsupported spatial
+variation, or unassessed/degenerate fitted parameters. Role-stability and local
+parameter-identifiability results MUST be reported separately. Local sensitivity
+MUST use all estimated parameter directions and all training observations.
 
 ### MUST-063: Optimization contract must support multi-condition and staged fidelity
 
-Optimization config MUST support weighted multi-condition fitting and staged condition-count fidelity (`coarse -> fine`) with pruning hooks, while preserving backward compatibility for single-condition YAML files.
+Optimization config MUST support weighted multi-condition fitting, explicit
+`train|holdout` condition splits, and staged train-condition-count fidelity
+(`coarse -> fine`) with pruning hooks, while preserving backward compatibility
+for single-condition YAML files. External holdout data MUST not affect parameter
+or role selection. Condition refits MUST reestimate parameters from the remaining
+training conditions; an external holdout MUST never become a refit training row.
+The no-role reference prediction MUST be estimated using training data only.
 
 ### MUST-028: runs/ and results/ are gitignored and managed
 
@@ -177,17 +200,23 @@ If `domain.kind=wafer_2d_xy` is selected, the runtime MUST build a valid simulat
 
 Model registries MUST expose compatibility metadata (`requires`, `excludes`, `time_modes`, `governing_class`), and a validator MUST stop representative invalid configurations before simulation execution.
 
-### MUST-057: Measurement comparison path must be first-class in AIB workflow
+### MUST-057: Measurement comparison and role ranking must be first-class in role workflows
 
-Workflow MUST include deterministic measurement alignment, KPI generation, and sim-vs-measurement reporting for AIB-based runs.
+Workflow MUST include deterministic measurement alignment, nearest-match distance
+diagnostics, KPI generation, role-candidate ranking, and sim-vs-measurement
+reporting for role-based CVD/ALD runs.
+Fitting MUST score original observations once each, independently of simulation
+mesh density. Reports MUST separate mean bias from centered spatial error.
+Known measurement uncertainty MUST scale the fitting residual consistently with
+thickness or mean-rate conversion; ordinary error metrics retain physical units.
 
 ### MUST-058: Verification commands for P1/P2 must be executable gates
 
 `scripts/commands.sh verify_task <task_id>` for P1/P2 MUST run concrete checks/tests; placeholder pass-through verification is not allowed.
 
-### MUST-059: ALD transient execution must be YAML-selectable
+### MUST-059: ALD transient execution and ALD metrics must be YAML-selectable
 
-ALD transient execution (time-series concentration input) MUST be selectable through YAML and validated with the same AIB role/order rules.
+ALD transient execution (time-series concentration input) MUST be selectable through YAML and validated with the same role-assignment contract. ALD model-readiness metrics such as GPC plateau, cycle GPC stability, and purge growth fraction MUST be reportable separately from generic runtime success.
 
 ### MUST-060: Heavy dependencies remain optional extras unless a gate requires them
 

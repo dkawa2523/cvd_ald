@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 from collections.abc import Mapping, Sequence
+import subprocess
 from typing import Any
 
 from ..output_manifest import artifact_paths, build_manifest, write_manifest
@@ -53,6 +55,123 @@ def create_run_layout(
         plots_dir=plots_dir,
         inputs_dir=inputs_dir,
     )
+
+
+_FINGERPRINT_SKIP_KEYS = {
+    "artifact_paths",
+    "file",
+    "fluent_file",
+    "manifest_path",
+    "measurement_file",
+    "output",
+    "project",
+    "root_dir",
+    "run_name",
+}
+
+
+def _stable_json_bytes(payload: Any) -> bytes:
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+
+
+def _sha256_hex(payload: bytes) -> str:
+    digest = hashlib.sha256()
+    digest.update(payload)
+    return digest.hexdigest()
+
+
+def _sanitize_for_fingerprint(payload: Any) -> Any:
+    if is_dataclass(payload) and not isinstance(payload, type):
+        payload = asdict(payload)
+    if isinstance(payload, Mapping):
+        out: dict[str, Any] = {}
+        for raw_key in sorted(payload):
+            key = str(raw_key)
+            if key in _FINGERPRINT_SKIP_KEYS or key.endswith("_file"):
+                continue
+            out[key] = _sanitize_for_fingerprint(payload[raw_key])
+        return out
+    if isinstance(payload, Sequence) and not isinstance(payload, (str, bytes, bytearray)):
+        return [_sanitize_for_fingerprint(item) for item in payload]
+    if isinstance(payload, Path):
+        return payload.name
+    return payload
+
+
+def _digest_file(path: Path) -> dict[str, Any]:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 64), b""):
+            digest.update(chunk)
+    return {"sha256": digest.hexdigest(), "size_bytes": int(path.stat().st_size)}
+
+
+def resolve_code_version(repo_root: Path | None = None) -> str:
+    root = repo_root or Path(__file__).resolve().parents[3]
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except Exception:
+        return "unknown"
+    return str(out.stdout).strip() or "unknown"
+
+
+def resolve_code_worktree_state(repo_root: Path | None = None) -> dict[str, Any]:
+    """Record whether the saved commit fully represents the executing worktree."""
+
+    root = repo_root or Path(__file__).resolve().parents[3]
+    try:
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+        ).stdout
+        diff = subprocess.run(
+            ["git", "diff", "--binary", "--no-ext-diff", "--", "."],
+            cwd=root,
+            check=True,
+            capture_output=True,
+        ).stdout
+    except Exception:
+        return {"code_dirty": None, "code_diff_fingerprint": "unknown"}
+    payload = status + b"\n" + diff
+    return {
+        "code_dirty": bool(status.strip()),
+        "code_diff_fingerprint": _sha256_hex(payload),
+    }
+
+
+def build_provenance_metadata(
+    *,
+    workflow_name: str,
+    config_payload: Any,
+    input_paths: Sequence[str | Path] | None = None,
+    extra_metadata: Mapping[str, Any] | None = None,
+    repo_root: Path | None = None,
+) -> dict[str, Any]:
+    digests: list[dict[str, Any]] = []
+    for raw_path in input_paths or ():
+        path = Path(raw_path)
+        if path.exists() and path.is_file():
+            digests.append(_digest_file(path))
+        else:
+            digests.append({"missing": True})
+    digest_rows = sorted(digests, key=lambda row: json.dumps(row, sort_keys=True))
+    metadata = {
+        "workflow_name": str(workflow_name),
+        "input_fingerprint": _sha256_hex(_stable_json_bytes(digest_rows)),
+        "config_fingerprint": _sha256_hex(_stable_json_bytes(_sanitize_for_fingerprint(config_payload))),
+        "code_version": resolve_code_version(repo_root=repo_root),
+        **resolve_code_worktree_state(repo_root=repo_root),
+    }
+    metadata.update(dict(extra_metadata or {}))
+    return metadata
 
 
 def finalize_run_outputs(
@@ -119,8 +238,11 @@ def standard_artifact_rows(
 
 __all__ = [
     "RunLayout",
+    "build_provenance_metadata",
     "create_run_layout",
     "finalize_run_outputs",
     "build_manifest_and_summary",
+    "resolve_code_version",
+    "resolve_code_worktree_state",
     "standard_artifact_rows",
 ]

@@ -98,6 +98,36 @@ class TestIOPlugins(unittest.TestCase):
             self.assertEqual(meas.xy.shape, (2, 2))
             self.assertEqual(meas.h.shape, (2,))
 
+    def test_explicit_loader_name_overrides_suffix(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fluent_path = root / "fluent_payload.data"
+            meas_path = root / "meas_payload.bin"
+            fluent_path.write_text("x,y,s0,s1,s2,s3\n0,0,1.0,0.2,0.1,0.0\n10,0,0.8,0.2,0.1,0.0\n", encoding="utf-8")
+            meas_path.write_text("x,y,h_nm\n0,0,1.0\n10,0,0.8\n", encoding="utf-8")
+
+            spec = compose_sim_config(
+                "cvd_steady_min",
+                overrides=[
+                    f"sim.inputs.fluent.file={fluent_path}",
+                    "sim.inputs.fluent.io_loader_name=csv",
+                    "sim.measurement.enabled=true",
+                    f"sim.measurement.file={meas_path}",
+                    "sim.measurement.io_loader_name=csv",
+                ],
+            )
+            fluent = load_fluent_from_run_spec(spec)
+            meas = load_measurement_from_run_spec(spec)
+            self.assertEqual(fluent.cref.shape, (2, 4))
+            self.assertEqual(meas.h.shape, (2,))
+
+    def test_measurement_npz_missing_key_raises_with_context(self) -> None:
+        with TemporaryDirectory() as tmp:
+            npz_path = Path(tmp) / "meas.npz"
+            np.savez(npz_path, xy=np.array([[0.0, 0.0]], dtype=float))
+            with self.assertRaisesRegex(ValueError, "missing required keys"):
+                load_measurement_input(loader_name="npz", path=npz_path, keys={"xy": "xy", "h": "h_nm"})
+
 
 if __name__ == "__main__":
     unittest.main()

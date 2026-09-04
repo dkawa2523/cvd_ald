@@ -119,6 +119,48 @@ class TestRunManagerOutputs(unittest.TestCase):
             root_index = (root / "index.html").read_text(encoding="utf-8")
             self.assertIn("run_manager_unit/index.html", root_index)
 
+    def test_provenance_fingerprint_ignores_output_root(self) -> None:
+        with TemporaryDirectory(prefix="deposim_prov_a_") as tmp_a, TemporaryDirectory(prefix="deposim_prov_b_") as tmp_b:
+            fluent = self._write_fluent(Path(tmp_a))
+            run_spec_a = self._build_run_spec(tmp_a, fluent)
+            run_spec_b = self._build_run_spec(tmp_b, fluent)
+            result_a = run_aib_from_spec(run_spec_a)
+            result_b = run_aib_from_spec(run_spec_b)
+            run_dir_a = save_run_outputs(
+                run_spec=run_spec_a,
+                config_name="cvd_steady_min",
+                config_overrides=[
+                    f"sim.output.root_dir={tmp_a}",
+                    "sim.output.project=run_manager_unit",
+                    "sim.output.run_name=test_run",
+                    f"sim.inputs.fluent.file={fluent}",
+                    "sim.output.save_fields=[h_nm,theta_A,residual_nm]",
+                ],
+                result=result_a,
+            )
+            run_dir_b = save_run_outputs(
+                run_spec=run_spec_b,
+                config_name="cvd_steady_min",
+                config_overrides=[
+                    f"sim.output.root_dir={tmp_b}",
+                    "sim.output.project=run_manager_unit",
+                    "sim.output.run_name=test_run",
+                    f"sim.inputs.fluent.file={fluent}",
+                    "sim.output.save_fields=[h_nm,theta_A,residual_nm]",
+                ],
+                result=result_b,
+            )
+            manifest_a = json.loads((run_dir_a / "outputs" / "manifest.json").read_text(encoding="utf-8"))
+            manifest_b = json.loads((run_dir_b / "outputs" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                manifest_a["metadata"]["config_fingerprint"],
+                manifest_b["metadata"]["config_fingerprint"],
+            )
+            self.assertEqual(
+                manifest_a["metadata"]["input_fingerprint"],
+                manifest_b["metadata"]["input_fingerprint"],
+            )
+
     def _assert_run_artifacts(self, run_dir: Path) -> None:
         self.assertTrue((run_dir / "config_resolved.yaml").is_file())
         self.assertTrue((run_dir / "report.html").is_file())
@@ -138,6 +180,15 @@ class TestRunManagerOutputs(unittest.TestCase):
         self.assertIn("dispatch_mode", metrics_payload)
         manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
         self.assertEqual(manifest_payload["schema_version"], SCHEMA_VERSION)
+        for key in (
+            "workflow_name",
+            "input_fingerprint",
+            "config_fingerprint",
+            "code_version",
+            "code_dirty",
+            "code_diff_fingerprint",
+        ):
+            self.assertIn(key, manifest_payload["metadata"])
         artifact_ids = {row["id"] for row in manifest_payload["artifacts"]}
         self.assertTrue({"fields", "metrics", "summary", "report", "config", "manifest"}.issubset(artifact_ids))
 

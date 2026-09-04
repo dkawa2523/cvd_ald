@@ -20,6 +20,13 @@ def _require_numpy() -> None:
         raise RuntimeError("NumPy is required for deposim_sim.input_builder")
 
 
+def _load_npz_required(data: Any, key: str, *, path: Path, label: str) -> np.ndarray:
+    if key not in data.files:
+        available = ", ".join(sorted(str(name) for name in data.files))
+        raise ValueError(f"{label} key {key!r} is missing in {path}; available keys: [{available}]")
+    return np.asarray(data[key], dtype=float)
+
+
 def normalize_xy_mm(xy: np.ndarray, xy_unit: str) -> np.ndarray:
     """Convert XY coordinates to millimeter units."""
 
@@ -109,12 +116,15 @@ def load_fluent_npz_v2(
         raise FileNotFoundError(f"Fluent NPZ not found: {resolved}")
 
     with np.load(resolved, allow_pickle=False) as data:
-        cref = np.asarray(data[getattr(keys, "cref", "cref")], dtype=float)
-        xy = np.asarray(data[getattr(keys, "xy", "xy")], dtype=float)
+        cref_key = str(getattr(keys, "cref", "cref"))
+        xy_key = str(getattr(keys, "xy", "xy"))
+        cref = _load_npz_required(data, cref_key, path=resolved, label="fluent cref")
+        xy = _load_npz_required(data, xy_key, path=resolved, label="fluent xy")
         time = None
         flux_sink = None
         if mode == "transient":
-            time = np.asarray(data[getattr(keys, "time", "time")], dtype=float)
+            time_key = str(getattr(keys, "time", "time"))
+            time = _load_npz_required(data, time_key, path=resolved, label="fluent time")
         flux_key = str(getattr(keys, "flux_sink", "flux_sink"))
         if flux_key in data.files:
             flux_sink = np.asarray(data[flux_key], dtype=float)

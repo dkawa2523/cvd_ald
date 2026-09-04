@@ -154,6 +154,43 @@ class TestPipelineAIB(unittest.TestCase):
             self.assertGreater(float(np.nanmax(np.abs(residual_no_align - residual_align))), 0.0)
             self.assertIn("measurement_valid_mask", out_align.diagnostics)
 
+    def test_pipeline_uses_configured_io_loaders(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fluent_path = root / "fluent_payload.data"
+            meas_path = root / "meas_payload.data"
+            fluent_path.write_text(
+                "x,y,s0,s1,s2,s3\n"
+                "-20.0,-10.0,1.0,0.4,0.1,0.0\n"
+                "0.0,-5.0,0.9,0.5,0.1,0.0\n"
+                "10.0,12.0,0.7,0.4,0.1,0.0\n"
+                "25.0,-15.0,0.6,0.3,0.1,0.0\n",
+                encoding="utf-8",
+            )
+            meas_path.write_text(
+                "x,y,h_nm\n"
+                "-20.0,-10.0,1.0\n"
+                "0.0,-5.0,1.1\n"
+                "10.0,12.0,1.2\n"
+                "25.0,-15.0,1.3\n",
+                encoding="utf-8",
+            )
+
+            spec = compose_sim_config(
+                "cvd_steady_min",
+                overrides=[
+                    f"sim.inputs.fluent.file={fluent_path}",
+                    "sim.inputs.fluent.io_loader_name=csv",
+                    "sim.measurement.enabled=true",
+                    f"sim.measurement.file={meas_path}",
+                    "sim.measurement.io_loader_name=csv",
+                    "sim.measurement.align.enable=false",
+                ],
+            )
+            out = run_aib_from_spec(spec)
+            self.assertEqual(out.thickness.shape, (4,))
+            self.assertTrue(np.all(np.isfinite(np.asarray(out.fields["residual_nm"], dtype=float))))
+
     def test_fit_scalar_explicit_matches_default(self) -> None:
         with TemporaryDirectory() as tmp:
             fluent_path = Path(tmp) / "fluent.npz"

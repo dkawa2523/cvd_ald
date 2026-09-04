@@ -11,4 +11,5 @@ These legacy tests are runnable via:
 
 `./scripts/commands.sh legacy_tests`
 
-Default P0/P1/P2 verification should focus on active AIB pipeline paths.
+Default P0/P1/P2 verification should focus on active role-based compatibility
+pipeline paths.

@@ -1,9 +1,8 @@
-"""Unified AIB-ODE simulation pipeline."""
+"""Current role-based simulation pipeline using the AIB-ODE compatibility model."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from collections.abc import Sequence
 from typing import Any
 
@@ -11,9 +10,12 @@ from deposim_schema import compose_sim_config
 
 from .common.overrides import as_bool, normalize_overrides
 from .domain import DomainGrid, build_domain_grid
-from .input_builder import apply_roles, build_domain_from_fluent_xy, load_fluent_npz_v2, normalize_xy_mm
-from .measurement_adapter import align_point_measurement_to_points
+from .input_builder import apply_roles, build_domain_from_fluent_xy, normalize_xy_mm
+from .io_plugins import load_fluent_from_run_spec, load_measurement_from_run_spec
+from .measurement_adapter import align_point_measurement_to_points, point_alignment_distance_stats, compare_point_observations
+from .models.ald_role_state import run_ald_role_state_transient
 from .models.aib_ode import compute_diagnostics, step_theta_implicit
+from .models.process_models import canonical_process_implementation, validate_process_model_choice
 from .transport_provider import CfdFluxSinkKmProvider, FitScalarKmProvider, TransportProvider
 from .validation import validate_run_spec
 
@@ -25,7 +27,7 @@ except ModuleNotFoundError:  # pragma: no cover
 
 def _require_numpy() -> None:
     if np is None:
-        raise RuntimeError("NumPy is required for AIB pipeline execution")
+        raise RuntimeError("NumPy is required for role-based pipeline execution")
 
 
 @dataclass(frozen=True)
@@ -107,33 +109,45 @@ def _as_xy_pair(value: Any, default: tuple[float, float] = (0.0, 0.0)) -> tuple[
     return float(default[0]), float(default[1])
 
 
-def _load_measurement(sim: Any, *, xy_mm: np.ndarray) -> tuple[np.ndarray | None, np.ndarray | None]:
+def _load_measurement(
+    sim: Any,
+    *,
+    xy_mm: np.ndarray,
+    prediction_nm: np.ndarray,
+    duration_s: float,
+    initial_nm: Any = 0.0,
+) -> tuple[np.ndarray | None, np.ndarray | None, dict[str, Any], dict[str, Any] | None]:
     meas = sim.measurement
     if not bool(getattr(meas, "enabled", False)):
-        return None, None
-    path = Path(str(meas.file))
-    if not path.exists():
-        raise FileNotFoundError(f"measurement file not found: {path}")
-    keys = dict(meas.keys)
+        return None, None, {"enabled": False}, None
     align = dict(getattr(meas, "align", {}) or {})
     align_enabled = as_bool(align.get("enable", False))
-    with np.load(path, allow_pickle=False) as data:
-        h_raw = np.asarray(data[keys.get("h", "h_nm")], dtype=float)
-        xy_key = keys.get("xy", "xy")
-        has_xy = xy_key in data.files
-        xy_raw = np.asarray(data[xy_key], dtype=float) if has_xy else None
+    align["enable"] = align_enabled
+    align["shift_mm"] = _as_xy_pair(align.get("shift_mm", [0.0, 0.0]))
+    loaded = load_measurement_from_run_spec(sim)
+    h_raw = loaded.h
+    xy_raw = normalize_xy_mm(loaded.xy, getattr(meas, "xy_unit", "mm"))
 
     h = np.asarray(h_raw, dtype=float).reshape(-1)
     n_pts = int(xy_mm.shape[0])
+    quantity = str(getattr(meas, "quantity", "thickness"))
+    observation = compare_point_observations(
+        prediction_nm=prediction_nm, model_xy_mm=xy_mm,
+        measured=h, measurement_xy_mm=xy_raw, align=align,
+        quantity=quantity, duration_s=duration_s, initial_nm=initial_nm,
+        sigma=loaded.sigma if loaded.sigma is not None else getattr(meas, "sigma", None),
+    )
+    if quantity == "mean_rate":
+        h = h * duration_s
 
     if align_enabled:
-        if xy_raw is None:
-            raise ValueError("measurement.align.enable=true requires measurement xy key in measurement file")
         shift = _as_xy_pair(align.get("shift_mm", [0.0, 0.0]))
         rotate_deg = float(align.get("rotate_deg", 0.0))
         scale = float(align.get("scale", 1.0))
         mask_radius_mm = align.get("mask_radius_mm")
         mask_radius = None if mask_radius_mm is None else float(mask_radius_mm)
+        max_distance_raw = align.get("max_nearest_distance_mm")
+        max_distance = None if max_distance_raw is None else float(max_distance_raw)
         aligned, valid = align_point_measurement_to_points(
             values=h,
             source_xy_mm=np.asarray(xy_raw, dtype=float),
@@ -142,13 +156,27 @@ def _load_measurement(sim: Any, *, xy_mm: np.ndarray) -> tuple[np.ndarray | None
             rotation_deg=rotate_deg,
             scale=scale,
             mask_radius_mm=mask_radius,
+            max_nearest_distance_mm=max_distance,
         )
-        return aligned, valid
+        alignment_diag = point_alignment_distance_stats(
+            source_xy_mm=np.asarray(xy_raw, dtype=float),
+            target_xy_mm=np.asarray(xy_mm, dtype=float),
+            shift_mm=shift,
+            rotation_deg=rotate_deg,
+            scale=scale,
+            max_nearest_distance_mm=max_distance,
+        )
+        alignment_diag.update({"enabled": True, "valid_count": int(np.sum(valid))})
+        if quantity == "mean_rate":
+            aligned += np.broadcast_to(np.asarray(initial_nm), prediction_nm.shape).ravel()
+        return aligned, valid, alignment_diag, observation
 
     if h.ndim != 1 or h.shape[0] != n_pts:
         raise ValueError("measurement h must be shape [n_pts] when alignment is disabled")
     valid = np.isfinite(h)
-    return h, valid
+    if quantity == "mean_rate":
+        h += np.broadcast_to(np.asarray(initial_nm), prediction_nm.shape).ravel()
+    return h, valid, {"enabled": False, "valid_count": int(np.sum(valid)), "target_count": n_pts}, observation
 
 
 def _grid_xy_points(grid: DomainGrid) -> np.ndarray:
@@ -454,25 +482,232 @@ def run_aib_from_config(
     *,
     overrides: Sequence[str] | None = None,
 ) -> tuple[Any, SimRunResult]:
-    """Compose config then execute AIB pipeline. Returns (spec, result)."""
+    """Compose config then execute the current compatibility pipeline."""
 
     spec = compose_aib_spec(config_name, overrides=overrides)
     return spec, run_aib_from_spec(spec)
 
 
 def run_aib_from_spec(run_spec: Any) -> SimRunResult:
-    """Execute AIB simulation from a SimSpecV2-compatible object."""
+    """Execute the AIB-compatible implementation from a SimSpecV2 object."""
+
+    sim = getattr(run_spec, "sim", run_spec)
+    implementation = canonical_process_implementation(str(sim.model.name))
+    if implementation != "aib_ode":
+        raise ValueError(f"run_aib_from_spec cannot execute process model implementation {implementation!r}")
+    return _run_aib_compat_from_spec(run_spec)
+
+
+def run_sim_from_config(
+    config_name: str = "cvd_steady_min",
+    *,
+    overrides: Sequence[str] | None = None,
+) -> tuple[Any, SimRunResult]:
+    """Compose config then execute through the process-model dispatcher."""
+
+    spec = compose_aib_spec(config_name, overrides=overrides)
+    return spec, run_sim_from_spec(spec)
+
+
+def run_sim_from_spec(run_spec: Any) -> SimRunResult:
+    """Execute a simulation through the small process-model dispatcher."""
+
+    sim = getattr(run_spec, "sim", run_spec)
+    info = validate_process_model_choice(
+        name=str(sim.model.name),
+        process=str(sim.process),
+        time_mode=str(sim.time_mode),
+    )
+    if info.implementation == "aib_ode":
+        return _run_aib_compat_from_spec(run_spec)
+    if info.implementation == "ald_role_state":
+        return _run_ald_role_state_from_spec(run_spec)
+    raise ValueError(f"process model implementation is registered but not executable: {info.implementation!r}")
+
+
+def _param_with_fallback(params: dict[str, Any], name: str, fallback_name: str, shape: tuple[int, ...], default: float) -> np.ndarray:
+    value = params.get(name, params.get(fallback_name, default))
+    return _resolve_param(value, shape, default)
+
+
+def _run_ald_role_state_from_spec(run_spec: Any) -> SimRunResult:
+    """Execute the minimal ALD role-state assimilation model."""
+
+    _require_numpy()
+    sim = getattr(run_spec, "sim", run_spec)
+    validate_run_spec(sim)
+    if str(sim.time_mode) != "transient":
+        raise ValueError("role_ald_state requires sim.time_mode=transient")
+
+    fluent = load_fluent_from_run_spec(sim)
+    if fluent.time is None:
+        raise ValueError("role_ald_state requires Fluent time array")
+
+    grid, xy_mm, c_a, c_i, c_b, flux_a, flux_b = _prepare_domain_inputs(sim=sim, fluent=fluent)
+    has_b = sim.roles.B is not None
+    has_i = sim.roles.I is not None
+    km_source, km_provider = _build_transport_provider(
+        sim=sim,
+        c_a=c_a,
+        c_b=c_b,
+        flux_a=flux_a,
+        flux_b=flux_b,
+    )
+
+    shape = tuple(grid.shape)
+    theta_a0 = np.full(shape, float(sim.initial_conditions.theta_A.value), dtype=float)
+    h0 = np.full(shape, float(sim.initial_conditions.h_nm.value), dtype=float)
+
+    params = sim.model.params
+    kinetics = dict(getattr(params, "kinetics", {}) or {})
+    inhibitor = dict(getattr(params, "inhibitor", {}) or {})
+    thickness = dict(getattr(params, "thickness", {}) or {})
+
+    k_store_a = _param_with_fallback(kinetics, "k_store_A", "k_ads", shape, 1.0)
+    k_release_a = _param_with_fallback(kinetics, "k_release_A", "k_des", shape, 0.1)
+    k_convert_a = _param_with_fallback(kinetics, "k_convert_A", "k_rxn", shape, 0.01)
+    k_convert_ab = _param_with_fallback(kinetics, "k_convert_AB", "k_rxn", shape, 0.01)
+    k_store_i = _param_with_fallback(inhibitor, "k_store_I", "K_I", shape, 0.0)
+    k_release_i = _resolve_param(inhibitor.get("k_release_I"), shape, 0.1)
+    alpha_h = _resolve_param(thickness.get("alpha_h"), shape, 1.0)
+
+    result = run_ald_role_state_transient(
+        c_a=c_a,
+        c_i=c_i,
+        c_b=c_b,
+        km_provider=km_provider,
+        time=np.asarray(fluent.time, dtype=float),
+        dt_max_s=float(sim.time.dt_s),
+        theta_a0=theta_a0,
+        h0=h0,
+        k_store_a=k_store_a,
+        k_release_a=k_release_a,
+        k_convert_a=k_convert_a,
+        k_convert_ab=k_convert_ab,
+        k_store_i=k_store_i,
+        k_release_i=k_release_i,
+        alpha_h=alpha_h,
+        has_b=has_b,
+        has_i=has_i,
+    )
+
+    final_t_index = int(fluent.time.shape[0] - 1)
+    km_a_diag = dict(km_provider.get_diagnostics("A", t_index=final_t_index))
+    km_b_diag = (
+        dict(km_provider.get_diagnostics("B", t_index=final_t_index))
+        if has_b
+        else {"km_used": np.full(shape, np.nan, dtype=float), "km_cfd": np.full(shape, np.nan, dtype=float)}
+    )
+    km_a_final = np.asarray(km_a_diag.get("km_used"), dtype=float)
+    km_b_final = np.asarray(km_b_diag.get("km_used"), dtype=float)
+    km_a_cfd = np.asarray(km_a_diag.get("km_cfd", km_a_final), dtype=float)
+    km_b_cfd = np.asarray(km_b_diag.get("km_cfd", km_b_final), dtype=float)
+    z_ref_mm = float(sim.reference_plane.z_ref_mm)
+    tau_a = z_ref_mm / np.maximum(km_a_final, 1.0e-12)
+    tau_b = z_ref_mm / np.maximum(km_b_final, 1.0e-12)
+
+    cref_a_final = np.asarray(c_a[-1], dtype=float)
+    cref_i_final = np.asarray(c_i[-1], dtype=float)
+    cref_b_final = np.asarray(c_b[-1], dtype=float)
+    cs_a_ratio = result.cs_a / np.where(cref_a_final > 1.0e-30, cref_a_final, np.nan)
+    if has_b:
+        cs_b_ratio = result.cs_b / np.where(cref_b_final > 1.0e-30, cref_b_final, np.nan)
+        phi_b = k_convert_ab * np.clip(result.theta_a, 0.0, 1.0) / np.maximum(km_b_final, 1.0e-30)
+    else:
+        cs_b_ratio = np.full(shape, np.nan, dtype=float)
+        phi_b = np.full(shape, np.nan, dtype=float)
+    f_i = np.clip(1.0 - result.theta_i, 0.0, 1.0) if has_i else np.ones(shape, dtype=float)
+
+    total_time = float(fluent.time[-1] - fluent.time[0])
+    measurement, meas_valid, measurement_alignment, observation = _load_measurement(
+        sim, xy_mm=xy_mm, prediction_nm=result.h_nm, duration_s=total_time, initial_nm=h0,
+    )
+    if measurement is not None:
+        measurement = np.asarray(measurement, dtype=float).reshape(shape)
+    if meas_valid is not None:
+        meas_valid = np.asarray(meas_valid, dtype=bool).reshape(shape)
+    if measurement is None:
+        residual = np.full(shape, np.nan, dtype=float)
+    else:
+        residual = result.h_nm - measurement
+        if meas_valid is not None:
+            residual = np.asarray(residual, dtype=float)
+            residual[~np.asarray(meas_valid, dtype=bool)] = np.nan
+
+    dep_rate = (result.h_nm - h0) / max(total_time, 1.0e-12)
+    not_applicable = np.full(shape, np.nan, dtype=float)
+
+    fields = {
+        "h_nm": result.h_nm,
+        "theta_A": result.theta_a,
+        "theta_I": result.theta_i,
+        "theta_free": result.theta_free,
+        "theta_star": result.theta_free,
+        "CsA_over_CrefA": cs_a_ratio,
+        "CsB_over_CrefB": cs_b_ratio,
+        "phi_B": phi_b,
+        "f_I": f_i,
+        "residual_nm": residual,
+        "km_A": km_a_final,
+        "km_B": km_b_final,
+        "tau_A": tau_a,
+        "tau_B": tau_b,
+    }
+
+    diagnostics = {
+        "non_bracketed_total": 0,
+        "bounded_violation_count": int(result.diagnostics["bounded_violation_count"]),
+        "state_projection_count": int(result.diagnostics["state_projection_count"]),
+        "dispatch_mode": sim.time_mode,
+        "process_model_implementation": "ald_role_state",
+        "solver_kind": str(sim.time.solver.name),
+        "root_metrics_applicable": False,
+        "km_source": km_source,
+        "z_ref_mm": z_ref_mm,
+        "xy_mm": xy_mm,
+        "species": list(fluent.species),
+        "roles": {"A": sim.roles.A, "I": sim.roles.I, "B": sim.roles.B},
+        "measurement_thickness": measurement,
+        "measurement_valid_mask": meas_valid,
+        "measurement_alignment": measurement_alignment,
+        "observation": observation,
+        "Cs_over_Cref": {"A": cs_a_ratio, "B": cs_b_ratio},
+        "phi_B": phi_b,
+        "f_I": f_i,
+        "Da_proxy": np.nan_to_num(phi_b, nan=0.0),
+        "R_event": result.r_event,
+        "km_A_map": km_a_final,
+        "km_B_map": km_b_final,
+        "km_A_cfd_map": km_a_cfd,
+        "km_B_cfd_map": km_b_cfd,
+        "tau_A_map": tau_a,
+        "tau_B_map": tau_b,
+        "transport_units_hint": str(km_a_diag.get("units_hint", "") or km_b_diag.get("units_hint", "")),
+        "root_iteration_count": not_applicable,
+        "root_non_bracket_count_map": not_applicable,
+        "root_status_map": np.full(shape, -1, dtype=int),
+        "ald_role_state": dict(result.diagnostics),
+    }
+
+    return SimRunResult(
+        thickness=result.h_nm,
+        deposition_rate=dep_rate,
+        R=result.r_event,
+        Cs={"A": result.cs_a, "B": result.cs_b},
+        diagnostics=diagnostics,
+        fields=fields,
+        grid=grid,
+    )
+
+
+def _run_aib_compat_from_spec(run_spec: Any) -> SimRunResult:
+    """Current compatibility implementation shared by AIB aliases."""
 
     _require_numpy()
     sim = getattr(run_spec, "sim", run_spec)
     validate_run_spec(sim)
 
-    fluent = load_fluent_npz_v2(
-        path=sim.inputs.fluent.file,
-        mode=sim.inputs.fluent.mode,
-        keys=sim.inputs.fluent.keys,
-        species=sim.inputs.fluent.species,
-    )
+    fluent = load_fluent_from_run_spec(sim)
     grid, xy_mm, c_a, c_i, c_b, flux_a, flux_b = _prepare_domain_inputs(sim=sim, fluent=fluent)
     has_b = sim.roles.B is not None
     km_source, km_provider = _build_transport_provider(
@@ -600,7 +835,10 @@ def run_aib_from_spec(run_spec: Any) -> SimRunResult:
         has_b=has_b,
     )
 
-    measurement, meas_valid = _load_measurement(sim, xy_mm=xy_mm)
+    measurement, meas_valid, measurement_alignment, observation = _load_measurement(
+        sim, xy_mm=xy_mm, prediction_nm=h, duration_s=total_time,
+        initial_nm=float(sim.initial_conditions.h_nm.value),
+    )
     if measurement is not None:
         measurement = np.asarray(measurement, dtype=float).reshape(shape)
     if meas_valid is not None:
@@ -613,7 +851,7 @@ def run_aib_from_spec(run_spec: Any) -> SimRunResult:
             residual = np.asarray(residual, dtype=float)
             residual[~np.asarray(meas_valid, dtype=bool)] = np.nan
 
-    dep_rate = h / max(total_time, 1.0e-12)
+    dep_rate = (h - float(sim.initial_conditions.h_nm.value)) / max(total_time, 1.0e-12)
 
     fields = {
         "h_nm": h,
@@ -633,6 +871,8 @@ def run_aib_from_spec(run_spec: Any) -> SimRunResult:
     diagnostics = {
         "non_bracketed_total": non_bracketed_total,
         "dispatch_mode": sim.time_mode,
+        "solver_kind": str(sim.time.solver.name),
+        "root_metrics_applicable": True,
         "km_source": km_source,
         "z_ref_mm": z_ref_mm,
         "xy_mm": xy_mm,
@@ -640,6 +880,8 @@ def run_aib_from_spec(run_spec: Any) -> SimRunResult:
         "roles": {"A": sim.roles.A, "I": sim.roles.I, "B": sim.roles.B},
         "measurement_thickness": measurement,
         "measurement_valid_mask": meas_valid,
+        "measurement_alignment": measurement_alignment,
+        "observation": observation,
         "Cs_over_Cref": {
             "A": diag_fields["CsA_over_CrefA"],
             "B": diag_fields["CsB_over_CrefB"],
@@ -673,7 +915,7 @@ def run_aib_from_spec(run_spec: Any) -> SimRunResult:
 
 def run_from_run_spec(run_spec: Any) -> SimRunResult:
     """Backward-compatible dispatch shim."""
-    return run_aib_from_spec(run_spec)
+    return run_sim_from_spec(run_spec)
 
 
 __all__ = [
@@ -682,4 +924,6 @@ __all__ = [
     "run_aib_from_config",
     "run_aib_from_spec",
     "run_from_run_spec",
+    "run_sim_from_config",
+    "run_sim_from_spec",
 ]

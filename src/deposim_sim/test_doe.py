@@ -63,6 +63,12 @@ class TestDoeRunner(unittest.TestCase):
             self.assertIn("ranking_top_nu", summary)
             self.assertGreaterEqual(len(summary["ranking_top_nu"]), 1)
             self.assertEqual(summary.get("manifest_path"), "outputs/manifest.json")
+            self.assertEqual(summary["workflow_name"], "doe")
+            self.assertIn("config_fingerprint", summary)
+
+            manifest = json.loads((run_dir / "outputs" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["metadata"]["workflow_name"], "doe")
+            self.assertIn("input_fingerprint", manifest["metadata"])
 
             runs = [p for p in (Path(tmp) / "doe_test" / "runs").iterdir() if p.is_dir()]
             self.assertEqual(len(runs), 1)

@@ -16,6 +16,7 @@ from deposim_schema import compose_and_save_sim_config, compose_sim_config
 
 from .common.overrides import normalize_overrides, normalize_sweep
 from .common.run_artifacts import (
+    build_provenance_metadata,
     build_manifest_and_summary,
     create_run_layout,
     finalize_run_outputs,
@@ -169,6 +170,7 @@ def run_doe(
     nu_values: list[float] = []
     center_edge_values: list[float | None] = []
     z_refs: list[float] = []
+    input_paths: set[str] = set()
     grid_shape: tuple[int, ...] | None = None
 
     for case_index, case in enumerate(cases):
@@ -194,6 +196,9 @@ def run_doe(
         center_edge_values.append(kpi["center_edge_delta"])
 
         sim_case = getattr(spec, "sim", spec)
+        input_paths.add(str(sim_case.inputs.fluent.file))
+        if bool(getattr(sim_case.measurement, "enabled", False)) and str(getattr(sim_case.measurement, "file", "")).strip():
+            input_paths.add(str(sim_case.measurement.file))
         z_refs.append(float(sim_case.reference_plane.z_ref_mm))
         case_payload.append(
             {
@@ -249,12 +254,23 @@ def run_doe(
             {"id": "doe_sweep", "path": "doe_sweep.json", "kind": "json", "required": True},
         ],
     )
+    provenance = build_provenance_metadata(
+        workflow_name="doe",
+        config_payload={
+            "base_spec": base_spec,
+            "sweep": sweep_norm,
+            "sampling": sampling_mode,
+            "random_cases": int(random_cases),
+            "random_seed": int(random_seed),
+        },
+        input_paths=sorted(input_paths),
+    )
     manifest, summary = build_manifest_and_summary(
         run_id=run_id,
         mode="doe",
         artifacts=artifact_rows,
         plots=plot_records,
-        metadata={"sampling": sampling_mode, "case_count": int(len(cases))},
+        metadata={**provenance, "sampling": sampling_mode, "case_count": int(len(cases))},
         timestamp_utc=timestamp_utc,
         summary_fields={
         "sampling": sampling_mode,
@@ -267,6 +283,7 @@ def run_doe(
         "ranking_top_nu": ranking,
         "doe_cases_store_used": doe_store["store_used"],
         "doe_cases_store_path": doe_store_rel,
+        **provenance,
         },
     )
     ranking_rows = "".join(

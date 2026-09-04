@@ -57,7 +57,7 @@ class TestWafer2DBenchmark(unittest.TestCase):
             self.assertTrue((run_dir / "outputs" / "manifest.json").exists())
 
             summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
-            self.assertEqual(summary["sim_model"], "aib_ode")
+            self.assertEqual(summary["sim_model"], "role_cvd_aib")
             self.assertEqual(summary["case_count"], len(build_wafer2d_cases()))
             self.assertIn("overall_passed", summary["trend_assertions"])
             self.assertEqual(summary.get("manifest_path"), "outputs/manifest.json")

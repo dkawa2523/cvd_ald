@@ -38,6 +38,17 @@ class TestCompatibilityValidator(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_run_spec(spec)
 
+    def test_flux_sink_key_required_for_flux_driven_transport(self) -> None:
+        spec = compose_sim_config(
+            "smoke",
+            overrides=[
+                "sim.model.params.transport.km_source=from_cfd_flux_sink",
+                "sim.inputs.fluent.keys.flux_sink=",
+            ],
+        )
+        with self.assertRaises(ValueError):
+            validate_run_spec(spec)
+
 
 if __name__ == "__main__":
     unittest.main()

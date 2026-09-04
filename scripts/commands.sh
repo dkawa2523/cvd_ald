@@ -78,6 +78,33 @@ PY
   "$PYTHON" -m deposim_sim.smoke --config-name cvd_steady_min "sim.inputs.fluent.file=$smoke_npz"
 }
 
+cmd_ald_state_smoke() {
+  local smoke_npz="/tmp/deposim_ald_state_smoke_fluent.npz"
+  "$PYTHON" - <<'PY'
+from pathlib import Path
+import numpy as np
+
+path = Path("/tmp/deposim_ald_state_smoke_fluent.npz")
+xy = np.array([[0.0, 0.0], [40.0, 0.0], [-40.0, 0.0]], dtype=float)
+time = np.array([0.0, 0.25, 0.50, 0.75, 1.0], dtype=float)
+carrier = np.full(3, 0.02, dtype=float)
+a = np.array([1.0, 0.9, 0.85], dtype=float)
+b = np.array([1.0, 0.95, 0.9], dtype=float)
+i = np.array([0.05, 0.06, 0.04], dtype=float)
+residual = 0.01
+frames = [
+    np.stack([a, residual * b, i, carrier], axis=1),
+    np.stack([residual * a, residual * b, residual * i, carrier], axis=1),
+    np.stack([residual * a, b, residual * i, carrier], axis=1),
+    np.stack([residual * a, residual * b, residual * i, carrier], axis=1),
+    np.stack([residual * a, residual * b, residual * i, carrier], axis=1),
+]
+path.parent.mkdir(parents=True, exist_ok=True)
+np.savez(path, xy=xy, time=time, cref=np.stack(frames, axis=0))
+PY
+  "$PYTHON" -m deposim_sim.smoke --config-name ald_state_min "sim.inputs.fluent.file=$smoke_npz"
+}
+
 cmd_benchmark_wafer2d() {
   "$PYTHON" -m deposim_sim.benchmark_wafer2d --config-name cvd_steady_min "$@"
 }
@@ -88,6 +115,89 @@ cmd_benchmark_wafer2d_physviz() {
 
 cmd_benchmark_wafer2d_flux_km() {
   "$PYTHON" -m deposim_sim.benchmark_wafer2d --config-name cvd_steady_min --compare-flux-km "$@"
+}
+
+cmd_benchmark_ald_like_reduced() {
+  local generated_dir="runs/generated_inputs/ald_like_reduced"
+  "$PYTHON" "scripts/generate_ald_like_reduced_inputs.py" --output-dir "$generated_dir"
+  "$PYTHON" -m deposim_sim.benchmark_ald_like_reduced --data-dir "$generated_dir" "$@"
+}
+
+cmd_benchmark_ald_state() {
+  cmd_benchmark_ald_like_reduced --config-name ald_state_min "$@"
+}
+
+cmd_benchmark_cvd_role() {
+  cmd_benchmark_wafer2d "$@"
+}
+
+cmd_benchmark_ald_role() {
+  cmd_benchmark_ald_like_reduced "$@"
+}
+
+cmd_fit_cvd_role() {
+  local generated_dir="runs/generated_inputs/role_fit"
+  "$PYTHON" "scripts/generate_role_fit_inputs.py" --output-dir "$generated_dir"
+  "$PYTHON" -m deposim_opt.run_fit \
+    --config-name fit_cvd_steady_min \
+    "sim.inputs.fluent.file=$generated_dir/fluent_cvd_steady.npz" \
+    "opt.measurement.file=$generated_dir/meas_cvd_steady.npz" \
+    "opt.parameter_fit.engine=random" \
+    "opt.parameter_fit.n_trials_per_candidate=1" \
+    "opt.role_enumeration.roles.A.candidates=[s0,s1]" \
+    "opt.role_enumeration.roles.I.candidates=[s1]" \
+    "opt.role_enumeration.roles.B.candidates=[s2]" \
+    "$@"
+}
+
+cmd_fit_ald_role() {
+  local generated_dir="runs/generated_inputs/role_fit"
+  "$PYTHON" "scripts/generate_role_fit_inputs.py" --output-dir "$generated_dir"
+  "$PYTHON" -m deposim_opt.run_fit \
+    --config-name fit_ald_transient_min \
+    "sim.inputs.fluent.file=$generated_dir/fluent_ald_transient.npz" \
+    "opt.measurement.file=$generated_dir/meas_ald_final.npz" \
+    "opt.parameter_fit.engine=random" \
+    "opt.parameter_fit.n_trials_per_candidate=1" \
+    "opt.role_enumeration.roles.A.candidates=[s0,s1]" \
+    "opt.role_enumeration.roles.I.candidates=[s2]" \
+    "opt.role_enumeration.roles.B.candidates=[s1]" \
+    "$@"
+}
+
+cmd_fit_ald_state_role() {
+  local generated_dir="runs/generated_inputs/role_fit"
+  "$PYTHON" "scripts/generate_role_fit_inputs.py" --output-dir "$generated_dir"
+  "$PYTHON" -m deposim_opt.run_fit \
+    --config-name fit_ald_state_min \
+    "sim.inputs.fluent.file=$generated_dir/fluent_ald_transient.npz" \
+    "opt.measurement.file=$generated_dir/meas_ald_final.npz" \
+    "opt.parameter_fit.engine=random" \
+    "opt.parameter_fit.n_trials_per_candidate=1" \
+    "opt.role_enumeration.roles.A.candidates=[s0,s1]" \
+    "opt.role_enumeration.roles.I.candidates=[s2]" \
+    "opt.role_enumeration.roles.B.candidates=[s1]" \
+    "$@"
+}
+
+cmd_fit_cvd_multicond_role() {
+  local generated_dir="runs/generated_inputs/multicond_fit"
+  "$PYTHON" "scripts/generate_multicond_fit_inputs.py" --output-dir "$generated_dir"
+  "$PYTHON" -m deposim_opt.run_fit --config-name fit_cvd_multicond_min "$@"
+}
+
+cmd_fit_ald_state_multicond_role() {
+  local generated_dir="runs/generated_inputs/multicond_fit"
+  "$PYTHON" "scripts/generate_multicond_fit_inputs.py" --output-dir "$generated_dir"
+  "$PYTHON" -m deposim_opt.run_fit --config-name fit_ald_state_multicond_min "$@"
+}
+
+cmd_analyze_cvd_case() {
+  "$PYTHON" "scripts/analyze_cvd_spatial_case.py" "$@"
+}
+
+cmd_analyze_cvd_multicond() {
+  "$PYTHON" "scripts/analyze_cvd_multicond_case.py" "$@"
 }
 
 cmd_smoke_repro_check() {
@@ -354,6 +464,10 @@ cmd_assimilation_tests() { cmd_unittest_module "deposim_opt.test_assimilation"; 
 cmd_ald_tests() { cmd_unittest_module "deposim_sim.test_ald"; }
 cmd_clearml_optional_tests() { cmd_unittest_module "deposim_tracking_clearml.test_optional_clearml"; }
 cmd_io_plugin_tests() { cmd_unittest_module "deposim_sim.test_io_plugins"; }
+cmd_io_contract_check() {
+  cmd_unittest_module "deposim_sim.test_fluent_loader"
+  cmd_io_plugin_tests
+}
 cmd_zarr_optional_tests() { cmd_unittest_module "deposim_sim.test_zarr_output"; }
 cmd_multiz_tests() { cmd_unittest_module "deposim_sim.test_multiz"; }
 cmd_legacy_tests() {
@@ -653,6 +767,8 @@ cmd_test() {
   cmd_fit_optuna_tests
   cmd_unittest_module "deposim_opt.test_fit_diagnostics"
   cmd_unittest_module "deposim_opt.test_assimilation"
+  cmd_unittest_module "deposim_opt.test_cvd_spatial_analysis"
+  cmd_unittest_module "deposim_opt.test_cvd_multicond_analysis"
 }
 
 cmd_verify_p0() {
@@ -1490,9 +1606,22 @@ Commands:
   show_env       Print resolved environment
   import_check   Import deposim_* packages
   smoke          Run minimal synthetic CVD steady simulation
+  ald_state_smoke Run minimal ALD role-state simulation
   benchmark_wafer2d Run wafer-2D AIB benchmark (A/AI/AB/AIB classes)
   benchmark_wafer2d_physviz Run wafer-2D AIB benchmark with physviz outputs
   benchmark_wafer2d_flux_km Run wafer-2D benchmark with free-km vs flux-km comparison
+  benchmark_ald_like_reduced Run diagnostic ALD reduced benchmark
+  benchmark_ald_state Run diagnostic ALD reduced benchmark with role_ald_state
+  benchmark_cvd_role Run CVD role-discovery benchmark alias
+  benchmark_ald_role Diagnostic ALD compatibility benchmark alias
+  fit_cvd_role   Fit CVD role candidates against configured measurement data
+  fit_ald_role   Compatibility-only ALD transient fit
+  fit_ald_state_role Fit ALD role-state candidates against configured measurement data
+  fit_cvd_multicond_role Main CVD role fit across multiple generated conditions
+  fit_ald_state_multicond_role Main ALD role-state fit across multiple generated conditions
+  analyze_cvd_multicond Main path: fit conditions 1+2+4+5 and test condition 3 without refit
+  analyze_cvd_case Single-condition spatial diagnostic
+  io_contract_check Run Fluent loader/input-contract verification checks
   legacy_tests   Run isolated legacy test modules (non-gating)
   test           Run unit tests (stdlib unittest)
   verify_p0      import_check + smoke + test
@@ -1513,9 +1642,22 @@ case "${1:-}" in
   show_env) shift; cmd_show_env "$@";;
   import_check) shift; cmd_import_check "$@";;
   smoke) shift; cmd_smoke "$@";;
+  ald_state_smoke) shift; cmd_ald_state_smoke "$@";;
   benchmark_wafer2d) shift; cmd_benchmark_wafer2d "$@";;
   benchmark_wafer2d_physviz) shift; cmd_benchmark_wafer2d_physviz "$@";;
   benchmark_wafer2d_flux_km) shift; cmd_benchmark_wafer2d_flux_km "$@";;
+  benchmark_ald_like_reduced) shift; cmd_benchmark_ald_like_reduced "$@";;
+  benchmark_ald_state) shift; cmd_benchmark_ald_state "$@";;
+  benchmark_cvd_role) shift; cmd_benchmark_cvd_role "$@";;
+  benchmark_ald_role) shift; cmd_benchmark_ald_role "$@";;
+  fit_cvd_role) shift; cmd_fit_cvd_role "$@";;
+  fit_ald_role) shift; cmd_fit_ald_role "$@";;
+  fit_ald_state_role) shift; cmd_fit_ald_state_role "$@";;
+  fit_cvd_multicond_role) shift; cmd_fit_cvd_multicond_role "$@";;
+  fit_ald_state_multicond_role) shift; cmd_fit_ald_state_multicond_role "$@";;
+  analyze_cvd_multicond) shift; cmd_analyze_cvd_multicond "$@";;
+  analyze_cvd_case) shift; cmd_analyze_cvd_case "$@";;
+  io_contract_check) shift; cmd_io_contract_check "$@";;
   legacy_tests) shift; cmd_legacy_tests "$@";;
   test) shift; cmd_test "$@";;
   verify_p0) shift; cmd_verify_p0 "$@";;

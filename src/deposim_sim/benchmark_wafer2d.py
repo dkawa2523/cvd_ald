@@ -26,6 +26,8 @@ from .benchmark_wafer2d_core import (
 from .common.csv_io import write_rows_csv
 from .common.overrides import as_bool, normalize_overrides
 from .common.run_artifacts import build_manifest_and_summary, create_run_layout, finalize_run_outputs, standard_artifact_rows
+from .common.run_artifacts import build_provenance_metadata
+from .models.process_models import canonical_process_implementation
 from .output_manifest import artifact_links
 
 try:  # pragma: no cover
@@ -223,7 +225,7 @@ def run_wafer2d_benchmark(
 
     normalized_overrides = normalize_overrides(overrides, prefix_sim=False)
     base_overrides = [
-        "sim.model.name=aib_ode",
+        "sim.model.name=role_cvd_aib",
         "sim.output.run_name=benchmark_wafer2d",
     ]
 
@@ -239,8 +241,9 @@ def run_wafer2d_benchmark(
             raise
 
     sim = getattr(base_spec, "sim", base_spec)
-    if not hasattr(sim, "model") or str(getattr(sim.model, "name", "")) != "aib_ode":
-        raise ValueError("wafer2d benchmark requires sim.model.name='aib_ode'")
+    model_name = str(getattr(sim.model, "name", ""))
+    if canonical_process_implementation(model_name) != "aib_ode":
+        raise ValueError("wafer2d compatibility benchmark currently requires an AIB-compatible process model")
 
     layout = create_run_layout(
         root_dir=Path(str(sim.output.root_dir)),
@@ -274,6 +277,7 @@ def run_wafer2d_benchmark(
     residual_stack: list[np.ndarray] = []
 
     representative: dict[str, Any] | None = None
+    input_paths: list[str] = []
     flux_gamma_scan: tuple[float, ...] = ()
     flux_gamma_scores: dict[float, list[float]] = {}
     flux_gamma_case_summaries: dict[str, dict[float, dict[str, float]]] = {}
@@ -287,6 +291,7 @@ def run_wafer2d_benchmark(
         meas_h = _build_measurement_h(xy_mm)
         meas_path = inputs_dir / f"{case.case_id.lower()}_meas.npz"
         np.savez(meas_path, h_nm=meas_h, xy=xy_mm)
+        input_paths.extend([str(payload_path), str(meas_path)])
 
         result, summary_free, row_flux, case_gamma_rows = _run_benchmark_case(
             config_name=selected_config,
@@ -539,16 +544,22 @@ def run_wafer2d_benchmark(
         artifact_rows.append({"id": "flux_gamma_scan", "path": "outputs/flux_gamma_scan.csv", "kind": "csv", "required": True})
     if with_physviz and representative is not None:
         artifact_rows.append({"id": "physviz_maps", "path": "outputs/physviz_maps.npz", "kind": "npz", "required": True})
+    provenance = build_provenance_metadata(
+        workflow_name="benchmark_wafer2d",
+        config_payload=base_spec,
+        input_paths=input_paths,
+        extra_metadata={"sim_model": model_name},
+    )
 
     manifest, summary = build_manifest_and_summary(
         run_id=run_id,
         mode="benchmark_wafer2d",
         artifacts=artifact_rows,
         plots=plot_records,
-        metadata={"sim_model": "aib_ode"},
+        metadata=provenance,
         timestamp_utc=timestamp_utc,
         summary_fields={
-        "sim_model": "aib_ode",
+        "sim_model": model_name,
         "case_count": len(case_rows),
         "case_ids": [row["case_id"] for row in case_rows],
         "trend_assertions": trend_assertions,
@@ -562,6 +573,7 @@ def run_wafer2d_benchmark(
         "flux_gamma_grid": list(flux_gamma_scan) if flux_gamma_scan else [],
         "flux_km_judge": flux_km_judge,
         "p1_recommendation": p1_recommendation,
+        **provenance,
         },
     )
     output_links = artifact_links(manifest)

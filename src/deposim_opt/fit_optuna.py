@@ -3,19 +3,18 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import asdict
+import hashlib
+import json
 import math
-from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from deposim_schema import SimSpecV2
-from deposim_sim.common.literals import parse_literal_value
-from deposim_sim.common.path_tools import set_attr_path
+from deposim_sim.common.overrides import as_bool
 from deposim_sim.identifiability import compute_identifiability_diagnostics
-from deposim_sim.pipeline import run_aib_from_spec
 
-from .objective import evaluate_candidate_score
+from .fit_conditions import (ConditionSpec, extract_conditions, validate_conditions,
+    preflight_conditions, prepare_condition, evaluate_condition)
 
 try:  # pragma: no cover
     import numpy as np
@@ -33,15 +32,8 @@ def _require_numpy() -> None:
         raise RuntimeError("NumPy is required for fit_optuna")
 
 
-@dataclass(frozen=True)
-class ConditionSpec:
-    name: str
-    weight: float
-    fluent_file: str | None
-    measurement_file: str | None
-    overrides: tuple[str, ...]
-    keys: dict[str, Any]
-    align: dict[str, Any]
+_ALLOWED_PARAMETER_GROUPS = {"surface_kinetics", "effective_transport", "measurement_or_interface"}
+_ALLOWED_PARAMETER_STAGES = {"screening", "sobol", "calibration"}
 
 
 def _safe_name(text: str) -> str:
@@ -50,6 +42,24 @@ def _safe_name(text: str) -> str:
         out.append(ch if ch.isalnum() else "_")
     clean = "".join(out).strip("_")
     return clean or "cond"
+
+
+def _persistent_study_name(prefix: str, specs: list[SimSpecV2], settings: Mapping[str, Any]) -> str:
+    """Do not resume trials evaluated for different roles, inputs, or objectives."""
+    digest = hashlib.sha256()
+    payload = {"conditions": [asdict(spec) for spec in specs], "settings": settings}
+    digest.update(json.dumps(payload, sort_keys=True, default=str).encode("utf-8"))
+    for spec in specs:
+        paths = [spec.inputs.fluent.file]
+        if spec.measurement.enabled:
+            paths.append(spec.measurement.file)
+        for path in paths:
+            file_hash = hashlib.sha256()
+            with open(path, "rb") as handle:
+                for block in iter(lambda: handle.read(65536), b""):
+                    file_hash.update(block)
+            digest.update(file_hash.digest())
+    return f"{prefix or 'role_fit'}_{digest.hexdigest()[:20]}"
 
 
 def _hspace_value(item: Mapping[str, Any], *, trial: Any | None = None, rng: Any | None = None, name: str) -> float:
@@ -76,16 +86,57 @@ def _sample_search_space(
     *,
     role_has_i: bool,
     role_has_b: bool,
+    stage_filter: str | None = None,
 ) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for item in search_space:
+        enabled = item.get("enabled", True)
+        if not as_bool(enabled):
+            continue
+        stage = str(item.get("stage", "")).strip().lower()
+        if stage_filter and stage and stage != stage_filter:
+            continue
         cond = item.get("condition")
         if cond == "role_has_B" and not role_has_b:
+            continue
+        if cond == "role_has_no_B" and role_has_b:
             continue
         if cond == "role_has_I" and not role_has_i:
             continue
         out.append(dict(item))
     return out
+
+
+def _validate_search_space_metadata(search_space: list[dict[str, Any]]) -> None:
+    for item in search_space:
+        name = str(item.get("name", "")).strip()
+        if not name:
+            raise ValueError("search_space item requires non-empty name")
+        group = str(item.get("group", "")).strip().lower()
+        if group and group not in _ALLOWED_PARAMETER_GROUPS:
+            raise ValueError(
+                f"search_space item {name!r} has invalid group {group!r}; "
+                f"expected one of {_ALLOWED_PARAMETER_GROUPS}"
+            )
+        stage = str(item.get("stage", "")).strip().lower()
+        if stage and stage not in _ALLOWED_PARAMETER_STAGES:
+            raise ValueError(
+                f"search_space item {name!r} has invalid stage {stage!r}; "
+                f"expected one of {_ALLOWED_PARAMETER_STAGES}"
+            )
+        symbol = item.get("symbol")
+        if symbol is not None and not str(symbol).strip():
+            raise ValueError(f"search_space item {name!r} has empty symbol")
+        unit = item.get("unit")
+        if unit is not None and not str(unit).strip():
+            raise ValueError(f"search_space item {name!r} has empty unit")
+
+
+def _search_space_stage_filter(opt_spec: Any) -> str | None:
+    task = str(getattr(opt_spec, "task", "")).strip().lower()
+    if task.startswith("fit"):
+        return "calibration"
+    return None
 
 
 def _validate_transport_search_space(
@@ -117,64 +168,6 @@ def _validate_transport_search_space(
         raise ValueError(
             "km_source=from_cfd_flux_sink with role B requires model.params.transport.gamma_km_B in search_space"
         )
-
-
-def _extract_conditions(opt_spec: Any) -> list[ConditionSpec]:
-    measurement_cfg = dict(getattr(opt_spec, "measurement", {}) or {})
-    default_keys = dict(measurement_cfg.get("keys", {"h": "h_nm", "xy": "xy"}))
-    default_align = dict(measurement_cfg.get("align", {}))
-
-    raw_conditions = measurement_cfg.get("conditions")
-    if isinstance(raw_conditions, Sequence) and not isinstance(raw_conditions, (str, bytes)) and raw_conditions:
-        conditions: list[ConditionSpec] = []
-        for idx, row in enumerate(raw_conditions, start=1):
-            item = dict(row or {})
-            name = str(item.get("name", f"cond_{idx}"))
-            conditions.append(
-                ConditionSpec(
-                    name=name,
-                    weight=float(item.get("weight", 1.0)),
-                    fluent_file=str(item.get("fluent_file", "")).strip() or None,
-                    measurement_file=str(item.get("measurement_file", item.get("file", ""))).strip() or None,
-                    overrides=tuple(str(x) for x in list(item.get("overrides", []))),
-                    keys=dict(item.get("keys", default_keys)),
-                    align=dict(item.get("align", default_align)),
-                )
-            )
-        return conditions
-
-    single = ConditionSpec(
-        name="cond_1",
-        weight=1.0,
-        fluent_file=None,
-        measurement_file=str(measurement_cfg.get("file", "")).strip() or None,
-        overrides=tuple(),
-        keys=default_keys,
-        align=default_align,
-    )
-    return [single]
-
-
-def _validate_conditions(conditions: list[ConditionSpec]) -> None:
-    if not conditions:
-        raise ValueError("at least one optimization condition is required")
-    names = [c.name for c in conditions]
-    if len(set(names)) != len(names):
-        raise ValueError("opt.measurement.conditions names must be unique")
-
-    total = float(sum(max(c.weight, 0.0) for c in conditions))
-    if total <= 0.0:
-        raise ValueError("condition weights must contain at least one positive weight")
-
-    for cond in conditions:
-        if cond.fluent_file:
-            path = Path(cond.fluent_file)
-            if not path.exists():
-                raise FileNotFoundError(f"condition fluent_file not found: {path}")
-        if cond.measurement_file:
-            path = Path(cond.measurement_file)
-            if not path.exists():
-                raise FileNotFoundError(f"condition measurement_file not found: {path}")
 
 
 def _extract_levels(opt_spec: Any, condition_count: int) -> list[int]:
@@ -224,10 +217,9 @@ def _resolve_pruner(name: str) -> Any:
 
 def _analysis_block(opt_spec: Any) -> dict[str, Any]:
     defaults = {
-        "role_stability": {"enabled": True, "topk_window": 10, "score_epsilon": 1.0e-6},
+        "role_stability": {"enabled": True, "score_epsilon": 1.0e-6},
         "identifiability": {
             "enabled": False,
-            "max_paths": 3,
             "relative_step": 1.0e-2,
             "low_sensitivity_threshold": 1.0e-10,
             "correlation_threshold": 0.98,
@@ -243,85 +235,6 @@ def _analysis_block(opt_spec: Any) -> dict[str, Any]:
         merged.update(row)
         out[key] = merged
     return out
-
-
-def _preflight_conditions(
-    *,
-    sim_spec: SimSpecV2,
-    conditions: list[ConditionSpec],
-    min_finite_ratio: float,
-) -> list[dict[str, Any]]:
-    min_ratio = float(min_finite_ratio)
-    if min_ratio <= 0.0 or min_ratio > 1.0:
-        raise ValueError(f"analysis.preflight.min_finite_ratio must be in (0,1], got {min_ratio}")
-
-    fluent_keys = sim_spec.inputs.fluent.keys
-    fluent_xy_key = str(getattr(fluent_keys, "xy", "xy"))
-    fluent_cref_key = str(getattr(fluent_keys, "cref", "cref"))
-
-    rows: list[dict[str, Any]] = []
-    for cond in conditions:
-        fluent_path = Path(str(cond.fluent_file or sim_spec.inputs.fluent.file))
-        if not fluent_path.exists():
-            raise FileNotFoundError(f"preflight fluent file not found: {fluent_path}")
-
-        with np.load(fluent_path, allow_pickle=False) as data:
-            if fluent_xy_key not in data.files or fluent_cref_key not in data.files:
-                raise ValueError(f"preflight fluent file missing required keys: {fluent_path}")
-            xy = np.asarray(data[fluent_xy_key], dtype=float)
-            cref = np.asarray(data[fluent_cref_key], dtype=float)
-
-        if xy.ndim != 2 or xy.shape[1] != 2:
-            raise ValueError(f"preflight fluent xy must be shape [n,2], got {xy.shape} in {fluent_path}")
-        n_pts = int(xy.shape[0])
-        if cref.ndim == 2:
-            cref_n_pts = int(cref.shape[0])
-        elif cref.ndim == 3:
-            cref_n_pts = int(cref.shape[1])
-        else:
-            raise ValueError(f"preflight cref must be 2D or 3D, got {cref.shape} in {fluent_path}")
-        if cref_n_pts != n_pts:
-            raise ValueError(f"preflight cref/xy point mismatch in {fluent_path}: {cref_n_pts} vs {n_pts}")
-
-        cref_finite_ratio = float(np.mean(np.isfinite(cref))) if cref.size else 0.0
-        if cref_finite_ratio < min_ratio:
-            raise ValueError(
-                f"preflight fluent finite ratio below threshold for {cond.name}: "
-                f"{cref_finite_ratio:.4f} < {min_ratio:.4f}"
-            )
-
-        meas_finite_ratio = None
-        measurement_path = Path(str(cond.measurement_file)) if cond.measurement_file else None
-        if measurement_path is not None and measurement_path.exists():
-            h_key = str(cond.keys.get("h", "h_nm"))
-            xy_key = str(cond.keys.get("xy", "xy"))
-            with np.load(measurement_path, allow_pickle=False) as data:
-                if h_key not in data.files:
-                    raise ValueError(f"preflight measurement file missing key {h_key!r}: {measurement_path}")
-                h = np.asarray(data[h_key], dtype=float).reshape(-1)
-                if xy_key in data.files:
-                    xy_meas = np.asarray(data[xy_key], dtype=float)
-                    if xy_meas.ndim != 2 or xy_meas.shape[1] != 2 or xy_meas.shape[0] != h.shape[0]:
-                        raise ValueError(f"preflight measurement xy shape mismatch in {measurement_path}")
-
-            meas_finite_ratio = float(np.mean(np.isfinite(h))) if h.size else 0.0
-            if meas_finite_ratio < min_ratio:
-                raise ValueError(
-                    f"preflight measurement finite ratio below threshold for {cond.name}: "
-                    f"{meas_finite_ratio:.4f} < {min_ratio:.4f}"
-                )
-
-        rows.append(
-            {
-                "condition": cond.name,
-                "fluent_file": str(fluent_path),
-                "measurement_file": str(measurement_path) if measurement_path else "",
-                "n_points": n_pts,
-                "fluent_finite_ratio": cref_finite_ratio,
-                "measurement_finite_ratio": meas_finite_ratio,
-            }
-        )
-    return rows
 
 
 def _draw_sample(
@@ -385,52 +298,6 @@ def _draw_sample(
     }
 
 
-def _apply_candidate_to_spec(
-    *,
-    base_spec: SimSpecV2,
-    role_candidate: Any,
-    order_candidate: Mapping[str, int],
-    condition: ConditionSpec,
-    params: Mapping[str, float],
-) -> SimSpecV2:
-    trial_spec = deepcopy(base_spec)
-    trial_spec.roles.A = role_candidate.A
-    trial_spec.roles.I = role_candidate.I
-    trial_spec.roles.B = role_candidate.B
-
-    trial_spec.model.orders.adsorption_site_order = int(order_candidate["adsorption_site_order"])
-    trial_spec.model.orders.reaction_site_order_A = int(order_candidate["reaction_site_order_A"])
-    trial_spec.model.orders.reaction_site_order_star = int(order_candidate["reaction_site_order_star"])
-
-    if condition.fluent_file:
-        trial_spec.inputs.fluent.file = str(condition.fluent_file)
-
-    meas_file = str(condition.measurement_file or "").strip()
-    trial_spec.measurement.enabled = bool(meas_file)
-    trial_spec.measurement.file = meas_file
-    trial_spec.measurement.keys = dict(condition.keys)
-    trial_spec.measurement.align = dict(condition.align)
-
-    for key, value in params.items():
-        set_attr_path(trial_spec, key, float(value), strip_sim_prefix=True)
-
-    for override in condition.overrides:
-        text = str(override).strip()
-        if not text:
-            continue
-        if "=" not in text:
-            raise ValueError(f"condition override must use key=value format: {text!r}")
-        key, raw = text.split("=", 1)
-        set_attr_path(
-            trial_spec,
-            key.strip(),
-            parse_literal_value(raw),
-            strip_sim_prefix=True,
-        )
-
-    return trial_spec
-
-
 def _combine_weighted_components(
     *,
     component_rows: list[dict[str, float]],
@@ -440,6 +307,10 @@ def _combine_weighted_components(
 ) -> dict[str, float]:
     if not component_rows:
         return {
+            "mse_nm2": float("nan"),
+            "rmse_nm": float("nan"),
+            "mae_nm": float("nan"),
+            "max_abs_nm": float("nan"),
             "loss_data": 0.0,
             "penalty_solver": 0.0,
             "penalty_phys": 0.0,
@@ -455,22 +326,32 @@ def _combine_weighted_components(
     w = w / float(np.sum(w))
 
     out = {
+        "mse_nm2": 0.0,
+        "mae_nm": 0.0,
+        "max_abs_nm": 0.0,
         "loss_data": 0.0,
         "penalty_solver": 0.0,
         "penalty_phys": 0.0,
+        "penalty_profile": 0.0,
     }
     for idx, row in enumerate(component_rows):
+        out["mse_nm2"] += float(w[idx]) * float(row.get("mse_nm2", 0.0))
+        out["mae_nm"] += float(w[idx]) * float(row.get("mae_nm", 0.0))
+        out["max_abs_nm"] = max(out["max_abs_nm"], float(row.get("max_abs_nm", 0.0)))
         out["loss_data"] += float(w[idx]) * float(row["loss_data"])
         out["penalty_solver"] += float(w[idx]) * float(row["penalty_solver"])
         out["penalty_phys"] += float(w[idx]) * float(row["penalty_phys"])
+        out["penalty_profile"] += float(w[idx]) * float(row.get("penalty_profile", 0.0))
 
     out["penalty_prior"] = float(prior_value)
     out["penalty_complexity"] = float(complexity_value)
+    out["rmse_nm"] = float(np.sqrt(max(out["mse_nm2"], 0.0)))
     out["score_total"] = (
         out["loss_data"]
         + out["penalty_solver"]
         + out["penalty_phys"]
         + out["penalty_prior"]
+        + out["penalty_profile"]
         + out["penalty_complexity"]
     )
     return out
@@ -511,21 +392,30 @@ def fit_candidate_with_optuna(
     role_candidate: Any,
     order_candidate: dict[str, int],
     opt_spec: Any,
+    conditions_override: Sequence[ConditionSpec] | None = None,
+    analyze: bool = True,
 ) -> dict[str, Any]:
     """Fit one discrete candidate and return best score/params/components."""
 
     _require_numpy()
     role_has_i = role_candidate.I is not None
     role_has_b = role_candidate.B is not None
+    stage_filter = _search_space_stage_filter(opt_spec)
 
     search_space = _sample_search_space(
         list(opt_spec.parameter_fit.search_space),
         role_has_i=role_has_i,
         role_has_b=role_has_b,
+        stage_filter=stage_filter,
     )
+    _validate_search_space_metadata(search_space)
     _validate_transport_search_space(sim_spec=sim_spec, search_space=search_space, role_has_b=role_has_b)
-    conditions = _extract_conditions(opt_spec)
-    _validate_conditions(conditions)
+    conditions = list(conditions_override) if conditions_override is not None else extract_conditions(opt_spec)
+    validate_conditions(conditions)
+    train_conditions = sorted([cond for cond in conditions if cond.split == "train" and cond.weight > 0], key=lambda c: c.name)
+    holdout_conditions = [cond for cond in conditions if cond.split == "holdout" and cond.weight > 0]
+    if holdout_conditions and any(bool(item.get("per_condition", False)) for item in search_space):
+        raise ValueError("holdout evaluation currently requires shared parameters; per_condition search items are not supported")
 
     n_trials = int(opt_spec.parameter_fit.n_trials_per_candidate)
     seed = int(opt_spec.parameter_fit.seed)
@@ -539,16 +429,16 @@ def fit_candidate_with_optuna(
     lambda_role_cfg = float(class_complexity.get("lambda_role", 0.0))
     lambda_complex = lambda_complex_obj + (lambda_role_obj if lambda_role_obj > 0.0 else lambda_role_cfg)
 
-    levels = _extract_levels(opt_spec, len(conditions))
-    condition_names = [cond.name for cond in conditions]
-    condition_weight_map = {cond.name: max(float(cond.weight), 0.0) for cond in conditions}
+    levels = _extract_levels(opt_spec, len(train_conditions))
+    condition_names = [cond.name for cond in train_conditions]
+    condition_weight_map = {cond.name: max(float(cond.weight), 0.0) for cond in train_conditions}
 
     analysis_cfg = _analysis_block(opt_spec)
     preflight_cfg = dict(analysis_cfg.get("preflight", {}) or {})
-    preflight_enabled = bool(preflight_cfg.get("enabled", True))
+    preflight_enabled = analyze and bool(preflight_cfg.get("enabled", True))
     preflight_rows: list[dict[str, Any]] = []
     if preflight_enabled:
-        preflight_rows = _preflight_conditions(
+        preflight_rows = preflight_conditions(
             sim_spec=sim_spec,
             conditions=conditions,
             min_finite_ratio=float(preflight_cfg.get("min_finite_ratio", 0.6)),
@@ -572,6 +462,7 @@ def fit_candidate_with_optuna(
         rows: list[dict[str, float]] = []
         weights: list[float] = []
         per_cond_total: dict[str, float] = {}
+        per_cond_metrics: dict[str, dict[str, float]] = {}
         trial_cache = sample.setdefault("__trial_cache__", {})
 
         for cond in active_conditions:
@@ -588,24 +479,14 @@ def fit_candidate_with_optuna(
                 global_cache.move_to_end(key)
                 cache_stats["global_hits"] += 1
             else:
-                trial_spec = _apply_candidate_to_spec(
+                trial_spec = prepare_condition(
                     base_spec=sim_spec,
                     role_candidate=role_candidate,
                     order_candidate=order_candidate,
                     condition=cond,
                     params=params_for_cond,
                 )
-                result = run_aib_from_spec(trial_spec)
-                components = evaluate_candidate_score(
-                    residual_nm=result.fields.get("residual_nm"),
-                    fields=result.fields,
-                    diagnostics=result.diagnostics,
-                    role_has_i=role_has_i,
-                    role_has_b=role_has_b,
-                    objective=objective_cfg,
-                    lambda_complex=0.0,
-                    prior_terms=None,
-                )
+                components = evaluate_condition(trial_spec, objective_cfg)
                 cached = {"components": components, "score": float(components["score_total"])}
                 cache_stats["misses"] += 1
                 if cache_enabled:
@@ -621,6 +502,7 @@ def fit_candidate_with_optuna(
             rows.append(components)
             weights.append(condition_weight_map[cond.name])
             per_cond_total[cond.name] = float(cached["score"])
+            per_cond_metrics[cond.name] = dict(components)
 
         prior_value = float(lambda_prior) * 0.5 * float(np.mean(np.asarray(sample["prior_terms"], dtype=float))) if sample["prior_terms"] else 0.0
         complexity_value = float(lambda_complex) * float(int(role_has_i) + int(role_has_b))
@@ -630,18 +512,22 @@ def fit_candidate_with_optuna(
             prior_value=prior_value,
             complexity_value=complexity_value,
         )
+        sample["__condition_metrics__"] = per_cond_metrics
         return merged, per_cond_total
 
     best_score = float("inf")
     best_params: dict[str, float] = {}
     best_components: dict[str, float] = {}
     best_condition_scores: dict[str, float] = {}
+    best_condition_metrics: dict[str, dict[str, float]] = {}
     best_per_condition_params: dict[str, dict[str, float]] = {}
     study_trial_count = 0
 
     engine_name = str(getattr(opt_spec.parameter_fit, "engine", "optuna")).strip().lower()
     pruner_name = str(getattr(opt_spec.parameter_fit, "pruner", "none")).strip().lower()
-    storage_cfg = dict(getattr(opt_spec.parameter_fit, "storage", {}) or {})
+    # Each validation fold starts afresh; full-training trials must never leak
+    # into a fold through a resumed Optuna study.
+    storage_cfg = {} if conditions_override is not None else dict(getattr(opt_spec.parameter_fit, "storage", {}) or {})
     storage_url = str(storage_cfg.get("url", "")).strip()
 
     if optuna is None and pruner_name != "none":
@@ -661,14 +547,15 @@ def fit_candidate_with_optuna(
             "pruner": pruner,
         }
         if storage_url:
-            study_name = str(storage_cfg.get("study_name", "")).strip()
-            if not study_name:
-                study_name = (
-                    f"aib_{role_candidate.class_id}_"
-                    f"m{order_candidate['adsorption_site_order']}_"
-                    f"pa{order_candidate['reaction_site_order_A']}_"
-                    f"ps{order_candidate['reaction_site_order_star']}"
-                )
+            fitted_inputs = [prepare_condition(
+                base_spec=sim_spec, role_candidate=role_candidate,
+                order_candidate=order_candidate, condition=cond, params={},
+            ) for cond in train_conditions]
+            study_name = _persistent_study_name(
+                str(storage_cfg.get("study_name", "")).strip(), fitted_inputs,
+                {"objective": objective_cfg, "search_space": search_space,
+                 "weights": condition_weight_map, "levels": levels, "lambda_complex": lambda_complex},
+            )
             study_kwargs["storage"] = storage_url
             study_kwargs["study_name"] = study_name
             study_kwargs["load_if_exists"] = bool(storage_cfg.get("load_if_exists", False))
@@ -691,13 +578,14 @@ def fit_candidate_with_optuna(
             final_components, final_cond_scores = _evaluate_fidelity_levels(
                 sample=sample,
                 levels=levels,
-                conditions=conditions,
+                conditions=train_conditions,
                 evaluate_subset=evaluate_subset,
                 step_hook=_step_hook,
             )
 
             trial.set_user_attr("components", dict(final_components))
             trial.set_user_attr("condition_scores", dict(final_cond_scores))
+            trial.set_user_attr("condition_metrics", dict(sample.get("__condition_metrics__", {})))
             trial.set_user_attr("flat_params", dict(sample["flat_params"]))
             trial.set_user_attr(
                 "per_condition_params",
@@ -714,6 +602,11 @@ def fit_candidate_with_optuna(
         best_params = {str(k): float(v) for k, v in dict(attrs.get("flat_params", study.best_params)).items()}
         best_components = {str(k): float(v) for k, v in dict(attrs.get("components", {})).items()}
         best_condition_scores = {str(k): float(v) for k, v in dict(attrs.get("condition_scores", {})).items()}
+        best_condition_metrics = {
+            str(k): {str(mk): float(mv) for mk, mv in dict(v).items()}
+            for k, v in dict(attrs.get("condition_metrics", {})).items()
+            if isinstance(v, Mapping)
+        }
         best_per_condition_params = {
             str(k): {str(pk): float(pv) for pk, pv in dict(v).items()}
             for k, v in dict(attrs.get("per_condition_params", {})).items()
@@ -731,7 +624,7 @@ def fit_candidate_with_optuna(
             comps, cond_scores = _evaluate_fidelity_levels(
                 sample=sample,
                 levels=levels,
-                conditions=conditions,
+                conditions=train_conditions,
                 evaluate_subset=evaluate_subset,
             )
             score = float(comps["score_total"])
@@ -740,6 +633,10 @@ def fit_candidate_with_optuna(
                 best_params = {str(k): float(v) for k, v in sample["flat_params"].items()}
                 best_components = {str(k): float(v) for k, v in comps.items()}
                 best_condition_scores = {str(k): float(v) for k, v in cond_scores.items()}
+                best_condition_metrics = {
+                    str(k): {str(mk): float(mv) for mk, mv in dict(v).items()}
+                    for k, v in dict(sample.get("__condition_metrics__", {})).items()
+                }
                 best_per_condition_params = {
                     str(k): {str(pk): float(pv) for pk, pv in dict(v).items()}
                     for k, v in sample["per_condition"].items()
@@ -747,61 +644,80 @@ def fit_candidate_with_optuna(
         study_trial_count = int(n_trials)
 
     ident_cfg = dict(analysis_cfg.get("identifiability", {}) or {})
+    parameter_paths = [str(item["name"]) for item in search_space if float(item["high"]) > float(item["low"])]
     ident_diag: dict[str, Any] = {
         "enabled": bool(ident_cfg.get("enabled", False)),
+        "assessed": not parameter_paths,
         "warnings": [],
         "degeneracy_warning": False,
     }
-    if bool(ident_cfg.get("enabled", False)):
-        parameter_paths: list[str] = []
-        max_paths = max(int(ident_cfg.get("max_paths", 3)), 1)
-        for item in search_space:
-            path = str(item.get("name", "")).strip()
-            if path and path not in parameter_paths:
-                parameter_paths.append(path)
-            if len(parameter_paths) >= max_paths:
-                break
-
-        if parameter_paths and conditions:
+    if analyze and bool(ident_cfg.get("enabled", False)):
+        # Inspect every estimated parameter on all training observations. The old
+        # max_paths cap silently hid dependence on parameters later in the list.
+        if parameter_paths and train_conditions:
             try:
-                base_cond = conditions[0]
-                base_params = dict(best_per_condition_params.get(base_cond.name, {}))
-                if not base_params:
-                    for path in parameter_paths:
-                        if path in best_params:
-                            base_params[path] = float(best_params[path])
-                trial_spec = _apply_candidate_to_spec(
-                    base_spec=sim_spec,
-                    role_candidate=role_candidate,
-                    order_candidate=order_candidate,
-                    condition=base_cond,
-                    params=base_params,
-                )
+                fitted_specs = [
+                    prepare_condition(
+                        base_spec=sim_spec, role_candidate=role_candidate,
+                        order_candidate=order_candidate, condition=cond,
+                        params=best_per_condition_params[cond.name],
+                    ) for cond in train_conditions
+                ]
                 ident_diag = compute_identifiability_diagnostics(
-                    trial_spec,
+                    fitted_specs[0], run_specs=fitted_specs,
                     parameter_paths=parameter_paths,
+                    condition_weights=[cond.weight for cond in train_conditions],
+                    condition_names=[cond.name for cond in train_conditions],
+                    local_parameter_paths=[str(item["name"]) for item in search_space if item.get("per_condition", False)],
+                    parameter_bounds={str(item["name"]): (float(item["low"]), float(item["high"])) for item in search_space if not item.get("per_condition", False)},
                     relative_step=float(ident_cfg.get("relative_step", 1.0e-2)),
                     low_sensitivity_threshold=float(ident_cfg.get("low_sensitivity_threshold", 1.0e-10)),
                     correlation_threshold=float(ident_cfg.get("correlation_threshold", 0.98)),
                 )
                 ident_diag["enabled"] = True
-            except Exception as exc:
-                ident_diag = {
-                    "enabled": True,
-                    "warnings": [f"Identifiability diagnostics failed: {exc}"],
-                    "degeneracy_warning": True,
-                    "error": str(exc),
-                }
+                ident_diag["assessed"] = True
+            except (ValueError, RuntimeError, FloatingPointError) as exc:
+                ident_diag = {"enabled": True, "warnings": [str(exc)], "degeneracy_warning": True, "error": str(exc)}
+
+    holdout_scores: dict[str, float] = {}
+    holdout_metrics: dict[str, dict[str, float]] = {}
+    if holdout_conditions:
+        shared_best_params = {
+            str(item["name"]): float(best_params[str(item["name"])])
+            for item in search_space
+            if not bool(item.get("per_condition", False)) and str(item["name"]) in best_params
+        }
+        for cond in holdout_conditions:
+            holdout_spec = prepare_condition(
+                base_spec=sim_spec,
+                role_candidate=role_candidate,
+                order_candidate=order_candidate,
+                condition=cond,
+                params=shared_best_params,
+            )
+            holdout_components = evaluate_condition(holdout_spec, objective_cfg)
+            holdout_scores[cond.name] = float(holdout_components["score_total"])
+            holdout_metrics[cond.name] = dict(holdout_components)
 
     return {
         "class_id": role_candidate.class_id,
         "roles": {"A": role_candidate.A, "I": role_candidate.I, "B": role_candidate.B},
+        "quantity": "thickness", "unit": "nm",
+        "effect_groups": role_candidate.effect_groups,
+        "declared_effect_groups": role_candidate.effect_groups,
+        "reduced_effect_groups": role_candidate.reduced_effect_groups,
+        "effect_basis": "declared_state_model_roles",
         "orders": dict(order_candidate),
         "best_score": float(best_score),
         "best_params": best_params,
         "best_components": best_components,
         "condition_scores": best_condition_scores,
+        "condition_metrics": best_condition_metrics,
+        "holdout_scores": holdout_scores,
+        "holdout_metrics": holdout_metrics,
         "condition_count": len(conditions),
+        "train_condition_count": len(train_conditions),
+        "holdout_condition_count": len(holdout_conditions),
         "fidelity_levels": list(levels),
         "search_space_count": len(search_space),
         "study_trial_count": int(study_trial_count),

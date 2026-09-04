@@ -1,0 +1,91 @@
+defaults:
+  - /sim: ald_state_min
+  - _self_
+
+opt:
+  task: fit_roles_and_params
+
+  measurement:
+    keys: {h: h_nm, xy: xy}
+    align: {enable: true, shift_mm: [0.0, 0.0], rotate_deg: 0.0, mask_radius_mm: 150.0}
+    conditions:
+      - name: low_dose
+        weight: 1.0
+        fluent_file: runs/generated_inputs/multicond_fit/ald_low_dose_fluent.npz
+        measurement_file: runs/generated_inputs/multicond_fit/ald_low_dose_meas.npz
+      - name: nominal
+        weight: 1.0
+        fluent_file: runs/generated_inputs/multicond_fit/ald_nominal_fluent.npz
+        measurement_file: runs/generated_inputs/multicond_fit/ald_nominal_meas.npz
+      - name: high_dose
+        weight: 1.0
+        fluent_file: runs/generated_inputs/multicond_fit/ald_high_dose_fluent.npz
+        measurement_file: runs/generated_inputs/multicond_fit/ald_high_dose_meas.npz
+      - name: short_purge
+        weight: 1.0
+        fluent_file: runs/generated_inputs/multicond_fit/ald_short_purge_fluent.npz
+        measurement_file: runs/generated_inputs/multicond_fit/ald_short_purge_meas.npz
+      - name: long_purge
+        split: holdout
+        weight: 1.0
+        fluent_file: runs/generated_inputs/multicond_fit/ald_long_purge_fluent.npz
+        measurement_file: runs/generated_inputs/multicond_fit/ald_long_purge_meas.npz
+
+  role_enumeration:
+    enabled: true
+    species_source: from_sim_input
+    constraints: {disjoint: true, allow_unused: true}
+    roles:
+      A: {required: true, candidates: [s0, s1]}
+      I: {required: false, allow_none: true, max_size: 1, candidates: [s2]}
+      B: {required: false, allow_none: true, max_size: 1, candidates: [s1]}
+
+  order_enumeration:
+    enabled: false
+    candidates:
+      - {adsorption_site_order: 1, reaction_site_order_A: 1, reaction_site_order_star: 0}
+    enforce_total_order_le: 3
+
+  class_compare:
+    enabled: true
+    classes: [A, AI, AB, AIB]
+    complexity_penalty: {lambda_role: 1.0e-4}
+
+  parameter_fit:
+    engine: random
+    sampler: tpe
+    pruner: none
+    seed: 123
+    n_trials_per_candidate: 12
+    storage: {url: "", study_name: "", load_if_exists: false}
+    fidelity: {levels: [2, 4]}
+    objective:
+      profile: ald_cycle
+      loss: huber
+      huber_delta_nm: 10.0
+      phi_B_min: 0.05
+      weights: {measurement: 1.0, plateau: 0.0, cycle: 0.0, purge: 0.0}
+      penalties: {lambda_complex: 0.0, lambda_role: 0.0, lambda_solver: 0.0, lambda_phys: 0.0, lambda_prior: 0.0}
+      tie: {abs_score_epsilon: 1.0e-8}
+    analysis:
+      role_stability: {enabled: true, score_epsilon: 1.0e-6}
+      identifiability: {enabled: true, relative_step: 1.0e-2, low_sensitivity_threshold: 1.0e-10, correlation_threshold: 0.98}
+      cache: {enabled: true, max_entries: 256}
+      preflight: {enabled: true, min_finite_ratio: 0.6}
+    search_space:
+      - {name: model.params.kinetics.k_store_A, type: loguniform, low: 1.0e-1, high: 3.0e+1}
+      - {name: model.params.kinetics.k_release_A, type: loguniform, low: 1.0e-3, high: 2.0e-1}
+      - {name: model.params.kinetics.k_convert_A, type: loguniform, low: 5.0e-2, high: 1.0e+0, condition: role_has_no_B}
+      - {name: model.params.kinetics.k_convert_AB, type: loguniform, low: 5.0e-2, high: 1.0e+0, condition: role_has_B}
+      - {name: model.params.inhibitor.k_store_I, type: loguniform, low: 1.0e-3, high: 1.0e+0, condition: role_has_I}
+      - {name: model.params.inhibitor.k_release_I, type: loguniform, low: 1.0e-3, high: 2.0e-1, condition: role_has_I}
+      - {name: model.params.thickness.alpha_h, type: loguniform, low: 3.0e-1, high: 3.0e+0}
+
+  selection: {topk_overall: 20, topk_per_class: 10}
+
+  output:
+    project: demo
+    run_name: fit_ald_state_multicond_min
+    root_dir: results
+    save: {ranking_csv: true, class_compare_csv: true, resolved_configs: true}
+    report: {enabled: true, index_html: true}

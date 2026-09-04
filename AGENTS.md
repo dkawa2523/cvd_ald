@@ -1,48 +1,50 @@
-# AGENTS.md (Rules for Codex CLI and humans)
+# AGENTS.md
 
-This file defines non-negotiable rules for agents executing tasks in this repo.
+This repo is now focused on one product idea:
 
-## Primary rule
-- **Obey POLICY_LOCK** in `docs/adr/0001-initial-decisions.md` above all else.
+> Map Fluent raw species to interpretable reaction roles, fit those role models
+> to measured film-thickness maps, and avoid numerically good but
+> uninterpretable combinations.
 
-## Task discipline
-- **1 task = 1 논点** (one coherent change set; think "one commit").
-- Respect task `scope_limits` strictly:
-  - max_changed_files
-  - max_diff_lines
-  - allowed_dirs
-  - forbidden_actions
+## Development Focus
 
-If a task cannot be done within scope, split it by creating follow-up tasks (do not expand scope silently).
+- Keep CVD and ALD as separate process modes, but keep the same role-assimilation
+  concept in both.
+- Treat Fluent species names such as `s0`, `s1`, and `s2` as raw inputs, not as
+  fixed chemistry labels.
+- Prefer outputs that explain role selection:
+  - `role_summary.csv`
+  - `role_ranking.csv`
+  - `role_stability.csv`
+  - per-condition scores
+- Do not add detailed species-first reaction mechanisms unless explicitly asked.
+- Do not add broad frameworks, heavy dependencies, or new directory trees for
+  small model changes.
 
-## No silent spec changes
-- Do NOT invent new product requirements or new physics models beyond what is already specified.
-- If something is unclear or undecided, create a **decision task** and stop (do not guess),
-  unless the spec explicitly provides a safe default.
+## Implementation Rules
 
-## ADR discipline
-- Important decisions or deviations MUST be written as an ADR under `docs/adr/`.
-- Do not hide major design choices inside chat logs.
+- Use existing config, runner, and artifact patterns before adding new ones.
+- Keep user-facing commands few and clear. Compatibility or diagnostic commands
+  may remain, but should not look like the main production path.
+- Keep generated inputs under `runs/generated_inputs/` and run outputs under
+  `results/`.
+- Do not commit or preserve regenerated fixtures unless they are source fixtures.
+- If a change mainly affects model meaning, role adoption rules, or public config
+  semantics, update the relevant docs briefly in the same change.
 
-## Dependency policy
-- Dependency additions are allowed, but must be minimal and staged.
-- Heavy dependencies (JAX, JAXopt, Diffrax, ClearML, Zarr, etc.) should be optional extras unless
-  required by a P0 gate.
+## Main Path
 
-## Network / external actions
-- Do not enable network access from within tasks.
-- Do not download large datasets.
-- If external resources are required, create a decision task and stop.
+The main implementation path should stay:
 
-## Output discipline
-- Do not create file/directory explosions.
-- Follow the fixed output entrypoint: `results/index.html`.
-- Store automation state under `runs/` only.
+```text
+Fluent raw species
+-> role assignment candidates
+-> CVD or ALD role model
+-> measured thickness-map fit
+-> role ranking and stability diagnosis
+-> concise adoption / rejection summary
+```
 
-## Checkpoints
-- Only one checkpoint at end of P0 by default.
-- Checkpoint tasks must:
-  - run the P0 verify gate
-  - summarize what is done
-  - list next steps
-  - stop_after=true and exit code 42 (handled by autorun)
+ALD dose, purge, and cycle metrics are useful diagnostics, but they are not the
+primary product goal. They should support role-assignment judgment rather than
+become a separate modeling framework.

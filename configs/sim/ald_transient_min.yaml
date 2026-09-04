@@ -30,7 +30,7 @@ sim:
     B: s1
 
   model:
-    name: aib_ode
+    name: role_ald_compat
     orders:
       adsorption_site_order: 1
       reaction_site_order_A: 1

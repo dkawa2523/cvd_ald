@@ -11,6 +11,7 @@ class TestSimConfigCompose(unittest.TestCase):
         self.assertEqual(run_spec.model.name, "aib_ode")
         self.assertIn(run_spec.time_mode, {"steady", "transient"})
         self.assertTrue(run_spec.output.run_name)
+        self.assertEqual(run_spec.inputs.fluent.io_loader_name, "")
 
     def test_compose_and_save_resolved_yaml(self) -> None:
         with TemporaryDirectory() as tmp_dir:
@@ -37,6 +38,17 @@ class TestSimConfigCompose(unittest.TestCase):
         spec = compose_opt_config("fit_cvd_steady_min")
         self.assertEqual(spec.sim.model.name, "aib_ode")
         self.assertEqual(spec.opt.task, "fit_roles_and_params")
+
+    def test_explicit_loader_names_are_composed(self) -> None:
+        run_spec = compose_sim_config(
+            "cvd_steady_min",
+            overrides=[
+                "sim.inputs.fluent.io_loader_name=csv",
+                "sim.measurement.io_loader_name=npz",
+            ],
+        )
+        self.assertEqual(run_spec.inputs.fluent.io_loader_name, "csv")
+        self.assertEqual(run_spec.measurement.io_loader_name, "npz")
 
 
 if __name__ == "__main__":

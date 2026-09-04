@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 import warnings
 
+from deposim_sim.models.process_models import validate_process_model_choice
+
 _SUPPORTED_DOMAIN_KINDS = {"from_fluent_xy", "wafer_2d_xy", "wafer_2d_polar", "wafer_1d_radial"}
 
 
@@ -67,6 +69,11 @@ def validate_sim_spec_v2(run_spec: Any) -> None:
         raise ValueError("sim.inputs.fluent.mode must be steady|transient")
     if sim.time_mode != sim.inputs.fluent.mode:
         raise ValueError("sim.time_mode and sim.inputs.fluent.mode must match")
+    validate_process_model_choice(
+        name=str(getattr(sim.model, "name", "aib_ode")),
+        process=str(getattr(sim, "process", "cvd")),
+        time_mode=str(getattr(sim, "time_mode", "steady")),
+    )
 
     transport = dict(getattr(sim.model.params, "transport", {}) or {})
     km_source = str(transport.get("km_source", "fit_scalar")).strip().lower()
@@ -74,6 +81,9 @@ def validate_sim_spec_v2(run_spec: Any) -> None:
         raise ValueError("sim.model.params.transport.km_source must be fit_scalar|from_cfd_flux_sink")
 
     if km_source == "from_cfd_flux_sink":
+        flux_key = str(getattr(getattr(sim.inputs.fluent, "keys", {}), "flux_sink", "flux_sink")).strip()
+        if not flux_key:
+            raise ValueError("sim.inputs.fluent.keys.flux_sink must be non-empty when km_source=from_cfd_flux_sink")
         from_flux = dict(transport.get("from_cfd_flux_sink", {}) or {})
         policy = str(from_flux.get("flux_negative_policy", "error")).strip().lower()
         if policy not in {"error", "clip_to_zero", "allow"}:

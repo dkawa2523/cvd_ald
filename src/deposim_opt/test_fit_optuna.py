@@ -22,11 +22,19 @@ from deposim_schema import compose_sim_config
 from deposim_sim.output_manifest import SCHEMA_VERSION
 from .enumerate_roles import RoleCandidate
 from .fit_optuna import fit_candidate_with_optuna
-from .run_fit import run_fit
+from .run_fit import _json_default, run_fit
 
 
 @unittest.skipIf(np is None, "NumPy is required")
 class TestFitOptuna(unittest.TestCase):
+    def test_fit_diagnostics_numpy_values_are_json_serializable(self) -> None:
+        payload = {
+            "matrix": np.array([[1.0, 2.0], [3.0, 4.0]]),
+            "rank": np.int64(2),
+        }
+        encoded = json.dumps(payload, default=_json_default)
+        self.assertEqual(json.loads(encoded), {"matrix": [[1.0, 2.0], [3.0, 4.0]], "rank": 2})
+
     def _write_inputs(self, tmp: str) -> tuple[Path, Path]:
         fluent_path = Path(tmp) / "fluent.npz"
         meas_path = Path(tmp) / "meas.npz"
@@ -130,6 +138,77 @@ class TestFitOptuna(unittest.TestCase):
             self.assertEqual(out["class_id"], "A")
             for key in ["loss_data", "penalty_solver", "penalty_phys", "penalty_prior", "score_total"]:
                 self.assertIn(key, out["best_components"])
+
+    def test_fit_candidate_uses_configured_csv_loaders(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fluent_path = root / "fluent_payload.data"
+            meas_path = root / "meas_payload.data"
+            fluent_path.write_text(
+                "x,y,s0,s1,s2,s3\n"
+                "-10.0,-10.0,1.0,0.5,0.1,0.0\n"
+                "0.0,0.0,0.8,0.4,0.1,0.0\n"
+                "20.0,10.0,0.6,0.3,0.1,0.0\n"
+                "30.0,-15.0,0.5,0.2,0.1,0.0\n",
+                encoding="utf-8",
+            )
+            meas_path.write_text(
+                "x,y,h_nm\n"
+                "-10.0,-10.0,-1.0\n"
+                "0.0,0.0,0.0\n"
+                "20.0,10.0,3.0\n"
+                "30.0,-15.0,7.5\n",
+                encoding="utf-8",
+            )
+            sim_spec = compose_sim_config(
+                "cvd_steady_min",
+                overrides=[
+                    f"sim.inputs.fluent.file={fluent_path}",
+                    "sim.inputs.fluent.io_loader_name=csv",
+                    "sim.measurement.io_loader_name=csv",
+                ],
+            )
+            role = RoleCandidate(A="s0", I=None, B=None, class_id="A")
+            order = {
+                "adsorption_site_order": 1,
+                "reaction_site_order_A": 1,
+                "reaction_site_order_star": 0,
+            }
+            opt_spec = SimpleNamespace(
+                measurement={
+                    "file": str(meas_path),
+                    "keys": {"x": "x", "y": "y", "h": "h_nm"},
+                    "align": {"enable": False},
+                },
+                parameter_fit=SimpleNamespace(
+                    engine="random",
+                    sampler="tpe",
+                    pruner="none",
+                    fidelity={"levels": [1]},
+                    storage={"url": "", "study_name": "", "load_if_exists": False},
+                    n_trials_per_candidate=1,
+                    seed=123,
+                    objective={"loss": "huber", "huber_delta_nm": 10.0, "penalties": {}},
+                    search_space=[
+                        {
+                            "name": "model.params.kinetics.k_rxn",
+                            "type": "loguniform",
+                            "low": 1.0e-6,
+                            "high": 1.0e-2,
+                        }
+                    ],
+                ),
+                class_compare=SimpleNamespace(complexity_penalty={"lambda_role": 0.0}),
+            )
+
+            out = fit_candidate_with_optuna(
+                sim_spec=sim_spec,
+                role_candidate=role,
+                order_candidate=order,
+                opt_spec=opt_spec,
+            )
+            self.assertIn("best_score", out)
+            self.assertGreaterEqual(float(out["best_components"]["loss_data"]), 0.0)
 
     def test_fit_candidate_multi_condition_hierarchical(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -264,6 +343,77 @@ class TestFitOptuna(unittest.TestCase):
                     opt_spec=opt_spec,
                 )
 
+    def test_search_space_metadata_filters_disabled_and_non_calibration_items(self) -> None:
+        with TemporaryDirectory() as tmp:
+            fluent_path, meas_path = self._write_inputs(tmp)
+            sim_spec = compose_sim_config("cvd_steady_min", overrides=[f"sim.inputs.fluent.file={fluent_path}"])
+            role = RoleCandidate(A="s0", I=None, B=None, class_id="A")
+            order = {
+                "adsorption_site_order": 1,
+                "reaction_site_order_A": 1,
+                "reaction_site_order_star": 0,
+            }
+            opt_spec = SimpleNamespace(
+                task="fit_roles_and_params",
+                measurement={"file": str(meas_path), "keys": {"h": "h_nm", "xy": "xy"}},
+                parameter_fit=SimpleNamespace(
+                    engine="random",
+                    sampler="tpe",
+                    pruner="none",
+                    fidelity={"levels": [1]},
+                    storage={"url": "", "study_name": "", "load_if_exists": False},
+                    n_trials_per_candidate=1,
+                    seed=11,
+                    objective={"loss": "huber", "huber_delta_nm": 10.0, "penalties": {}},
+                    search_space=[
+                        {
+                            "name": "model.params.kinetics.k_rxn",
+                            "type": "loguniform",
+                            "low": 1.0e-6,
+                            "high": 1.0e-2,
+                            "group": "surface_kinetics",
+                            "stage": "calibration",
+                            "symbol": "k_rxn",
+                            "unit": "s^-1",
+                            "enabled": True,
+                        },
+                        {
+                            "name": "model.params.transport.km_A",
+                            "type": "loguniform",
+                            "low": 1.0e-6,
+                            "high": 1.0e-2,
+                            "group": "effective_transport",
+                            "stage": "screening",
+                            "symbol": "k_mA",
+                            "unit": "m s^-1",
+                            "enabled": True,
+                        },
+                        {
+                            "name": "model.params.inhibitor.K_I",
+                            "type": "loguniform",
+                            "low": 1.0e-6,
+                            "high": 1.0e-2,
+                            "group": "surface_kinetics",
+                            "stage": "calibration",
+                            "symbol": "K_I",
+                            "unit": "a.u.",
+                            "enabled": False,
+                        },
+                    ],
+                ),
+                class_compare=SimpleNamespace(complexity_penalty={"lambda_role": 0.0}),
+            )
+
+            out = fit_candidate_with_optuna(
+                sim_spec=sim_spec,
+                role_candidate=role,
+                order_candidate=order,
+                opt_spec=opt_spec,
+            )
+            self.assertIn("model.params.kinetics.k_rxn", out["best_params"])
+            self.assertNotIn("model.params.transport.km_A", out["best_params"])
+            self.assertNotIn("model.params.inhibitor.K_I", out["best_params"])
+
     @unittest.skipIf(optuna is None, "optuna is required for resume test")
     def test_fit_candidate_optuna_resume_storage(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -351,29 +501,56 @@ class TestFitOptuna(unittest.TestCase):
             )
             run_dir = Path(out["run_dir"])
             ranking_path = run_dir / "tables" / "ranking.csv"
+            role_summary_path = run_dir / "tables" / "role_summary.csv"
+            role_ranking_path = run_dir / "tables" / "role_ranking.csv"
+            condition_scores_path = run_dir / "tables" / "condition_scores.csv"
             topk_path = run_dir / "tables" / "topk_assignments.csv"
             class_path = run_dir / "tables" / "class_compare.csv"
             role_stability_path = run_dir / "tables" / "role_stability.csv"
+            complexity_sensitivity_path = run_dir / "tables" / "complexity_sensitivity.csv"
             manifest_path = run_dir / "outputs" / "manifest.json"
             diagnostics_path = run_dir / "outputs" / "fit_diagnostics.json"
             self.assertTrue(ranking_path.exists())
+            self.assertTrue(role_summary_path.exists())
+            self.assertTrue(role_ranking_path.exists())
+            self.assertTrue(condition_scores_path.exists())
             self.assertTrue(topk_path.exists())
             self.assertTrue(class_path.exists())
             self.assertTrue(role_stability_path.exists())
+            self.assertTrue(complexity_sensitivity_path.exists())
             self.assertTrue(manifest_path.exists())
             self.assertTrue(diagnostics_path.exists())
 
             with ranking_path.open("r", encoding="utf-8") as fh:
                 ranking_rows = list(csv.DictReader(fh))
+            with role_summary_path.open("r", encoding="utf-8") as fh:
+                role_summary_rows = list(csv.DictReader(fh))
+            with role_ranking_path.open("r", encoding="utf-8") as fh:
+                role_ranking_rows = list(csv.DictReader(fh))
             summary = out["summary"]
             self.assertEqual(len(ranking_rows), int(summary["candidate_count"]))
+            self.assertEqual(len(role_summary_rows), int(summary["candidate_count"]))
+            self.assertEqual(len(role_ranking_rows), int(summary["candidate_count"]))
             self.assertEqual(int(summary["ranking_count"]), int(summary["candidate_count"]))
+            self.assertEqual(int(summary["role_summary_count"]), int(summary["candidate_count"]))
+            self.assertEqual(int(summary["role_ranking_count"]), int(summary["candidate_count"]))
             self.assertTrue(bool(summary["consistency"]["ranking_equals_candidates"]))
             self.assertIn("loss_data", ranking_rows[0])
             self.assertIn("penalty_solver", ranking_rows[0])
             self.assertIn("penalty_phys", ranking_rows[0])
             self.assertIn("penalty_prior", ranking_rows[0])
+            self.assertIn("penalty_profile", ranking_rows[0])
             self.assertIn("score_total", ranking_rows[0])
+            self.assertIn("rmse_nm", ranking_rows[0])
+            self.assertIn("mae_nm", ranking_rows[0])
+            self.assertIn("max_abs_nm", ranking_rows[0])
+            self.assertIn("decision", role_summary_rows[0])
+            self.assertIn("reason", role_summary_rows[0])
+            self.assertIn("score_gap_from_best", role_summary_rows[0])
+            self.assertIn(role_summary_rows[0]["decision"], {"adopt_candidate", "review"})
+            self.assertIn("role_A", role_ranking_rows[0])
+            self.assertIn("role_I", role_ranking_rows[0])
+            self.assertIn("role_B", role_ranking_rows[0])
 
             with class_path.open("r", encoding="utf-8") as fh:
                 class_rows = list(csv.DictReader(fh))
@@ -390,9 +567,23 @@ class TestFitOptuna(unittest.TestCase):
             self.assertIn("selected_by_overall", topk_rows[0])
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             self.assertEqual(manifest["schema_version"], SCHEMA_VERSION)
+            self.assertEqual(manifest["metadata"]["workflow_name"], "fit")
+            self.assertIn("config_fingerprint", manifest["metadata"])
             artifact_ids = {row["id"] for row in manifest["artifacts"]}
             self.assertTrue(
-                {"ranking", "class_compare", "topk_assignments", "role_stability", "fit_diagnostics", "summary", "report"}.issubset(artifact_ids)
+                {
+                    "ranking",
+                    "role_summary",
+                    "role_ranking",
+                    "condition_scores",
+                    "class_compare",
+                    "topk_assignments",
+                    "role_stability",
+                    "complexity_sensitivity",
+                    "fit_diagnostics",
+                    "summary",
+                    "report",
+                }.issubset(artifact_ids)
             )
             summary = out["summary"]
             self.assertEqual(summary.get("diagnostics_path"), "outputs/fit_diagnostics.json")
