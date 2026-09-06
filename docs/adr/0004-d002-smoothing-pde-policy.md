@@ -31,7 +31,7 @@ It is not promoted to `docs/REQUIREMENTS.md` in the current phase.
 ## Consequences
 
 1. No runtime postprocess PDE module is added in this decision.
-2. `MODEL_GAP` keeps smoothing PDE as deferred with reopen triggers.
+2. `docs/GAPS.md` keeps smoothing PDE as deferred with reopen triggers.
 3. Future adoption requires new requirement IDs, traceability links, and deterministic tests.
 
 ## Trigger To Reopen

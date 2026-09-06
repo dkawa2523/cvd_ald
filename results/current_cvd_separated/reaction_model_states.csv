@@ -1,0 +1,13 @@
+equation_family,model_id,quantity,component,mean_fraction,minimum_fraction,maximum_fraction
+aib_qss,"cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",site_fraction,theta_free,0.5570950300832315,0.5354176280199481,0.5648488165523586
+aib_qss,"cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",site_fraction,theta_A,0.44255873131402335,0.4348002520052292,0.46424967424176894
+aib_qss,"cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",site_fraction,theta_I,0.0003462386027451208,0.0003326977382830831,0.00035093144241214925
+aib_qss,"cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",pathway_fraction,path_AB_fraction,1.0,1.0,1.0
+parallel_a_ab_qss,"cvd:parallel_a_ab_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",site_fraction,theta_free,0.9521655894486306,0.9509898590966533,0.9554863879661928
+parallel_a_ab_qss,"cvd:parallel_a_ab_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",site_fraction,theta_A,0.04783441055136942,0.04451361203380719,0.04901014090334666
+parallel_a_ab_qss,"cvd:parallel_a_ab_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",pathway_fraction,path_A_fraction,0.1753308392635278,0.16363860040124734,0.1796559657048483
+parallel_a_ab_qss,"cvd:parallel_a_ab_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",pathway_fraction,path_AB_fraction,0.8246691607364722,0.8203440342951517,0.8363613995987527
+langmuir_hinshelwood_qss,"cvd:langmuir_hinshelwood_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",site_fraction,theta_free,0.7409347906492968,0.7272073408273861,0.7457563835203546
+langmuir_hinshelwood_qss,"cvd:langmuir_hinshelwood_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",site_fraction,theta_A,0.02437628584392053,0.02259025491284558,0.025011026865069043
+langmuir_hinshelwood_qss,"cvd:langmuir_hinshelwood_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",site_fraction,theta_B,0.23468892350678253,0.22923258961457643,0.2502024042597684
+langmuir_hinshelwood_qss,"cvd:langmuir_hinshelwood_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",pathway_fraction,path_AB_fraction,1.0,1.0,1.0

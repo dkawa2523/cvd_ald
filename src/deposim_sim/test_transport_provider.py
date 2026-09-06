@@ -7,7 +7,11 @@ try:
 except ModuleNotFoundError:  # pragma: no cover
     np = None  # type: ignore[assignment]
 
-from .transport_provider import CfdFluxSinkKmProvider, FitScalarKmProvider
+from .transport_provider import (
+    CfdFluxSinkKmProvider,
+    DirectSurfaceConcentrationProvider,
+    FitScalarKmProvider,
+)
 
 
 @unittest.skipIf(np is None, "NumPy is required")
@@ -90,6 +94,52 @@ class TestTransportProvider(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             provider.get_km("A")
+
+    def test_transport_capacity_uses_declared_driving_concentration(self) -> None:
+        cref = np.array([1.0, 2.0], dtype=float)
+        flux = np.array([0.08, 0.16], dtype=float)
+        provider = CfdFluxSinkKmProvider.from_arrays(
+            cref_a=cref,
+            cref_b=cref,
+            flux_a=flux,
+            flux_b=flux,
+            transport={
+                "from_cfd_flux_sink": {
+                    "flux_semantics": "transport_capacity",
+                    "boundary_concentration_A": 0.2,
+                    "boundary_concentration_B": 0.2,
+                    "km_clip": [1.0e-8, 10.0],
+                }
+            },
+        )
+        np.testing.assert_allclose(provider.get_km("A"), [0.1, 0.16 / 1.8])
+        diagnostics = provider.get_diagnostics("A")
+        np.testing.assert_allclose(diagnostics["boundary_concentration"], 0.2)
+        np.testing.assert_allclose(diagnostics["driving_concentration"], [0.8, 1.8])
+
+    def test_realized_reactive_flux_is_not_reused_as_transport_capacity(self) -> None:
+        cref = np.ones(2, dtype=float)
+        with self.assertRaisesRegex(ValueError, "realized reactive flux"):
+            CfdFluxSinkKmProvider.from_arrays(
+                cref_a=cref,
+                cref_b=cref,
+                flux_a=0.1 * cref,
+                flux_b=0.1 * cref,
+                transport={
+                    "from_cfd_flux_sink": {
+                        "flux_semantics": "realized_reactive_flux"
+                    }
+                },
+            )
+
+    def test_direct_surface_provider_marks_wall_concentration(self) -> None:
+        provider = DirectSurfaceConcentrationProvider.from_reference_shape(
+            reference_shape=(3,)
+        )
+        self.assertTrue(np.all(np.isinf(provider.get_km("A"))))
+        self.assertEqual(
+            provider.get_diagnostics("A")["concentration_location"], "wall"
+        )
 
 
 if __name__ == "__main__":

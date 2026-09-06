@@ -31,7 +31,7 @@ sim:
     B: null
 
   model:
-    name: aib_ode
+    name: role_cvd_aib
     orders:
       adsorption_site_order: 1
       reaction_site_order_A: 1
@@ -44,9 +44,13 @@ sim:
         km_B: {mode: constant, value: 0.02}
         Gamma_s: 1.0
         nu_A: 1.0
+        nu_B: 1.0
         gamma_km_A: 1.0
         gamma_km_B: 1.0
         from_cfd_flux_sink:
+          flux_semantics: transport_capacity
+          boundary_concentration_A: 0.0
+          boundary_concentration_B: 0.0
           eps_cref: 1.0e-12
           km_clip: [1.0e-8, 1.0e4]
           flux_negative_policy: error
@@ -76,5 +80,5 @@ sim:
     run_name: cvd_transient_min
     root_dir: results
     store: {format: npz}
-    save_fields: [h_nm, theta_A, theta_star, CsA_over_CrefA, residual_nm]
+    save_fields: [h_nm, theta_A, theta_star, CsA_over_CrefA, J_A_surface, J_B_surface, J_A_transport, J_B_transport, residual_nm]
     report: {enabled: true, index_html: true}

@@ -86,7 +86,7 @@ class TestZarrOutput(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             fluent_path = self._write_fluent(tmp)
             result = run_doe(
-                config_name="smoke",
+                config_name="cvd_steady_min",
                 base_overrides=[
                     f"sim.inputs.fluent.file={fluent_path}",
                     f"output.project_dir={tmp}",
@@ -114,7 +114,7 @@ class TestZarrOutput(unittest.TestCase):
             rc = smoke_main(
                 [
                     "--config-name",
-                    "smoke",
+                    "cvd_steady_min",
                     f"sim.inputs.fluent.file={fluent_path}",
                     "domain.nr=4",
                     "domain.ntheta=8",
@@ -137,7 +137,7 @@ class TestZarrOutput(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             fluent_path = self._write_fluent(tmp)
             result = run_doe(
-                config_name="smoke",
+                config_name="cvd_steady_min",
                 base_overrides=[
                     f"sim.inputs.fluent.file={fluent_path}",
                     f"output.project_dir={tmp}",
@@ -161,7 +161,7 @@ class TestZarrOutput(unittest.TestCase):
             rc = smoke_main(
                 [
                     "--config-name",
-                    "smoke",
+                    "cvd_steady_min",
                     f"sim.inputs.fluent.file={fluent_path}",
                     "domain.nr=4",
                     "domain.ntheta=8",

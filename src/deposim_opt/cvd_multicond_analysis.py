@@ -12,79 +12,508 @@ elementary kinetic constants or proof of chemical causality.
 
 from __future__ import annotations
 
-from contextlib import redirect_stdout
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from io import StringIO
 import json
 import math
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 import numpy as np
 
 from .class_compare import rank_role_candidates, build_role_summary, build_role_stability, effect_signature, build_condition_scores
 from .fit_roles import condition_refits
-from .objective import prediction_metrics
-from .cvd_surface_kinetics import (
+from .metrics import prediction_metrics
+from deposim_sim.models.aib_reductions import (
+    AIB_QSS,
     SurfaceKineticCandidate,
-    SurfaceKineticFit,
+    available_surface_model_families,
+    candidate_evidence_requirements,
+    candidate_physical_question,
+    default_surface_model_families,
     enumerate_surface_kinetic_candidates,
-    fit_surface_kinetic,
-    predict_surface_kinetic,
+    get_surface_model_family,
+    reduction_removed_effects,
     surface_formula,
 )
-
-from .cvd_spatial_analysis import (
+from deposim_sim.models.process_models import get_process_model_info
+from .surface_fit import (
+    SurfaceKineticFit,
+    SurfaceOptimizationSettings,
+    fit_surface_kinetic,
+    parameter_loss_slice_rows,
+    parameter_sensitivity_rows,
+    parameter_design_diagnostics,
+    predict_surface_kinetic,
+    role_input_sensitivity_rows,
+    role_response_curve_rows,
+)
+from .role_fields import RoleFieldSet, condition_contrast_summary
+from .evidence_requirements import (
+    build_capability_requirements,
+    required_measurements_for,
+)
+from .cvd_multicond_report import (
+    _fit_formula,
+    _write_markdown_report,
+    _write_notebook,
+    plot_multicond_results,
+)
+from .cvd_conditions import (
+    ConditionCase,
+    combine_cases as _combine_cases,
+    condition_paths as _condition_paths,
+    grid_alignment as _grid_alignment,
+    load_case as _load_case,
+)
+from .cvd_analysis_io import (
+    json_safe as _json_safe,
+    sha256_file as _sha256_file,
+    write_json as _write_json,
+    write_rows as _write_rows,
+)
+from .empirical_response import (
     RoleResponseCandidate,
-    _EPS,
-    _align_validation,
-    _angular_groups,
-    _coordinate_matrix,
-    _fit_nonnegative_effects,
-    _json_safe,
-    _metrics,
-    _radial_groups,
-    _read_numeric_csv,
-    _safe_corr,
-    _sha256_file,
-    _write_json,
-    _write_rows,
     enumerate_role_response_candidates,
+    fit_nonnegative_effects as _fit_nonnegative_effects,
+)
+from .spatial_validation import (
+    EPS as _EPS,
+    angular_groups as _angular_groups,
+    radial_groups as _radial_groups,
+    rate_metrics as _metrics,
+)
+from .spatial_response import (
+    SPATIAL_RESPONSE_MODES,
+    apply_spatial_response,
+    fit_spatial_response,
+    spatial_coefficient_rows,
 )
 
 # Fixed before evaluation; selected jointly with the role by training-condition CV.
 # The loss is mean squared log-rate error; elasticities have unit prior scale.
 REGULARIZATION_GRID = (0.0, 1.0e-8, 1.0e-6, 1.0e-4, 1.0e-2, 1.0)
 RESPONSE_STRUCTURES = ("shared", "within_between")
-RESPONSE_MODELS = ("surface_qss", "empirical_power")
+RESPONSE_MODELS = ("surface_compare", "empirical_power")
 
 
-@dataclass(frozen=True)
-class ConditionCase:
-    case_id: int
-    condition_path: Path
-    validation_path: Path
-    xyz: np.ndarray
-    species: tuple[str, ...]
-    concentrations: dict[str, np.ndarray]
-    mole_fractions: dict[str, np.ndarray]
-    density: np.ndarray
-    total_concentration: np.ndarray
-    rate: np.ndarray
-    quality: dict[str, Any]
+def _surface_families(
+    response_model: str, requested: Iterable[str] | None = None
+) -> tuple[str, ...]:
+    """Resolve an optional family subset for the physical comparison path."""
+    if response_model == "surface_compare":
+        available = available_surface_model_families()
+        names = tuple(str(name) for name in requested) if requested else ()
+        if "all" in names:
+            if names != ("all",):
+                raise ValueError("Use model family 'all' by itself")
+            selected = available
+        else:
+            selected = tuple(
+                dict.fromkeys(names or default_surface_model_families())
+            )
+        unknown = sorted(set(selected) - set(available))
+        if unknown:
+            raise ValueError(
+                f"Unknown surface model families {unknown}; available: {list(available)}"
+            )
+        if not selected:
+            raise ValueError("At least one surface model family is required")
+        return selected
+    if requested:
+        raise ValueError("model_families applies only to response_model='surface_compare'")
+    return ()
 
 
-@dataclass(frozen=True)
-class CombinedCases:
-    case_ids: tuple[int, ...]
-    xyz: np.ndarray
-    condition_id: np.ndarray
-    species: tuple[str, ...]
-    concentrations: dict[str, np.ndarray]
-    species_fractions: dict[str, np.ndarray]
-    total_concentration: np.ndarray
-    rate: np.ndarray
+def _uses_surface_response(response_model: str) -> bool:
+    return response_model == "surface_compare"
+
+
+def _candidate_role_species(candidate: SurfaceKineticCandidate) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            str(species)
+            for species in (candidate.A, candidate.I, candidate.B)
+            if species is not None
+        )
+    )
+
+
+def _annotate_surface_candidates(
+    rows: list[dict[str, Any]], data: RoleFieldSet
+) -> None:
+    """Attach input-only contrast evidence and fit-derived physical conclusions."""
+
+    for row in rows:
+        candidate = row.pop("_candidate")
+        family = get_surface_model_family(candidate.family)
+        contrast = condition_contrast_summary(
+            data,
+            _candidate_role_species(candidate),
+            transport_mode=candidate.transport_mode,
+        )
+        row.update(
+            {
+                "computable": True,
+                "applicability_status": (
+                    "production" if family.enabled_by_default else "exploratory"
+                ),
+                "physical_question": candidate_physical_question(candidate),
+                "required_evidence": list(candidate_evidence_requirements(candidate)),
+                "contrast_status": contrast["status"],
+                "contrast_rank": contrast["rank"],
+                "contrast_species_count": contrast["species_count"],
+                "contrast_condition_number": contrast["condition_number"],
+                "contrast_max_abs_correlation": contrast["max_abs_correlation"],
+                "contrast_log10_span": contrast["log10_span"],
+                "contrast_confounded_species": contrast["confounded_species"],
+            }
+        )
+
+
+def _finalize_surface_evidence(rows: list[dict[str, Any]]) -> None:
+    """Summarize what each fitted equation supports without using the holdout."""
+
+    by_family: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_family.setdefault(str(row["equation_family"]), []).append(row)
+    for family_rows in by_family.values():
+        for rank, row in enumerate(
+            sorted(family_rows, key=lambda item: float(item["selection_score"])),
+            start=1,
+        ):
+            row["family_rank"] = rank
+
+    for row in rows:
+        comparisons = row.get("reduced_model_comparisons", [])
+        deltas = [
+            float(item["selection_error_increase"])
+            for item in comparisons
+            if np.isfinite(float(item.get("selection_error_increase", float("nan"))))
+        ]
+        row["reduction_delta_mse"] = min(deltas) if deltas else float("nan")
+        claims: list[str] = []
+        missing: list[str] = []
+        if float(row.get("validation_skill", 0.0)) > 0.0:
+            claims.append("improves the conditionwise constant-rate baseline")
+        if row.get("contrast_status") == "limited":
+            species = row.get("contrast_confounded_species", [])
+            detail = ", ".join(species) if species else "assigned species"
+            missing.append(f"independent between-condition variation for {detail}")
+        if (
+            row.get("contrast_status") == "limited"
+            or row.get("applicability_status") == "exploratory"
+        ):
+            missing.extend(str(item) for item in row.get("required_evidence", []))
+        evidence = row.get("role_evidence", [])
+        for item in evidence:
+            effect = str(item["effect"])
+            if item.get("necessity") == "consistent_benefit":
+                claims.append(f"{effect} effect improves its exact reduction")
+            elif item.get("necessity") in {"mixed", "no_benefit"}:
+                missing.append(f"consistent parent-versus-reduction benefit for {effect}")
+            if item.get("assignment") == "distinguished":
+                claims.append(f"{effect} raw-species assignment is separated in inner CV")
+            elif item.get("assignment") == "unresolved":
+                missing.append(f"independent perturbations separating the {effect} assignment")
+        role_effects = set(row.get("effect_groups", {}))
+        for comparison in comparisons:
+            for effect in comparison.get("removed_effects", []):
+                if effect in role_effects:
+                    continue
+                if comparison.get("status") == "consistent_benefit":
+                    claims.append(f"{effect} improves its exact reduction")
+                elif comparison.get("status") in {"mixed", "no_benefit"}:
+                    missing.append(
+                        f"consistent parent-versus-reduction benefit for {effect}"
+                    )
+        if row.get("role_symmetry"):
+            missing.append(str(row["role_symmetry"]))
+        boundary = row.get("fit_diagnostics", {}).get("identifiability", {}).get(
+            "boundary_parameters", []
+        )
+        if boundary:
+            missing.append("interior parameter support for: " + ", ".join(boundary))
+        row["supported_claims"] = list(dict.fromkeys(claims))
+        row["missing_evidence"] = list(dict.fromkeys(missing))
+        row["distinguishable"] = bool(
+            row.get("effect_groups")
+            and row.get("contrast_status") == "sufficient"
+            and evidence
+            and all(item.get("necessity") == "consistent_benefit" for item in evidence)
+            and all(item.get("assignment") == "distinguished" for item in evidence)
+            and not row.get("role_symmetry")
+        )
+
+
+def _equation_family_assessments(
+    ranking: list[dict[str, Any]],
+    split_rows: list[dict[str, Any]],
+    families: tuple[str, ...],
+    available_inputs: Iterable[str],
+) -> list[dict[str, Any]]:
+    """Build one concise, training-ranked assessment per requested equation family."""
+
+    available = set(str(name) for name in available_inputs)
+    global_best = min(
+        (float(row["condition_cv_rmse_nm_s"]) for row in ranking),
+        default=float("nan"),
+    )
+    selected_counts = {
+        family: sum(
+            str(row.get("selected_equation_family")) == family for row in split_rows
+        )
+        for family in families
+    }
+    assessments: list[dict[str, Any]] = []
+    for name in families:
+        family = get_surface_model_family(name)
+        candidates = [
+            row
+            for row in ranking
+            if row.get("equation_family") == name
+            and row.get("class_id") != "baseline"
+        ]
+        if not set(family.required_inputs).issubset(available) or not candidates:
+            missing_inputs = sorted(set(family.required_inputs) - available)
+            assessments.append(
+                {
+                    "equation_family": name,
+                    "computable": False,
+                    "applicability_status": "not_applicable",
+                    "physical_question": family.physical_question,
+                    "mechanism": family.mechanism,
+                    "pathways": list(family.pathways),
+                    "state_variables": list(family.state_variables),
+                    "best_model_id": "",
+                    "condition_cv_rmse_nm_s": float("nan"),
+                    "relative_rmse_gap_to_best": float("nan"),
+                    "outer_selection_count": 0,
+                    "outer_selection_frequency": 0.0,
+                    "contrast_status": "not_assessed",
+                    "distinguishable": False,
+                    "supported_claims": [],
+                    "missing_evidence": [
+                        *(f"required input: {item}" for item in missing_inputs),
+                        *family.evidence_requirements,
+                    ],
+                }
+            )
+            continue
+        best = min(candidates, key=lambda row: float(row["selection_score"]))
+        count = selected_counts[name]
+        missing = list(best.get("missing_evidence", []))
+        if split_rows and count != len(split_rows):
+            missing.append("stable equation-family selection across outer condition folds")
+        assessments.append(
+            {
+                "equation_family": name,
+                "computable": True,
+                "applicability_status": (
+                    "production" if family.enabled_by_default else "exploratory"
+                ),
+                "physical_question": family.physical_question,
+                "mechanism": family.mechanism,
+                "pathways": list(family.pathways),
+                "state_variables": list(family.state_variables),
+                "best_model_id": best["role_model_id"],
+                "condition_cv_rmse_nm_s": best["condition_cv_rmse_nm_s"],
+                "relative_rmse_gap_to_best": (
+                    float(best["condition_cv_rmse_nm_s"]) / global_best - 1.0
+                    if global_best > 0.0
+                    else float("nan")
+                ),
+                "outer_selection_count": count,
+                "outer_selection_frequency": (
+                    count / len(split_rows) if split_rows else 0.0
+                ),
+                "contrast_status": best.get("contrast_status", "not_assessed"),
+                "distinguishable": bool(best.get("distinguishable", False)),
+                "supported_claims": best.get("supported_claims", []),
+                "missing_evidence": list(dict.fromkeys(missing)),
+            }
+        )
+    return assessments
+
+
+def _reaction_mechanism_assessments(
+    ranking: list[dict[str, Any]],
+    equation_assessments: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Separate fitted response equations from their mechanism interpretations."""
+
+    rows: list[dict[str, Any]] = []
+    for equation in equation_assessments:
+        rows.append(
+            {
+                "mechanism_id": equation["equation_family"],
+                "problem_layer": "steady_surface_response",
+                "mechanism": equation.get("mechanism", ""),
+                "pathways": equation.get("pathways", []),
+                "state_variables": equation.get("state_variables", []),
+                "evaluation_status": (
+                    "fitted" if equation.get("computable") else "not_applicable"
+                ),
+                "steady_representation": equation.get("best_model_id", ""),
+                "condition_cv_rmse_nm_s": equation.get(
+                    "condition_cv_rmse_nm_s", float("nan")
+                ),
+                "distinguishable": bool(equation.get("distinguishable", False)),
+                "supported_claims": equation.get("supported_claims", []),
+                "missing_evidence": equation.get("missing_evidence", []),
+            }
+        )
+
+    mvk = get_process_model_info("role_cvd_mvk")
+    equivalents = [
+        row
+        for row in ranking
+        if row.get("equation_family") == AIB_QSS
+        and row.get("class_id") == "AB"
+        and row.get("reduction_id") == "no_desorption"
+    ]
+    representative = (
+        min(equivalents, key=lambda row: float(row["selection_score"]))
+        if equivalents
+        else None
+    )
+    rows.append(
+        {
+            "mechanism_id": "mars_van_krevelen",
+            "problem_layer": "dynamic_surface_state",
+            "mechanism": mvk.mechanism,
+            "pathways": list(mvk.pathways),
+            "state_variables": list(mvk.state_variables),
+            "evaluation_status": (
+                "steady_observable_equivalent"
+                if representative is not None
+                else "not_evaluated"
+            ),
+            "steady_representation": (
+                representative["role_model_id"] if representative is not None else ""
+            ),
+            "condition_cv_rmse_nm_s": (
+                representative["condition_cv_rmse_nm_s"]
+                if representative is not None
+                else float("nan")
+            ),
+            "distinguishable": False,
+            "supported_claims": (
+                [
+                    "steady two-reactant turnover is represented by the exact "
+                    "aib_qss AB no-desorption response"
+                ]
+                if representative is not None
+                else []
+            ),
+            "missing_evidence": [
+                "time-resolved A/B switching or pulse response separating reservoir memory",
+                "surface or lattice oxidation-state observation for oxidized_fraction",
+                "independent regeneration conditions that identify k_regenerate",
+            ],
+            "steady_observable_equivalence": mvk.steady_observable_equivalence,
+        }
+    )
+    return rows
+
+
+def _workflow_layers(
+    equation_assessments: list[dict[str, Any]],
+    *,
+    selected_reaction_input: dict[str, str],
+    spatial_response_mode: str,
+) -> list[dict[str, Any]]:
+    """Describe the finite model scope without mixing physical responsibilities."""
+
+    return [
+        {
+            "layer": "observation_baseline",
+            "responsibility": "test whether any supplied field is needed",
+            "models": ["constant_rate", "empirical_power_compatibility"],
+            "execution_scope": "constant-rate baseline evaluated in the current analysis",
+            "output_quantity": "film deposition rate",
+            "output_unit": "nm/s",
+        },
+        {
+            "layer": "steady_surface_response",
+            "responsibility": "compare observable reaction forms and exact reductions",
+            "models": [row["equation_family"] for row in equation_assessments],
+            "execution_scope": "enumerated and optimized in the current steady-map analysis",
+            "input_quantity": (
+                "normalized local driver u_j=X_j/X_j,ref; "
+                f"X is {selected_reaction_input['quantity']}"
+            ),
+            "input_location": selected_reaction_input["location"],
+            "input_unit": "1",
+            "shape_parameter_unit": "1",
+            "rate_scale_unit": "nm/s",
+        },
+        {
+            "layer": "dynamic_surface_state",
+            "responsibility": "represent memory that steady maps cannot identify",
+            "models": ["role_cvd_aib", "role_cvd_mvk", "role_ald_state"],
+            "execution_scope": (
+                "registered process models; not dynamically fitted because the current "
+                "analysis input has no time axis"
+            ),
+            "state_unit": "1",
+            "mvk_kinetic_coefficient_unit": "m^3/(kmol s)",
+            "time_unit": "s",
+        },
+        {
+            "layer": "transport_closure",
+            "responsibility": "map reference-plane concentration to surface concentration",
+            "models": [
+                "bulk_as_surface_approximation",
+                "direct_surface",
+                "fit_scalar",
+                "from_cfd_flux_sink",
+            ],
+            "supporting_models": [
+                "stagnant_film",
+                "rotating_disk",
+                "bosanquet_diffusivity",
+            ],
+            "execution_scope": (
+                f"current analysis mode is {selected_reaction_input['mode']}; direct_surface, "
+                "fit_scalar, and from_cfd_flux_sink are simulation-pipeline inputs; "
+                "supporting_models are registered km calculators and are not "
+                "automatically dispatched"
+            ),
+            "concentration_unit": "kmol/m^3",
+            "km_unit": "m/s",
+            "flux_unit": "kmol/(m^2 s)",
+        },
+        {
+            "layer": "spatial_residual_response",
+            "responsibility": (
+                "model transferable residual map shape after the chemical model is frozen"
+            ),
+            "models": ["none", "radial_quadratic", "radial_quartic"],
+            "execution_scope": (
+                f"current mode is {spatial_response_mode}; it does not participate in "
+                "reaction-family or anonymous-role selection"
+            ),
+            "mean_rate_policy": "preserve each condition's chemical prediction mean",
+            "temperature_policy": "no temperature spatial term; wafer temperature is uniform",
+        },
+        {
+            "layer": "net_film_balance",
+            "responsibility": "compose deposition, etch, and loss with one sign convention",
+            "models": ["deposition_only", "dep_etch_loss"],
+            "execution_scope": (
+                "registered rate-composition utilities; separate from reaction-role selection"
+            ),
+            "input_unit": "nm/s",
+            "output_unit": "nm/s",
+        },
+        {
+            "layer": "selection_and_validation",
+            "responsibility": "separate numerical fit, role evidence, and mechanism evidence",
+            "models": ["inner_condition_cv", "exact_reduction", "outer_condition_cv", "fixed_holdout"],
+            "execution_scope": "all four stages applied in the current analysis",
+        },
+    ]
 
 
 @dataclass(frozen=True)
@@ -144,191 +573,6 @@ class TransferFit:
                 if self.effect_scopes[group]}
 
 
-def _positive_min_step(values: np.ndarray) -> float | None:
-    unique = np.unique(np.asarray(values, dtype=float))
-    if unique.size < 2:
-        return None
-    differences = np.diff(unique)
-    positive = differences[differences > 0.0]
-    return float(np.min(positive)) if positive.size else None
-
-
-def _load_case(case_id: int, condition_path: Path, validation_path: Path) -> ConditionCase:
-    condition_headers, condition = _read_numeric_csv(condition_path)
-    validation_headers, validation = _read_numeric_csv(validation_path)
-    if "dr_nm_per_sec" not in validation:
-        raise ValueError(f"{validation_path} must contain dr_nm_per_sec")
-    concentration_columns = [name for name in condition_headers if name.startswith("concentration_")]
-    if not concentration_columns:
-        raise ValueError(f"No concentration_* columns found in {condition_path}")
-    species = tuple(name.removeprefix("concentration_") for name in concentration_columns)
-    concentrations = {
-        name: np.asarray(condition[f"concentration_{name}"], dtype=float) for name in species
-    }
-    if any(np.any(~np.isfinite(values)) or np.any(values <= 0.0) for values in concentrations.values()):
-        raise ValueError(f"All concentrations must be positive and finite in {condition_path}")
-    condition_xyz = _coordinate_matrix(condition)
-    validation_xyz = _coordinate_matrix(validation)
-    rate, alignment = _align_validation(
-        condition_xyz,
-        validation_xyz,
-        validation["dr_nm_per_sec"],
-        coordinate_decimals=6,
-    )
-    if np.any(~np.isfinite(rate)) or np.any(rate <= 0.0):
-        raise ValueError(f"All deposition rates must be positive and finite in {validation_path}")
-
-    mole_fractions: dict[str, np.ndarray] = {}
-    missing_molef: list[str] = []
-    for name in species:
-        column = f"molef_{name}"
-        if column in condition:
-            mole_fractions[name] = np.asarray(condition[column], dtype=float)
-        else:
-            missing_molef.append(column)
-    total = np.sum(np.column_stack([concentrations[name] for name in species]), axis=1)
-    molef_sum = (
-        np.sum(np.column_stack([mole_fractions[name] for name in species]), axis=1)
-        if not missing_molef
-        else np.full(rate.shape, np.nan)
-    )
-    species_total_estimates = (
-        np.column_stack(
-            [concentrations[name] / np.maximum(mole_fractions[name], _EPS) for name in species]
-        )
-        if not missing_molef
-        else np.empty((rate.size, 0), dtype=float)
-    )
-    relative_consistency = (
-        np.abs(species_total_estimates - total[:, None]) / np.maximum(total[:, None], _EPS)
-        if species_total_estimates.size
-        else np.empty((rate.size, 0), dtype=float)
-    )
-    density = (
-        np.asarray(condition["density"], dtype=float)
-        if "density" in condition
-        else np.full(rate.shape, np.nan)
-    )
-    nonfinite_count = int(
-        sum(
-            values.size - np.count_nonzero(np.isfinite(values))
-            for values in [*condition.values(), *validation.values()]
-        )
-    )
-    precision = {
-        "rate_unique_count": int(np.unique(rate).size),
-        "rate_min_positive_step_nm_s": _positive_min_step(rate),
-        "species": {
-            name: {
-                "unique_count": int(np.unique(concentrations[name]).size),
-                "min_positive_step_kmol_m3": _positive_min_step(concentrations[name]),
-                "relative_range_vs_median": float(
-                    np.ptp(concentrations[name]) / max(float(np.median(concentrations[name])), _EPS)
-                ),
-            }
-            for name in species
-        },
-    }
-    quality = {
-        "case_id": int(case_id),
-        "condition_columns": condition_headers,
-        "validation_columns": validation_headers,
-        "row_count": int(rate.size),
-        "condition_column_count": len(condition_headers),
-        "validation_column_count": len(validation_headers),
-        "coordinate_alignment": alignment,
-        "nonfinite_value_count": nonfinite_count,
-        "rate_min_nm_s": float(np.min(rate)),
-        "rate_median_nm_s": float(np.median(rate)),
-        "rate_mean_nm_s": float(np.mean(rate)),
-        "rate_max_nm_s": float(np.max(rate)),
-        "total_concentration_min_kmol_m3": float(np.min(total)),
-        "total_concentration_median_kmol_m3": float(np.median(total)),
-        "total_concentration_max_kmol_m3": float(np.max(total)),
-        "density_min_kg_m3": float(np.nanmin(density)),
-        "density_median_kg_m3": float(np.nanmedian(density)),
-        "density_max_kg_m3": float(np.nanmax(density)),
-        "missing_mole_fraction_columns": missing_molef,
-        "mole_fraction_sum_min": float(np.nanmin(molef_sum)),
-        "mole_fraction_sum_max": float(np.nanmax(molef_sum)),
-        "mole_fraction_sum_max_abs_error_from_one": float(np.nanmax(np.abs(molef_sum - 1.0))),
-        "concentration_mole_fraction_max_relative_inconsistency": (
-            float(np.max(relative_consistency)) if relative_consistency.size else None
-        ),
-        "derived_mixture_molar_mass_min_kg_kmol": float(np.nanmin(density / total)),
-        "derived_mixture_molar_mass_max_kg_kmol": float(np.nanmax(density / total)),
-        "precision": precision,
-    }
-    return ConditionCase(
-        case_id=int(case_id),
-        condition_path=Path(condition_path),
-        validation_path=Path(validation_path),
-        xyz=condition_xyz,
-        species=species,
-        concentrations=concentrations,
-        mole_fractions=mole_fractions,
-        density=density,
-        total_concentration=total,
-        rate=np.asarray(rate, dtype=float),
-        quality=quality,
-    )
-
-
-def _grid_alignment(cases: Iterable[ConditionCase], decimals: int = 6) -> dict[str, Any]:
-    case_list = list(cases)
-    base = case_list[0]
-    base_keys = [tuple(row) for row in np.round(base.xyz, decimals=decimals)]
-    result: dict[str, Any] = {"reference_case": base.case_id, "rounding_decimals": decimals, "pairs": []}
-    for other in case_list[1:]:
-        other_keys = [tuple(row) for row in np.round(other.xyz, decimals=decimals)]
-        same_set = set(base_keys) == set(other_keys)
-        lookup = {key: index for index, key in enumerate(other_keys)}
-        if not same_set:
-            raise ValueError(
-                f"Spatial grids differ beyond {decimals} decimals: condition {base.case_id} vs {other.case_id}"
-            )
-        order = np.asarray([lookup[key] for key in base_keys], dtype=int)
-        max_difference = float(np.max(np.abs(base.xyz - other.xyz[order])))
-        result["pairs"].append(
-            {
-                "case_1": base.case_id,
-                "case_2": other.case_id,
-                "same_grid_after_rounding": True,
-                "max_abs_coordinate_difference": max_difference,
-            }
-        )
-    return result
-
-
-def _combine_cases(cases: Iterable[ConditionCase]) -> CombinedCases:
-    case_list = list(cases)
-    if not case_list:
-        raise ValueError("At least one condition is required")
-    species = case_list[0].species
-    if any(case.species != species for case in case_list[1:]):
-        raise ValueError("All conditions must contain the same concentration species in the same order")
-    concentrations = {
-        name: np.concatenate([case.concentrations[name] for case in case_list]) for name in species
-    }
-    condition_id = np.concatenate(
-        [np.full(case.rate.size, case.case_id, dtype=int) for case in case_list]
-    )
-    total_concentration = np.concatenate([case.total_concentration for case in case_list])
-    species_fractions = {
-        name: concentrations[name] / np.maximum(total_concentration, _EPS) for name in species
-    }
-    return CombinedCases(
-        case_ids=tuple(case.case_id for case in case_list),
-        xyz=np.vstack([case.xyz for case in case_list]),
-        condition_id=condition_id,
-        species=species,
-        concentrations=concentrations,
-        species_fractions=species_fractions,
-        total_concentration=total_concentration,
-        rate=np.concatenate([case.rate for case in case_list]),
-    )
-
-
 def _effect_names(candidate: RoleResponseCandidate) -> tuple[str, ...]:
     names = ["common_total_order"]
     if candidate.A is not None and candidate.B is None:
@@ -342,7 +586,7 @@ def _effect_names(candidate: RoleResponseCandidate) -> tuple[str, ...]:
 
 def _transfer_design(
     candidate: RoleResponseCandidate,
-    data: CombinedCases,
+    data: RoleFieldSet,
     indices: np.ndarray,
     *,
     reference_total_concentration: float,
@@ -401,7 +645,7 @@ def _transfer_penalty(candidate: RoleResponseCandidate, response_structure: str)
     return np.column_stack([np.zeros(effects.shape[0]), effects])
 
 
-def _condition_mean_rate(data: CombinedCases, indices: np.ndarray | None = None) -> float:
+def _condition_mean_rate(data: RoleFieldSet, indices: np.ndarray | None = None) -> float:
     indices = np.arange(data.rate.size) if indices is None else indices
     labels, rates = data.condition_id[indices], data.rate[indices]
     return float(np.mean([np.mean(rates[labels == label]) for label in np.unique(labels)]))
@@ -409,7 +653,7 @@ def _condition_mean_rate(data: CombinedCases, indices: np.ndarray | None = None)
 
 def _fit_transfer(
     candidate: RoleResponseCandidate,
-    data: CombinedCases,
+    data: RoleFieldSet,
     train_indices: np.ndarray,
     predict_indices: np.ndarray | None = None,
     *,
@@ -476,7 +720,7 @@ def _fit_transfer(
     )
 
 
-def _predict_transfer(fit: TransferFit, data: CombinedCases) -> tuple[np.ndarray, np.ndarray]:
+def _predict_transfer(fit: TransferFit, data: RoleFieldSet) -> tuple[np.ndarray, np.ndarray]:
     indices = np.arange(data.rate.size, dtype=int)
     design = _transfer_design(
         fit.candidate,
@@ -490,7 +734,7 @@ def _predict_transfer(fit: TransferFit, data: CombinedCases) -> tuple[np.ndarray
 
 
 def _predict_response(
-    fit: TransferFit | SurfaceKineticFit, data: CombinedCases,
+    fit: TransferFit | SurfaceKineticFit, data: RoleFieldSet,
 ) -> tuple[np.ndarray, np.ndarray | dict[str, np.ndarray]]:
     if isinstance(fit, SurfaceKineticFit):
         return predict_surface_kinetic(fit, data)
@@ -499,7 +743,7 @@ def _predict_response(
 
 def _blocked_predictions(
     candidate: RoleResponseCandidate,
-    data: CombinedCases,
+    data: RoleFieldSet,
     groups: np.ndarray,
     *,
     reference_total_concentration: float,
@@ -529,7 +773,7 @@ def _blocked_predictions(
 
 
 def _condition_holdout_predictions(
-    candidate: RoleResponseCandidate, data: CombinedCases, *, regularization: float = 0.0,
+    candidate: RoleResponseCandidate, data: RoleFieldSet, *, regularization: float = 0.0,
     response_structure: str = "shared",
 ) -> tuple[np.ndarray, list[dict[str, Any]]]:
     """Evaluate a fixed structure/strength on identical condition folds."""
@@ -563,21 +807,16 @@ def _condition_holdout_predictions(
 
 
 def _eligibility_reasons(candidate: RoleResponseCandidate, design: np.ndarray) -> list[str]:
-    """Reject unresolved design directions, independent of species names/units."""
+    """Return structural and practical parameter-resolution warnings."""
     if candidate.model_id == "baseline":
         return []
-    scale = np.linalg.norm(design, axis=0)
-    if np.any(scale == 0):
-        return ["a role effect has no independent variation in the training inputs"]
-    singular = np.linalg.svd(design / scale, compute_uv=False)
-    rank = int(np.sum(singular > singular[0] * np.sqrt(np.finfo(float).eps)))
-    return [] if rank == design.shape[1] else [f"only {rank} of {design.shape[1]} model directions are resolved"]
+    return list(parameter_design_diagnostics(design)["reasons"])
 
 
 def _ranking_for_training(
     train_cases: list[ConditionCase],
     *, response_structure: str = "shared",
-) -> tuple[list[dict[str, Any]], dict[str, TransferFit], CombinedCases, np.ndarray, np.ndarray]:
+) -> tuple[list[dict[str, Any]], dict[str, TransferFit], RoleFieldSet, np.ndarray, np.ndarray]:
     if response_structure not in (*RESPONSE_STRUCTURES, "select"):
         raise ValueError("response_structure must be shared, within_between or select")
     structures = RESPONSE_STRUCTURES if response_structure == "select" else (response_structure,)
@@ -594,8 +833,8 @@ def _ranking_for_training(
     rows: list[dict[str, Any]] = []
     for candidate in candidates:
         # Joint role/strength selection: these are inner CV scores, not an
-        # unbiased evaluation of the selected model. _split_evaluation supplies
-        # the untouched outer condition for that purpose.
+        # no-refit evaluation of the selected model. _split_evaluation supplies
+        # the fixed outer condition for that purpose.
         strengths = []
         for structure in structures:
             for strength in REGULARIZATION_GRID:
@@ -650,7 +889,7 @@ def _ranking_for_training(
         angular = _metrics(data.rate, angular_prediction)
         radial = _metrics(data.rate, radial_prediction)
         condition = _metrics(data.rate, condition_prediction)
-        condition_number = float(np.linalg.cond(fit.design))
+        design_diagnostics = parameter_design_diagnostics(fit.design)
         reasons = _eligibility_reasons(candidate, fit.design)
         rows.append(
             {
@@ -680,7 +919,13 @@ def _ranking_for_training(
                 "inactive_roles": ";".join(slot for slot in ("A", "I", "B")
                                            if getattr(candidate, slot) is not None and fit.effective_roles[slot] is None),
                 "role_symmetry": "A/B exchange" if "AB" in fit.effect_groups else "",
-                "fit_diagnostics": {"identifiability": {"assessed": True, "degeneracy_warning": bool(reasons)}},
+                "fit_diagnostics": {
+                    "identifiability": {
+                        "assessed": True,
+                        "degeneracy_warning": bool(reasons),
+                        **design_diagnostics,
+                    }
+                },
                 "regularization": strength,
                 "regularization_scores": [{"strength": item[1], "response_structure": item[4],
                                            "condition_mse": item[0], "numerical_failure": item[5]} for item in strengths],
@@ -702,7 +947,14 @@ def _ranking_for_training(
                 "condition_cv_worst_case": int(
                     max(condition_rows, key=lambda row: float(row["relative_rmse"]))["condition"]
                 ),
-                "design_condition_number": condition_number,
+                "design_condition_number": design_diagnostics["condition_number"],
+                "design_full_rank": design_diagnostics["full_rank"],
+                "design_max_abs_parameter_correlation": design_diagnostics[
+                    "max_abs_parameter_correlation"
+                ],
+                "parameter_identifiability_status": (
+                    "sufficient" if candidate.model_id == "baseline" else design_diagnostics["status"]
+                ),
                 "eligible_for_adoption": bool(np.isfinite(condition_prediction).all()),
                 "ineligibility_reasons": "",
                 "design_identifiable": not reasons,
@@ -740,28 +992,36 @@ def _ranking_for_training(
 
 def _surface_condition_holdout_predictions(
     candidate: SurfaceKineticCandidate,
-    data: CombinedCases,
+    data: RoleFieldSet,
+    optimization: SurfaceOptimizationSettings,
 ) -> tuple[np.ndarray, list[dict[str, Any]]]:
     """Condition CV for a fixed physical reduction with fold-local references."""
     prediction = np.full(data.rate.shape, np.nan, dtype=float)
     all_indices = np.arange(data.rate.size, dtype=int)
-    rows: list[dict[str, Any]] = []
-    for held_out in data.case_ids:
-        train_idx = all_indices[data.condition_id != held_out]
+
+    def fit(remaining: tuple[int, ...]) -> SurfaceKineticFit:
+        train_idx = all_indices[np.isin(data.condition_id, remaining)]
+        return fit_surface_kinetic(
+            candidate, data, train_idx, optimization=optimization
+        )
+
+    def evaluate(
+        fitted: SurfaceKineticFit, held_out: int, remaining: tuple[int, ...]
+    ) -> dict[str, Any]:
+        train_idx = all_indices[np.isin(data.condition_id, remaining)]
         valid_idx = all_indices[data.condition_id == held_out]
-        fitted = fit_surface_kinetic(candidate, data, train_idx)
         prediction[valid_idx] = fitted.prediction[valid_idx]
         metrics = _transfer_metrics(
             data.rate[valid_idx], fitted.prediction[valid_idx],
             _condition_mean_rate(data, train_idx),
         )
-        rows.append({
+        return {
             **metrics,
             "condition": int(held_out),
             "weight": 1.0,
             "quantity": "deposition_rate",
             "unit": "nm/s",
-            "refit_score": fitted.objective_mse,
+            "refit_score": fitted.objective_value,
             "effect_groups": fitted.effect_groups,
             "effective_roles": fitted.effective_roles,
             "effect_scopes": fitted.effect_scopes,
@@ -771,7 +1031,9 @@ def _surface_condition_holdout_predictions(
             "within_total_order": float("nan"),
             "max_effect_coefficient": max(fitted.shape_parameters.values(), default=0.0),
             "boundary_parameters": list(fitted.boundary_parameters),
-        })
+        }
+
+    rows = condition_refits(data.case_ids, fit, evaluate)
     if not np.all(np.isfinite(prediction)):
         raise RuntimeError(f"Condition-holdout CV failed for {candidate.model_id}")
     return prediction, rows
@@ -779,9 +1041,10 @@ def _surface_condition_holdout_predictions(
 
 def _surface_blocked_predictions(
     candidate: SurfaceKineticCandidate,
-    data: CombinedCases,
+    data: RoleFieldSet,
     groups: np.ndarray,
     reference_concentrations: dict[str, float],
+    optimization: SurfaceOptimizationSettings,
 ) -> np.ndarray:
     prediction = np.full(data.rate.shape, np.nan, dtype=float)
     all_indices = np.arange(data.rate.size, dtype=int)
@@ -793,6 +1056,7 @@ def _surface_blocked_predictions(
             data,
             train_idx,
             reference_concentrations=reference_concentrations,
+            optimization=optimization,
         )
         prediction[valid_idx] = fitted.prediction[valid_idx]
     if not np.all(np.isfinite(prediction)):
@@ -802,21 +1066,49 @@ def _surface_blocked_predictions(
 
 def _surface_ranking_for_training(
     train_cases: list[ConditionCase],
-) -> tuple[list[dict[str, Any]], dict[str, SurfaceKineticFit], CombinedCases, np.ndarray, np.ndarray]:
-    """Rank site-balance reductions using raw-rate condition prediction."""
+    *,
+    families: tuple[str, ...] = (AIB_QSS,),
+    candidate_id: str | None = None,
+    optimization: SurfaceOptimizationSettings | None = None,
+    reaction_input_mode: str = "bulk_as_surface",
+    record_optimization_history: bool = False,
+) -> tuple[list[dict[str, Any]], dict[str, SurfaceKineticFit], RoleFieldSet, np.ndarray, np.ndarray]:
+    """Rank site-balance reductions using one declared whole-wafer loss."""
+    optimization = optimization or SurfaceOptimizationSettings()
     data = _combine_cases(train_cases)
     indices = np.arange(data.rate.size, dtype=int)
-    candidates = enumerate_surface_kinetic_candidates(data.species, include_boundaries=True)
+    candidates = enumerate_surface_kinetic_candidates(
+        data.species,
+        include_boundaries=True,
+        families=families,
+        available_inputs=data.available_inputs(),
+        transport_modes=(reaction_input_mode,),
+    )
+    if candidate_id is not None:
+        candidates = [candidate for candidate in candidates if candidate.model_id == candidate_id]
+        if not candidates:
+            raise ValueError(
+                f"Candidate {candidate_id!r} is not applicable to the supplied fields and model families"
+            )
     angular_groups = _angular_groups(data.xyz[:, :2])
     radial_groups = _radial_groups(data.xyz[:, :2])
     fits: dict[str, SurfaceKineticFit] = {}
     rows: list[dict[str, Any]] = []
     for candidate in candidates:
-        condition_prediction, condition_rows = _surface_condition_holdout_predictions(candidate, data)
-        fit = fit_surface_kinetic(candidate, data, indices)
+        condition_prediction, condition_rows = _surface_condition_holdout_predictions(
+            candidate, data, optimization
+        )
+        fit = fit_surface_kinetic(
+            candidate,
+            data,
+            indices,
+            optimization=optimization,
+            record_optimization_history=record_optimization_history,
+        )
         fits[candidate.model_id] = fit
         in_sample = _metrics(data.rate, fit.prediction)
         condition = _metrics(data.rate, condition_prediction)
+        design_diagnostics = parameter_design_diagnostics(fit.design)
         reasons = _eligibility_reasons(candidate, fit.design)
         if fit.boundary_parameters:
             reasons.append(
@@ -824,10 +1116,18 @@ def _surface_ranking_for_training(
                 + ", ".join(fit.boundary_parameters)
             )
         rows.append({
+            "_candidate": candidate,
             "model_id": candidate.model_id,
             "role_model_id": candidate.model_id,
-            "model_family": "surface_qss",
-            "kinetic_limit": candidate.kinetic_limit,
+            "model_family": candidate.model_family,
+            "equation_family": (
+                "observation_baseline"
+                if candidate.class_id in {"baseline", "total_power"}
+                else candidate.family
+            ),
+            "reduction_id": candidate.reduction_id,
+            "transport_mode": candidate.transport_mode,
+            "reaction_input": data.reaction_input_metadata(candidate.transport_mode),
             "roles": {"A": candidate.A, "I": candidate.I, "B": candidate.B},
             "quantity": "deposition_rate",
             "unit": "nm/s",
@@ -841,8 +1141,14 @@ def _surface_ranking_for_training(
                 if reduction.effect_groups != candidate.effect_groups
             ],
             "reduced_model_ids": [reduction.model_id for reduction in candidate.reductions()],
+            "reduced_model_effects": {
+                reduction.model_id: list(
+                    reduction_removed_effects(candidate, reduction)
+                )
+                for reduction in candidate.reductions()
+            },
             "effect_basis": "declared_state_model_roles",
-            "best_score": fit.objective_mse,
+            "best_score": fit.objective_value,
             "search_space_count": fit.design.shape[1],
             "validation_conditions": condition_rows,
             "class_id": candidate.class_id,
@@ -859,6 +1165,7 @@ def _surface_ranking_for_training(
                     "assessed": True,
                     "degeneracy_warning": bool(reasons),
                     "boundary_parameters": list(fit.boundary_parameters),
+                    **design_diagnostics,
                 }
             },
             "regularization": 0.0,
@@ -866,7 +1173,10 @@ def _surface_ranking_for_training(
             "common_total_order": float("nan"),
             "within_total_order": float("nan"),
             "reference_rate_nm_s": fit.reference_rate_nm_s,
-            "reference_concentrations_kmol_m3": fit.reference_concentrations,
+            "reference_reaction_inputs": fit.reference_concentrations,
+            "reaction_input_unit": data.reaction_input_metadata(
+                candidate.transport_mode
+            )["unit"],
             "observable_parameters": fit.shape_parameters,
             "formula": surface_formula(candidate),
             "in_sample_rmse_nm_s": in_sample["rmse_nm_s"],
@@ -880,12 +1190,22 @@ def _surface_ranking_for_training(
             "condition_cv_r2": condition["r2"],
             "condition_cv_worst_relative_rmse": max(float(row["relative_rmse"]) for row in condition_rows),
             "condition_cv_worst_case": int(max(condition_rows, key=lambda row: float(row["relative_rmse"]))["condition"]),
-            "design_condition_number": float(np.linalg.cond(fit.design)),
+            "design_condition_number": design_diagnostics["condition_number"],
+            "design_full_rank": design_diagnostics["full_rank"],
+            "design_max_abs_parameter_correlation": design_diagnostics[
+                "max_abs_parameter_correlation"
+            ],
+            "parameter_identifiability_status": design_diagnostics["status"],
             "eligible_for_adoption": bool(np.isfinite(condition_prediction).all()),
             "ineligibility_reasons": "",
             "design_identifiable": not reasons,
             "design_information": "; ".join(reasons),
+            "optimizer_method": fit.optimizer_method,
+            "optimizer_trial_count": fit.optimizer_trial_count,
+            "loss_name": fit.loss_name,
+            "_optimization_history": fit.optimization_history,
         })
+    _annotate_surface_candidates(rows, data)
     rows.sort(key=lambda row: (
         float(row["condition_cv_rmse_nm_s"]),
         int(row["role_effect_count"]),
@@ -901,14 +1221,23 @@ def _surface_ranking_for_training(
     rows = [by_id.get(row["model_id"], row) for row in rows]
     for row in rows:
         row.setdefault("adoption_rank", "")
+    _finalize_surface_evidence(rows)
 
     selected = next(row for row in rows if row.get("adoption_rank") == 1)
     selected_fit = fits[str(selected["role_model_id"])]
     angular_prediction = _surface_blocked_predictions(
-        selected_fit.candidate, data, angular_groups, selected_fit.reference_concentrations
+        selected_fit.candidate,
+        data,
+        angular_groups,
+        selected_fit.reference_concentrations,
+        optimization,
     )
     radial_prediction = _surface_blocked_predictions(
-        selected_fit.candidate, data, radial_groups, selected_fit.reference_concentrations
+        selected_fit.candidate,
+        data,
+        radial_groups,
+        selected_fit.reference_concentrations,
+        optimization,
     )
     angular = _metrics(data.rate, angular_prediction)
     radial = _metrics(data.rate, radial_prediction)
@@ -920,7 +1249,14 @@ def _surface_ranking_for_training(
         "blocked_cv_rmse_nm_s": max(angular["rmse_nm_s"], radial["rmse_nm_s"]),
     })
 
-    baseline_cv = float(next(row for row in rows if row["class_id"] == "baseline")["condition_cv_rmse_nm_s"])
+    baseline_row = next(
+        (row for row in rows if row["class_id"] == "baseline"), None
+    )
+    baseline_cv = (
+        float(baseline_row["condition_cv_rmse_nm_s"])
+        if baseline_row is not None
+        else float("nan")
+    )
     for row in rows:
         row["condition_cv_improvement_vs_baseline"] = (
             baseline_cv - float(row["condition_cv_rmse_nm_s"])
@@ -931,7 +1267,7 @@ def _surface_ranking_for_training(
 def _select_model(ranking: list[dict[str, Any]]) -> tuple[dict[str, Any], dict[str, Any], str]:
     selected = next(row for row in ranking if row.get("adoption_rank") == 1)
     equivalent = [row["role_model_id"] for row in ranking if row.get("equivalent_to_best", False)]
-    if selected.get("model_family") == "surface_qss":
+    if str(selected.get("model_family", "")).startswith("surface_"):
         reason = ("Minimum condition-refit raw-rate prediction error among quasi-steady site-balance "
                   "reductions; numerical ties prefer fewer observable effects and parameters.")
     else:
@@ -960,12 +1296,12 @@ def _transfer_metrics(target: np.ndarray, prediction: np.ndarray, train_mean: fl
     }
 
 
-def _extrapolation_summary(train: CombinedCases, test: CombinedCases) -> list[dict[str, Any]]:
+def _extrapolation_summary(train: RoleFieldSet, test: RoleFieldSet) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     fields = {"total_concentration": (train.total_concentration, test.total_concentration)}
     fields.update(
         {
-            f"concentration_{name}": (train.concentrations[name], test.concentrations[name])
+            f"concentration_{name}": (train.bulk_concentrations[name], test.bulk_concentrations[name])
             for name in train.species
         }
     )
@@ -986,13 +1322,168 @@ def _extrapolation_summary(train: CombinedCases, test: CombinedCases) -> list[di
     return rows
 
 
+def _selection_structure(selection: dict[str, Any]) -> dict[str, Any]:
+    """Return the discrete choices that define one refittable model structure."""
+
+    return {
+        "role_model_id": str(selection["selected_role_model_id"]),
+        "equation_family": str(selection["selected_equation_family"]),
+        "transport_mode": str(selection.get("transport_mode", "empirical")),
+        "response_structure": str(selection["response_structure"]),
+        "regularization": float(selection["regularization"]),
+    }
+
+
+def _model_structure_uncertainty(
+    train: RoleFieldSet,
+    test: RoleFieldSet,
+    selections: Iterable[dict[str, Any]],
+    *,
+    response_model: str,
+    selected_prediction: np.ndarray,
+    model_families: tuple[str, ...] | None = None,
+    candidate_id: str | None = None,
+    surface_optimization: SurfaceOptimizationSettings | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Refit structures selected across outer folds on one identification set.
+
+    The resulting range is a selection-sensitivity envelope, not a confidence
+    interval. Numerically identical predictions are collapsed so exact model
+    symmetries cannot inflate the reported number of alternatives.
+    """
+
+    surface = _uses_surface_response(response_model)
+    if surface:
+        candidates: Iterable[SurfaceKineticCandidate | RoleResponseCandidate] = (
+            enumerate_surface_kinetic_candidates(
+                train.species,
+                include_boundaries=True,
+                families=_surface_families(response_model, model_families),
+                available_inputs=train.available_inputs(),
+                transport_modes=train.available_transport_modes(),
+            )
+        )
+    else:
+        candidates = enumerate_role_response_candidates(
+            train.species, include_reductions=True
+        )
+    candidate_lookup = {candidate.model_id: candidate for candidate in candidates}
+    if candidate_id is not None:
+        candidate_lookup = {
+            key: value for key, value in candidate_lookup.items() if key == candidate_id
+        }
+    indices = np.arange(train.rate.size, dtype=int)
+
+    structures: dict[str, tuple[dict[str, Any], int]] = {}
+    for selection in selections:
+        structure = _selection_structure(selection)
+        key = json.dumps(structure, ensure_ascii=True, sort_keys=True)
+        previous = structures.get(key)
+        structures[key] = (structure, 1 if previous is None else previous[1] + 1)
+
+    members: list[dict[str, Any]] = []
+    equality_scale = max(float(np.max(np.abs(test.rate))), _EPS)
+    equality_atol = 128.0 * np.finfo(float).eps * equality_scale
+    for structure, selection_count in structures.values():
+        candidate = candidate_lookup.get(structure["role_model_id"])
+        if candidate is None:
+            raise RuntimeError(
+                f"Selected structure is not available in the current candidate registry: {structure}"
+            )
+        if surface:
+            assert isinstance(candidate, SurfaceKineticCandidate)
+            fitted: TransferFit | SurfaceKineticFit = fit_surface_kinetic(
+                candidate,
+                train,
+                indices,
+                optimization=surface_optimization,
+            )
+        else:
+            assert isinstance(candidate, RoleResponseCandidate)
+            fitted = _fit_transfer(
+                candidate,
+                train,
+                indices,
+                regularization=structure["regularization"],
+                response_structure=structure["response_structure"],
+            )
+        prediction, _ = _predict_response(fitted, test)
+        equivalent = next(
+            (
+                member
+                for member in members
+                if np.allclose(
+                    member["prediction"], prediction, rtol=128.0 * np.finfo(float).eps,
+                    atol=equality_atol,
+                )
+            ),
+            None,
+        )
+        if equivalent is None:
+            members.append(
+                {
+                    "prediction": prediction,
+                    "structures": [structure],
+                    "selection_count": selection_count,
+                }
+            )
+        else:
+            equivalent["structures"].append(structure)
+            equivalent["selection_count"] += selection_count
+
+    matrix = np.column_stack([member["prediction"] for member in members])
+    lower = np.min(matrix, axis=1)
+    upper = np.max(matrix, axis=1)
+    mean = np.mean(matrix, axis=1)
+    width = upper - lower
+    rows = [
+        {
+            "condition": int(test.condition_id[index]),
+            "x": float(test.xyz[index, 0]),
+            "y": float(test.xyz[index, 1]),
+            "z": float(test.xyz[index, 2]),
+            "measured_rate_nm_s": float(test.rate[index]),
+            "selected_model_prediction_nm_s": float(selected_prediction[index]),
+            "structure_mean_prediction_nm_s": float(mean[index]),
+            "structure_min_prediction_nm_s": float(lower[index]),
+            "structure_max_prediction_nm_s": float(upper[index]),
+            "structure_envelope_width_nm_s": float(width[index]),
+            "distinct_prediction_count": len(members),
+        }
+        for index in range(test.rate.size)
+    ]
+    return rows, {
+        "interpretation": (
+            "Prediction range after refitting the distinct model structures selected "
+            "across outer condition folds on the primary identification conditions; "
+            "this is selection sensitivity, not a confidence interval."
+        ),
+        "selection_count": int(sum(member["selection_count"] for member in members)),
+        "distinct_structure_count": len(structures),
+        "distinct_prediction_count": len(members),
+        "members": [
+            {
+                "selection_count": int(member["selection_count"]),
+                "equivalent_structures": member["structures"],
+            }
+            for member in members
+        ],
+        "mean_envelope_width_nm_s": float(np.mean(width)),
+        "max_envelope_width_nm_s": float(np.max(width)),
+        "mean_envelope_width_relative_to_test_mean": float(
+            np.mean(width) / max(abs(float(np.mean(test.rate))), _EPS)
+        ),
+    }
+
+
 def _bootstrap_coefficients(
     fit: TransferFit | SurfaceKineticFit,
-    data: CombinedCases,
+    data: RoleFieldSet,
     angular_groups: np.ndarray,
     *,
     samples: int,
     seed: int,
+    surface_optimization: SurfaceOptimizationSettings | None = None,
 ) -> np.ndarray:
     rng = np.random.default_rng(seed)
     unique_groups = np.unique(angular_groups)
@@ -1008,6 +1499,7 @@ def _bootstrap_coefficients(
                 reference_concentrations=fit.reference_concentrations,
                 initial_fit=fit,
                 local_only=True,
+                optimization=surface_optimization,
             )
         else:
             sample_fit = _fit_transfer(
@@ -1043,7 +1535,7 @@ def _coefficient_rows(
                 "bootstrap_p50": float(np.quantile(samples, 0.50)),
                 "bootstrap_p95": float(np.quantile(samples, 0.95)),
                 "bootstrap_zero_fraction": float(np.mean(samples <= 1.0e-14)),
-                "kinetic_limit": fit.candidate.kinetic_limit,
+                "reduction_id": fit.candidate.reduction_id,
                 "elementary_constant": False,
             })
         return rows
@@ -1089,111 +1581,37 @@ def _coefficient_rows(
     return rows
 
 
-def _alternative_predictors(
-    train: CombinedCases,
-    test: CombinedCases,
-) -> list[dict[str, Any]]:
-    predictors: list[tuple[str, np.ndarray, np.ndarray]] = [
-        ("total_concentration", train.total_concentration, test.total_concentration)
-    ]
-    predictors.extend(
-        (name, train.concentrations[name], test.concentrations[name]) for name in train.species
-    )
-    rows: list[dict[str, Any]] = []
-    for name, train_values, test_values in predictors:
-        reference = float(np.median(train_values))
-        train_design = np.column_stack(
-            [np.ones(train.rate.size, dtype=float), np.log(train_values / reference)]
-        )
-        coefficients, _ = _fit_nonnegative_effects(train_design, np.log(train.rate))
-        train_prediction = np.exp(train_design @ coefficients)
-        test_design = np.column_stack(
-            [np.ones(test.rate.size, dtype=float), np.log(test_values / reference)]
-        )
-        test_prediction = np.exp(test_design @ coefficients)
-        test_metrics = _transfer_metrics(test.rate, test_prediction, _condition_mean_rate(train))
-        rows.append(
-            {
-                "predictor": name,
-                "reference_concentration_kmol_m3": reference,
-                "power_order": float(coefficients[1]),
-                "train_rmse_nm_s": _metrics(train.rate, train_prediction)["rmse_nm_s"],
-                "test_rmse_nm_s": test_metrics["rmse_nm_s"],
-                "test_relative_rmse": test_metrics["relative_rmse_vs_test_mean"],
-                "test_bias_nm_s": test_metrics["bias_nm_s"],
-                "test_spatial_correlation": test_metrics["spatial_correlation"],
-                "test_mean_prediction_nm_s": float(np.mean(test_prediction)),
-            }
-        )
-    rows.sort(key=lambda row: float(row["test_rmse_nm_s"]))
-    for rank, row in enumerate(rows, start=1):
-        row["test_rank_diagnostic_only"] = rank
-    return rows
-
-
-def _candidate_test_diagnostics(
-    train: CombinedCases,
-    test: CombinedCases,
-    ranking: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """Evaluate every training-selected candidate on the untouched test map.
-
-    These rows are diagnostic only.  Their test ranks must never feed back into
-    model selection, but they make clear whether a simpler role assignment
-    transfers as well as the selected training candidate.
-    """
-    surface = any(row.get("model_family") == "surface_qss" for row in ranking)
-    available = (
-        enumerate_surface_kinetic_candidates(train.species, include_boundaries=True)
-        if surface
-        else enumerate_role_response_candidates(train.species, include_reductions=True)
-    )
-    candidate_lookup = {candidate.model_id: candidate for candidate in available}
-    indices = np.arange(train.rate.size, dtype=int)
-    rows: list[dict[str, Any]] = []
-    for training_row in ranking:
-        candidate = candidate_lookup[str(training_row["role_model_id"])]
-        if surface:
-            fit = fit_surface_kinetic(candidate, train, indices)
-        else:
-            fit = _fit_transfer(candidate, train, indices, regularization=training_row["regularization"],
-                                response_structure=training_row["response_structure"])
-        prediction, _ = _predict_response(fit, test)
-        metrics = _transfer_metrics(test.rate, prediction, _condition_mean_rate(train))
-        rows.append(
-            {
-                "model_id": training_row["model_id"],
-                "training_numerical_rank": training_row["numerical_rank"],
-                "training_adoption_rank": training_row["adoption_rank"],
-                "training_eligible_for_adoption": training_row["eligible_for_adoption"],
-                "regularization": fit.regularization,
-                "response_structure": fit.response_structure,
-                "test_rmse_nm_s": metrics["rmse_nm_s"],
-                "test_relative_rmse": metrics["relative_rmse_vs_test_mean"],
-                "test_bias_nm_s": metrics["bias_nm_s"],
-                "test_centered_spatial_r2": metrics["centered_spatial_r2"],
-                "test_spatial_correlation": metrics["spatial_correlation"],
-                "test_prediction_range_nm_s": metrics["prediction_range_nm_s"],
-                "test_range_capture_fraction": metrics["range_capture_fraction"],
-                "used_for_model_selection": False,
-            }
-        )
-    rows.sort(key=lambda row: (float(row["test_rmse_nm_s"]), str(row["model_id"])))
-    for rank, row in enumerate(rows, start=1):
-        row["test_rank_diagnostic_only"] = rank
-    return rows
-
-
 def _split_evaluation(
     train_cases: list[ConditionCase],
     test_case: ConditionCase,
-    *, response_structure: str = "shared", response_model: str = "empirical_power",
-) -> tuple[dict[str, Any], list[dict[str, Any]], TransferFit | SurfaceKineticFit, np.ndarray, CombinedCases, CombinedCases]:
+    *,
+    response_structure: str = "shared",
+    response_model: str = "empirical_power",
+    model_families: tuple[str, ...] | None = None,
+    candidate_id: str | None = None,
+    surface_optimization: SurfaceOptimizationSettings | None = None,
+    reaction_input_mode: str = "bulk_as_surface",
+    record_optimization_history: bool = False,
+) -> tuple[dict[str, Any], list[dict[str, Any]], TransferFit | SurfaceKineticFit, np.ndarray, RoleFieldSet, RoleFieldSet]:
     if response_model not in RESPONSE_MODELS:
         raise ValueError(f"response_model must be one of {RESPONSE_MODELS}")
-    if response_model == "surface_qss":
-        ranking, fits, train, _, _ = _surface_ranking_for_training(train_cases)
+    families = _surface_families(response_model, model_families)
+    if families:
+        ranking, fits, train, _, _ = _surface_ranking_for_training(
+            train_cases,
+            families=families,
+            candidate_id=candidate_id,
+            optimization=surface_optimization,
+            reaction_input_mode=reaction_input_mode,
+            record_optimization_history=record_optimization_history,
+        )
+    elif candidate_id is not None:
+        raise ValueError("candidate_id applies only to response_model='surface_compare'")
     else:
+        if reaction_input_mode != "bulk_as_surface":
+            raise ValueError(
+                "response_model='empirical_power' is defined only for bulk_concentration"
+            )
         ranking, fits, train, _, _ = _ranking_for_training(train_cases, response_structure=response_structure)
     selected_row, unrestricted_row, selection_reason = _select_model(ranking)
     selected_fit = fits[str(selected_row["role_model_id"])]
@@ -1207,6 +1625,27 @@ def _split_evaluation(
         unrestricted_prediction,
         _condition_mean_rate(train),
     )
+    reaction_input_metadata = (
+        train.reaction_input_metadata(selected_fit.candidate.transport_mode)
+        if isinstance(selected_fit, SurfaceKineticFit)
+        else {
+            "mode": "bulk_as_surface",
+            "quantity": "concentration",
+            "location": "reference_plane",
+            "unit": "kmol/m^3",
+            "interpretation": "empirical bulk-concentration response",
+        }
+    )
+    reference_input_total = (
+        selected_fit.reference_input_total
+        if isinstance(selected_fit, SurfaceKineticFit)
+        else selected_fit.reference_total_concentration
+    )
+    reference_input_shares = (
+        selected_fit.reference_input_shares
+        if isinstance(selected_fit, SurfaceKineticFit)
+        else selected_fit.reference_species_fractions
+    )
     result = {
         "train_cases": "+".join(str(case.case_id) for case in train_cases),
         "test_case": test_case.case_id,
@@ -1217,6 +1656,21 @@ def _split_evaluation(
         "selected_role_B": selected_fit.candidate.B or "",
         "selected_role_terms": "|".join(selected_fit.effect_names),
         "response_model": response_model,
+        "selected_equation_family": getattr(
+            selected_fit.candidate, "family", selected_fit.response_structure
+        ),
+        "selected_applicability_status": selected_row.get(
+            "applicability_status", "production"
+        ),
+        "selected_contrast_status": selected_row.get(
+            "contrast_status", "not_assessed"
+        ),
+        "selected_distinguishable": bool(
+            selected_row.get("distinguishable", False)
+        ),
+        "selected_supported_claims": selected_row.get("supported_claims", []),
+        "selected_missing_evidence": selected_row.get("missing_evidence", []),
+        "transport_mode": getattr(selected_fit.candidate, "transport_mode", "empirical"),
         "effective_roles": selected_fit.effective_roles,
         "effect_groups": selected_fit.effect_groups,
         "effect_scopes": selected_fit.effect_scopes, "response_structure": selected_fit.response_structure,
@@ -1238,7 +1692,16 @@ def _split_evaluation(
         "train_condition_cv_worst_case": int(selected_row["condition_cv_worst_case"]),
         "common_total_order": selected_fit.common_order,
         "within_total_order": selected_fit.within_order,
-        "reference_total_concentration_kmol_m3": selected_fit.reference_total_concentration,
+        "reaction_input_quantity": reaction_input_metadata["quantity"],
+        "reaction_input_location": reaction_input_metadata["location"],
+        "reaction_input_unit": reaction_input_metadata["unit"],
+        "reference_reaction_input_total": reference_input_total,
+        "reference_reaction_input_shares": reference_input_shares,
+        "reference_total_concentration_kmol_m3": (
+            reference_input_total
+            if reaction_input_metadata["quantity"] == "concentration"
+            else None
+        ),
         "reference_rate_nm_s": selected_fit.reference_rate_nm_s,
         **{f"test_{key}": value for key, value in test_metrics.items()},
         "unrestricted_test_rmse_nm_s": unrestricted_metrics["rmse_nm_s"],
@@ -1307,7 +1770,7 @@ def _scaling_rows(cases: list[ConditionCase]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for case in cases[1:]:
         for name in base.species:
-            ratios = case.concentrations[name] / base.concentrations[name]
+            ratios = case.bulk_concentrations[name] / base.bulk_concentrations[name]
             rows.append(
                 {
                     "reference_condition": base.case_id,
@@ -1332,7 +1795,7 @@ def _scaling_rows(cases: list[ConditionCase]) -> list[dict[str, Any]]:
 
 def _correlation_rows(cases: Iterable[ConditionCase]) -> list[dict[str, Any]]:
     combined = _combine_cases(cases)
-    matrix = np.column_stack([combined.concentrations[name] for name in combined.species])
+    matrix = np.column_stack([combined.bulk_concentrations[name] for name in combined.species])
     correlation = np.corrcoef(matrix, rowvar=False)
     rows: list[dict[str, Any]] = []
     for left in range(len(combined.species)):
@@ -1347,397 +1810,370 @@ def _correlation_rows(cases: Iterable[ConditionCase]) -> list[dict[str, Any]]:
     return rows
 
 
-def _plot_results(
-    output_dir: Path,
-    cases: list[ConditionCase],
-    primary_fit: TransferFit | SurfaceKineticFit,
-    primary_train: CombinedCases,
-    primary_test: CombinedCases,
-    primary_prediction: np.ndarray,
+def _optimization_history_rows(
     ranking: list[dict[str, Any]],
-) -> list[Path]:
-    import matplotlib
+    family_assessments: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return convergence records for the best assignment in each equation family."""
 
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    plot_dir = output_dir / "plots"
-    plot_dir.mkdir(parents=True, exist_ok=True)
-    outputs: list[Path] = []
-
-    figure, axis = plt.subplots(figsize=(8.0, 5.5), constrained_layout=True)
-    for case in cases:
-        color = "#2563eb" if case.case_id in primary_train.case_ids else "#d97706"
-        combined_case = _combine_cases([case])
-        case_prediction, _ = _predict_response(primary_fit, combined_case)
-        mean_total = float(np.mean(case.total_concentration))
-        mean_measured = float(np.mean(case.rate))
-        mean_prediction = float(np.mean(case_prediction))
-        axis.plot(
-            [mean_total, mean_total],
-            [mean_measured, mean_prediction],
-            color=color,
-            alpha=0.45,
-            linewidth=1.2,
-        )
-        axis.scatter(
-            mean_total,
-            mean_measured,
-            s=80,
-            marker="o",
-            color=color,
-            edgecolor="#111827",
-            linewidth=0.6,
-            label="measured identification" if case.case_id == primary_train.case_ids[0] else (
-                "measured held-out" if case.case_id == primary_test.case_ids[0] else None
-            ),
-        )
-        axis.scatter(
-            mean_total,
-            mean_prediction,
-            s=85,
-            marker="x",
-            color=color,
-            linewidth=1.8,
-            label="model prediction" if case.case_id == cases[0].case_id else None,
-        )
-        axis.annotate(
-            f"condition {case.case_id}",
-            (mean_total, mean_measured),
-            xytext=(7, 7),
-            textcoords="offset points",
-        )
-    axis.set_xlabel("Mean total concentration [kmol/m³]")
-    axis.set_ylabel("Mean deposition rate [nm/s]")
-    axis.set_title("Condition-mean transfer of the selected role model")
-    handles, labels = axis.get_legend_handles_labels()
-    unique = dict(zip(labels, handles))
-    axis.legend(unique.values(), unique.keys(), frameon=False)
-    axis.grid(alpha=0.25)
-    path = plot_dir / "condition_mean_transfer.png"
-    figure.savefig(path, dpi=180)
-    plt.close(figure)
-    outputs.append(path)
-
-    figure, axis = plt.subplots(figsize=(6.6, 6.0), constrained_layout=True)
-    axis.scatter(primary_test.rate, primary_prediction, s=55, color="#2563eb", edgecolor="#1f2937", linewidth=0.6)
-    low = min(float(np.min(primary_test.rate)), float(np.min(primary_prediction)))
-    high = max(float(np.max(primary_test.rate)), float(np.max(primary_prediction)))
-    axis.plot([low, high], [low, high], linestyle="--", color="#334155", linewidth=1.5)
-    axis.set_xlabel("Measured deposition rate [nm/s]")
-    axis.set_ylabel("Held-out prediction [nm/s]")
-    axis.set_title(
-        f"Condition {primary_test.case_ids[0]}: measured versus no-refit prediction"
-    )
-    axis.grid(alpha=0.25)
-    path = plot_dir / "test_measured_vs_predicted.png"
-    figure.savefig(path, dpi=180)
-    plt.close(figure)
-    outputs.append(path)
-
-    figure, axes = plt.subplots(1, 3, figsize=(14.0, 4.5), constrained_layout=True)
-    xy = primary_test.xyz[:, :2]
-    rate_low = min(float(np.min(primary_test.rate)), float(np.min(primary_prediction)))
-    rate_high = max(float(np.max(primary_test.rate)), float(np.max(primary_prediction)))
-    measured_plot = axes[0].scatter(xy[:, 0], xy[:, 1], c=primary_test.rate, cmap="viridis", vmin=rate_low, vmax=rate_high, s=65)
-    predicted_plot = axes[1].scatter(xy[:, 0], xy[:, 1], c=primary_prediction, cmap="viridis", vmin=rate_low, vmax=rate_high, s=65)
-    residual = primary_prediction - primary_test.rate
-    residual_limit = max(float(np.max(np.abs(residual))), _EPS)
-    residual_plot = axes[2].scatter(xy[:, 0], xy[:, 1], c=residual, cmap="coolwarm", vmin=-residual_limit, vmax=residual_limit, s=65)
-    axes[0].set_title("Measured rate [nm/s]")
-    axes[1].set_title("Held-out prediction [nm/s]")
-    axes[2].set_title("Residual: predicted - measured [nm/s]")
-    for axis_item in axes:
-        axis_item.set_xlabel("x [source coordinate unit]")
-        axis_item.set_ylabel("y [source coordinate unit]")
-        axis_item.set_aspect("equal", adjustable="box")
-    figure.colorbar(measured_plot, ax=axes[:2], shrink=0.86)
-    figure.colorbar(residual_plot, ax=axes[2], shrink=0.86)
-    path = plot_dir / "test_spatial_maps.png"
-    figure.savefig(path, dpi=180)
-    plt.close(figure)
-    outputs.append(path)
-
-    top = ranking[:8]
-    figure, axis = plt.subplots(figsize=(9.0, 5.5), constrained_layout=True)
-    labels = [str(row["model_id"]) for row in reversed(top)]
-    values = [float(row["blocked_cv_rmse_nm_s"]) for row in reversed(top)]
-    colors = ["#2563eb" if bool(row["eligible_for_adoption"]) else "#cbd5e1" for row in reversed(top)]
-    axis.barh(labels, values, color=colors, edgecolor="#475569", linewidth=0.5)
-    axis.set_xlabel("Conservative blocked-CV RMSE [nm/s]")
-    axis.set_title("Training-only candidate ranking; grey candidates fail adoption gates")
-    axis.grid(axis="x", alpha=0.25)
-    path = plot_dir / "training_candidate_ranking.png"
-    figure.savefig(path, dpi=180)
-    plt.close(figure)
-    outputs.append(path)
-    return outputs
-
-
-def _write_notebook(
-    output_dir: Path,
-    train_case_ids: tuple[int, ...],
-    test_case_id: int,
-) -> Path:
-    notebook_path = output_dir / "cvd_multicond_transfer_analysis.ipynb"
-    evaluation = json.loads((output_dir / "analysis_summary.json").read_text(encoding="utf-8"))
-    validity = evaluation["validity"]
-    cells: list[dict[str, Any]] = [
-        {
-            "cell_type": "markdown",
-            "metadata": {},
-            "source": [
-                "# CVD multi-condition transfer analysis\n",
-                "\n",
-                "## tl;dr\n",
-                f"Conditions {list(train_case_ids)} identify the response model; condition {test_case_id} is held out without refitting. "
-                f"Selected model: {evaluation['primary_split']['selected_model']}. "
-                f"Response structure: {evaluation['primary_split']['response_structure']}. "
-                f"Decision: {validity['decision']}; role support: {validity['species_role_assessment']}. "
-                "Outer condition folds assess the selection procedure; each fold fits its own model.\n",
-            ],
-        },
-        {
-            "cell_type": "markdown",
-            "metadata": {},
-            "source": [
-                "## Context & Methods\n",
-                "\n",
-                "Log-rate uses total-concentration and optional species-fraction role terms. "
-                "Training-condition CV selects roles, shared or within/between responses, and regularization. "
-                "Within/between responses use full Fluent input-map means and deviations; their coefficient differences are regularized. "
-                "Term removal and alternative assignments are compared on the same conditions; crossing losses leave role support unresolved. "
-                "Numerical loss ties prefer fewer effects and parameters. Angular/radial blocked CV and design rank are diagnostics.\n",
-                "\n",
-                "### Key Assumptions\n",
-                "- Response coefficients transfer across conditions; there are no measured-rate corrections for an unseen condition.\n",
-                "- The test condition is not used for fitting or model selection.\n",
-                "- Coefficients are effective transfer responses, not elementary kinetics.\n",
-                "- Wall concentration is set to zero only as a driving-force proxy; absolute wall flux is not calculated.\n",
-            ],
-        },
-        {
-            "cell_type": "markdown",
-            "metadata": {},
-            "source": ["## Data\n"],
-        },
-        {
-            "cell_type": "code",
-            "execution_count": 1,
-            "metadata": {},
-            "outputs": [],
-            "source": [
-                "import csv, json\n",
-                "from pathlib import Path\n",
-                "output = Path('.')\n",
-                "with (output / 'analysis_summary.json').open(encoding='utf-8') as handle:\n",
-                "    summary = json.load(handle)\n",
-                "with (output / 'condition_quality.csv').open(encoding='utf-8') as handle:\n",
-                "    quality = list(csv.DictReader(handle))\n",
-                "print('train/test:', summary['primary_split']['train_cases'], '->', summary['primary_split']['test_case'])\n",
-                "print('condition rows:', [(row['condition'], row['rows'], row['rate_unique_count']) for row in quality])\n",
-            ],
-        },
-        {
-            "cell_type": "markdown",
-            "metadata": {},
-            "source": ["## Results\n"],
-        },
-        {
-            "cell_type": "code",
-            "execution_count": 2,
-            "metadata": {},
-            "outputs": [],
-            "source": [
-                "primary = summary['primary_split']\n",
-                "print('selected model:', primary['selected_model'])\n",
-                "print('common order:', primary['common_total_order'])\n",
-                "print('test RMSE [nm/s]:', primary['test_rmse_nm_s'])\n",
-                "print('test relative RMSE:', primary['test_relative_rmse_vs_test_mean'])\n",
-                "print('test spatial R2:', primary['test_centered_spatial_r2'])\n",
-                "print('species-role assessment:', summary['validity']['species_role_assessment'])\n",
-            ],
-        },
-        {
-            "cell_type": "markdown",
-            "metadata": {},
-            "source": [
-                "### Figures\n",
-                "\n",
-                "![Condition transfer](plots/condition_mean_transfer.png)\n",
-                "\n",
-                "![Held-out fit](plots/test_measured_vs_predicted.png)\n",
-                "\n",
-                "![Held-out maps](plots/test_spatial_maps.png)\n",
-            ],
-        },
-        {
-            "cell_type": "markdown",
-            "metadata": {},
-            "source": [
-                "## Takeaways\n",
-                "\n",
-                f"- Fixed-model holdout: {validity['fixed_model_assessment']['prediction_status']}; "
-                f"spatial shape: {validity['fixed_model_assessment']['spatial_status']}.\n",
-                f"- Outer selection procedure: {validity['procedure_assessment']['prediction_status']}. "
-                f"Application criteria: {validity['application_status']}.\n",
-                "- Raw species are candidate inputs. An unresolved steady AB response does not determine its A/B direction.\n",
-                f"- Decision evidence: {validity['reason']}.\n",
-            ],
-        },
-    ]
-    execution_globals: dict[str, Any] = {"__name__": "__notebook__"}
-    for cell in cells:
-        if cell["cell_type"] != "code":
+    by_id = {str(row["model_id"]): row for row in ranking}
+    rows: list[dict[str, Any]] = []
+    for family in family_assessments:
+        model_id = str(family.get("best_model_id", ""))
+        candidate = by_id.get(model_id)
+        if candidate is None:
             continue
-        source = "".join(cell["source"])
-        buffer = StringIO()
-        previous_cwd = Path.cwd()
-        try:
-            import os
+        loss_name = str(candidate.get("loss_name", "mse"))
+        for item in candidate.get("_optimization_history", ()):
+            best_score = float(item["best_score"])
+            best_error = (
+                math.sqrt(max(best_score, 0.0))
+                if loss_name
+                in {"mse", "wafer_normalized_mse", "symmetric_normalized_mse"}
+                else best_score
+            )
+            rows.append(
+                {
+                    "equation_family": family["equation_family"],
+                    "model_id": model_id,
+                    "role_A": candidate.get("role_A", ""),
+                    "role_I": candidate.get("role_I", ""),
+                    "role_B": candidate.get("role_B", ""),
+                    "optimizer": candidate.get("optimizer_method", ""),
+                    "loss": loss_name,
+                    "trial": int(item["trial"]),
+                    "objective": float(item["score"]),
+                    "best_objective": best_score,
+                    "best_error": best_error,
+                    "best_error_name": (
+                        "training_rmse_nm_s"
+                        if loss_name == "mse"
+                        else "normalized_error"
+                    ),
+                }
+            )
+    for candidate in ranking:
+        candidate.pop("_optimization_history", None)
+    return rows
 
-            os.chdir(output_dir)
-            with redirect_stdout(buffer):
-                exec(compile(source, str(notebook_path), "exec"), execution_globals)
-        finally:
-            os.chdir(previous_cwd)
-        text = buffer.getvalue()
-        cell["outputs"] = (
-            [{"name": "stdout", "output_type": "stream", "text": text.splitlines(keepends=True)}]
-            if text
-            else []
-        )
-    notebook = {
-        "cells": cells,
-        "metadata": {
-            "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
-            "language_info": {"name": "python", "version": "3"},
-        },
-        "nbformat": 4,
-        "nbformat_minor": 5,
-    }
-    notebook_path.write_text(json.dumps(notebook, ensure_ascii=False, indent=1), encoding="utf-8")
-    parsed = json.loads(notebook_path.read_text(encoding="utf-8"))
-    if parsed.get("nbformat") != 4 or not isinstance(parsed.get("cells"), list):
-        raise RuntimeError("Generated notebook failed structural validation")
-    return notebook_path
+
+def _best_family_role_rows(
+    ranking: list[dict[str, Any]],
+    family_assessments: list[dict[str, Any]],
+    reaction_input_metadata: dict[str, str],
+) -> list[dict[str, Any]]:
+    """Describe which raw species fills each role in each best family fit."""
+
+    by_id = {str(row["model_id"]): row for row in ranking}
+    labels = {"A": "surface reactant", "I": "inhibitor", "B": "co-reactant"}
+    rows: list[dict[str, Any]] = []
+    for family in family_assessments:
+        model_id = str(family.get("best_model_id", ""))
+        candidate = by_id.get(model_id)
+        if candidate is None:
+            continue
+        for role in ("A", "I", "B"):
+            rows.append(
+                {
+                    "equation_family": family["equation_family"],
+                    "model_id": model_id,
+                    "role": role,
+                    "reaction_role": labels[role],
+                    "species": candidate.get(f"role_{role}", "") or "",
+                    "reaction_input_quantity": reaction_input_metadata["quantity"],
+                    "reaction_input_location": reaction_input_metadata["location"],
+                    "reaction_input_unit": reaction_input_metadata["unit"],
+                    "condition_cv_rmse_nm_s": candidate["condition_cv_rmse_nm_s"],
+                }
+            )
+    return rows
 
 
-def _fit_formula(fit: TransferFit | SurfaceKineticFit) -> str:
-    if isinstance(fit, SurfaceKineticFit):
-        return surface_formula(fit.candidate)
-    if fit.response_structure == "within_between":
-        return ("log(rate) = log(reference_rate) + mean_map(x) @ beta_between + "
-                "(x - mean_map(x)) @ beta_within; x = " + str(list(_effect_names(fit.candidate))) +
-                "; x uses log(total/reference), log(A fraction/reference) or log(AB fraction product/reference), "
-                "and -log(I fraction/reference). Map means use Fluent inputs only.")
-    formula = (
-        "rate = reference_rate * (total_concentration / reference_total_concentration) "
-        "** common_total_order"
+def _condition_mean_input_correlation_rows(
+    data: RoleFieldSet,
+    reaction_input_mode: str,
+) -> list[dict[str, Any]]:
+    """Correlate log condition means of the selected reaction input."""
+
+    inputs = data.reaction_inputs_for(reaction_input_mode)
+    conditions = np.unique(data.condition_id)
+    matrix = np.asarray(
+        [
+            [
+                float(np.mean(np.asarray(inputs[species])[data.condition_id == condition]))
+                for species in data.species
+            ]
+            for condition in conditions
+        ],
+        dtype=float,
     )
-    candidate = fit.candidate
-    if candidate.A is not None and candidate.B is None:
-        formula += (
-            f" * (fraction_{candidate.A} / reference_fraction_{candidate.A}) "
-            f"** elasticity_A_{candidate.A}"
-        )
-    elif candidate.A is not None and candidate.B is not None:
-        formula += (
-            f" * ((fraction_{candidate.A} * fraction_{candidate.B}) / "
-            f"(reference_fraction_{candidate.A} * reference_fraction_{candidate.B})) "
-            f"** elasticity_AB_{candidate.A}_{candidate.B}"
-        )
-    if candidate.I is not None:
-        formula += (
-            f" * (fraction_{candidate.I} / reference_fraction_{candidate.I}) "
-            f"** (-elasticity_I_{candidate.I})"
-        )
-    return formula
-
-
-def _write_markdown_report(
-    output_dir: Path, summary: dict[str, Any], coefficient_rows: list[dict[str, Any]],
-    split_rows: list[dict[str, Any]],
-) -> None:
-    """Render measured results; interpretation is computed before presentation."""
-    primary, validity = summary["primary_split"], summary["validity"]
-    response_line = (
-        "Response model: `surface_qss`; parameters are observable dimensionless groups of the quasi-steady site balance."
-        if primary.get("response_model") == "surface_qss"
-        else (f"Response structure: `{primary['response_structure']}`; between/within total orders: "
-              f"{primary['common_total_order']:.6g} / {primary['within_total_order']:.6g}.")
-    )
-    lines = [
-        "# CVD multi-condition role evaluation", "",
-        f"Training conditions: {primary['train_cases']}; untouched test: {primary['test_case']}.",
-        f"Selected candidate: `{primary['selected_model']}`. Decision: `{validity['decision']}`.",
-        response_line,
-        f"Role evidence: `{validity['species_role_assessment']}`.",
-        f"Spatial prediction: `{validity['spatial_map_assessment']}`.", "",
-        "Selection uses condition refits in deposition-rate units; numerical loss ties prefer fewer effects and parameters.",
-        "The external test never selects coefficients, roles, or thresholds.", "",
-        f"Decision evidence: {validity['evaluation_scope']}. {validity['reason']}",
-        "Outer condition refits evaluate the selection procedure, with a separately fitted model in each fold.", "",
-        "## Prediction", "",
-        f"Test RMSE: {primary['test_rmse_nm_s']:.6g} nm/s; centered R2: {primary['test_centered_spatial_r2']:.6g}.",
-        f"Test spatial correlation: {primary['test_spatial_correlation']:.6g}; predicted/observed range: {primary['test_range_capture_fraction']:.6g}.",
-        f"Condition-CV RMSE: {primary['train_condition_cv_rmse_nm_s']:.6g} nm/s.", "",
-        "## Coefficients", "", f"`{summary['selected_model']['formula']}`", "",
-        "|Term|Value|Conditional spatial bootstrap 5-95%|", "|---|---:|---|",
+    matrix = np.log(np.maximum(matrix, np.finfo(float).tiny))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        correlation = np.corrcoef(matrix, rowvar=False)
+    metadata = data.reaction_input_metadata(reaction_input_mode)
+    return [
+        {
+            "species_1": first,
+            "species_2": second,
+            "pearson_correlation": float(correlation[i, j]),
+            "condition_count": int(conditions.size),
+            "reaction_input_quantity": metadata["quantity"],
+            "reaction_input_location": metadata["location"],
+        }
+        for i, first in enumerate(data.species)
+        for j, second in enumerate(data.species)
     ]
-    for row in coefficient_rows:
-        lines.append(f"|{row['term']}|{row['value']:.6g}|{row['bootstrap_p05']:.6g} - {row['bootstrap_p95']:.6g}|")
-    lines += ["", "Intervals condition on the selected model and supplied conditions; they do not include model-selection uncertainty.", "",
-              "## Condition refits", "", "|Held-out condition|Selected candidate|Response structure|Relative RMSE|Centered R2|", "|---|---|---|---:|---:|"]
-    for row in split_rows:
-        model_label = str(row['selected_model']).replace("|", "\\|")
-        lines.append(f"|{row['test_case']}|{model_label}|{row['response_structure']}|{row['test_relative_rmse_vs_test_mean']:.4%}|{row['test_centered_spatial_r2']:.4g}|")
-    lines += ["", "## Interpretation", "",
-              "Raw species are candidate inputs, not established chemical identities. Indistinguishable assignments remain unresolved.",
-              "Wall-zero concentration differences are driving-force proxies, not absolute wall fluxes.",
-              "Measurement uncertainty and independent process conditions are needed to assess practical identifiability.", "",
-              "See role_summary.csv, role_ranking.csv, role_stability.csv, and condition_scores.csv for decisions and evidence."]
-    (output_dir / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _reaction_state_summary_rows(
+    prediction_rows: list[dict[str, Any]],
+    fit: SurfaceKineticFit | None,
+) -> list[dict[str, Any]]:
+    """Summarize fitted site populations and pathway fractions on the holdout wafer."""
+
+    if fit is None:
+        return []
+    family = get_surface_model_family(fit.candidate.family)
+    site_fields = ["theta_free", *family.state_variables]
+    if fit.candidate.I is None and "theta_I" in site_fields:
+        site_fields.remove("theta_I")
+    if fit.candidate.B is None and "theta_B" in site_fields:
+        site_fields.remove("theta_B")
+    field_labels = {
+        "theta_free": "vacant sites",
+        "theta_A": "adsorbed A",
+        "theta_B": "adsorbed B",
+        "theta_I": "sites blocked by I",
+        "A": "A-only pathway",
+        "AB": "A + B pathway",
+    }
+    fields = [
+        (field, "site_fraction", field_labels[field]) for field in site_fields
+    ]
+    fields.extend(
+        (f"path_{pathway}_fraction", "pathway_fraction", field_labels[pathway])
+        for pathway in family.pathways
+    )
+    rows: list[dict[str, Any]] = []
+    for field, quantity, label in fields:
+        if not prediction_rows or field not in prediction_rows[0]:
+            continue
+        values = np.asarray([float(row[field]) for row in prediction_rows], dtype=float)
+        if not np.all(np.isfinite(values)):
+            continue
+        rows.append(
+            {
+                "quantity": quantity,
+                "component": label,
+                "mean_fraction": float(np.mean(values)),
+                "minimum_fraction": float(np.min(values)),
+                "maximum_fraction": float(np.max(values)),
+            }
+        )
+    return rows
+
+
+def _role_importance_and_stability_rows(
+    sensitivity_rows: list[dict[str, Any]],
+    split_rows: list[dict[str, Any]],
+    *,
+    held_out_rmse_nm_s: float,
+) -> list[dict[str, Any]]:
+    """Join prediction sensitivity with raw-species selection frequency."""
+
+    rows: list[dict[str, Any]] = []
+    denominator = max(float(held_out_rmse_nm_s), _EPS)
+    for sensitivity in sensitivity_rows:
+        role = str(sensitivity["role"])
+        species = str(sensitivity["species"])
+        selections = [str(row.get(f"selected_role_{role}") or "none") for row in split_rows]
+        counts = {name: selections.count(name) for name in sorted(set(selections))}
+        rms_change = float(sensitivity["rms_prediction_change_nm_s"])
+        rows.append(
+            {
+                "role": role,
+                "species": species,
+                "selection_frequency": counts.get(species, 0) / max(len(selections), 1),
+                "selection_count": counts.get(species, 0),
+                "refit_count": len(selections),
+                "alternative_assignments": json.dumps(counts, sort_keys=True),
+                "rms_prediction_change_nm_s": rms_change,
+                "held_out_rmse_nm_s": float(held_out_rmse_nm_s),
+                "prediction_change_to_rmse_ratio": rms_change / denominator,
+            }
+        )
+    return rows
+
+
+def _best_family_diagnostic_rows(
+    ranking: list[dict[str, Any]],
+    family_assessments: list[dict[str, Any]],
+    train: RoleFieldSet,
+    test: RoleFieldSet,
+    selected_fit: SurfaceKineticFit,
+    selected_prediction: np.ndarray,
+    optimization: SurfaceOptimizationSettings,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Refit the best assignment in each family for prediction and state comparison."""
+
+    families = tuple(
+        str(row["equation_family"])
+        for row in family_assessments
+        if row.get("best_model_id")
+    )
+    candidates = enumerate_surface_kinetic_candidates(
+        train.species,
+        include_boundaries=True,
+        families=families,
+        available_inputs=train.available_inputs(),
+        transport_modes=(selected_fit.candidate.transport_mode,),
+    )
+    candidate_by_id = {candidate.model_id: candidate for candidate in candidates}
+    ranking_by_id = {str(row["model_id"]): row for row in ranking}
+    indices = np.arange(train.rate.size, dtype=int)
+    prediction_rows: list[dict[str, Any]] = []
+    state_rows: list[dict[str, Any]] = []
+    selected_rmse = float(_metrics(test.rate, selected_prediction)["rmse_nm_s"])
+    for assessment in family_assessments:
+        model_id = str(assessment.get("best_model_id", ""))
+        candidate = candidate_by_id.get(model_id)
+        ranking_row = ranking_by_id.get(model_id)
+        if candidate is None or ranking_row is None:
+            continue
+        fit = (
+            selected_fit
+            if model_id == selected_fit.candidate.model_id
+            else fit_surface_kinetic(
+                candidate,
+                train,
+                indices,
+                optimization=optimization,
+            )
+        )
+        prediction, state = predict_surface_kinetic(fit, test)
+        metrics = _metrics(test.rate, prediction)
+        difference = np.asarray(prediction) - np.asarray(selected_prediction)
+        prediction_rows.append(
+            {
+                "equation_family": candidate.family,
+                "model_id": model_id,
+                "role_A": candidate.A or "",
+                "role_I": candidate.I or "",
+                "role_B": candidate.B or "",
+                "condition_cv_rmse_nm_s": float(
+                    ranking_row["condition_cv_rmse_nm_s"]
+                ),
+                "held_out_rmse_nm_s": float(metrics["rmse_nm_s"]),
+                "rms_difference_from_selected_nm_s": float(
+                    np.sqrt(np.mean(np.square(difference)))
+                ),
+                "rms_difference_to_selected_rmse_ratio": float(
+                    np.sqrt(np.mean(np.square(difference)))
+                    / max(selected_rmse, _EPS)
+                ),
+                "maximum_difference_from_selected_nm_s": float(
+                    np.max(np.abs(difference))
+                ),
+            }
+        )
+        family = get_surface_model_family(candidate.family)
+        state_fields = ["theta_free", *family.state_variables]
+        if candidate.I is None and "theta_I" in state_fields:
+            state_fields.remove("theta_I")
+        if candidate.B is None and "theta_B" in state_fields:
+            state_fields.remove("theta_B")
+        state_fields.extend(f"path_{pathway}_fraction" for pathway in family.pathways)
+        for field in state_fields:
+            values = np.asarray(state.get(field, []), dtype=float)
+            if values.size == 0 or not np.all(np.isfinite(values)):
+                continue
+            state_rows.append(
+                {
+                    "equation_family": candidate.family,
+                    "model_id": model_id,
+                    "quantity": (
+                        "pathway_fraction"
+                        if field.startswith("path_")
+                        else "site_fraction"
+                    ),
+                    "component": field,
+                    "mean_fraction": float(np.mean(values)),
+                    "minimum_fraction": float(np.min(values)),
+                    "maximum_fraction": float(np.max(values)),
+                }
+            )
+    return prediction_rows, state_rows
 
 
 def analyze_cvd_multicond_case(
     *,
     data_dir: Path,
     response_structure: str = "shared",
-    response_model: str = "surface_qss",
+    response_model: str = "surface_compare",
     train_case_ids: tuple[int, ...] = (1, 2, 4, 5),
     test_case_id: int = 3,
     output_dir: Path,
     bootstrap_samples: int = 1000,
     seed: int = 123,
     application: dict[str, Any] | None = None,
+    conditions_file: Path | None = None,
+    model_families: tuple[str, ...] | None = None,
+    candidate_id: str | None = None,
+    surface_loss: str = "mse",
+    surface_sampler: str = "pattern",
+    surface_trials: int = 256,
+    surface_sampler_options: Mapping[str, Any] | None = None,
+    edge_uncertainty_ratio: float = 1.0,
+    radial_uncertainty_power: float = 2.0,
+    reaction_input: str = "bulk_concentration",
+    spatial_response: str = "none",
+    wafer_temperature_k: float | None = None,
 ) -> dict[str, Any]:
     data_dir = Path(data_dir)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    spatial_response = str(spatial_response).strip().lower()
+    if spatial_response not in SPATIAL_RESPONSE_MODES:
+        raise ValueError(
+            f"spatial_response must be one of {SPATIAL_RESPONSE_MODES}"
+        )
+    if wafer_temperature_k is not None and (
+        not np.isfinite(wafer_temperature_k) or wafer_temperature_k <= 0.0
+    ):
+        raise ValueError("wafer_temperature_k must be positive when supplied")
     all_case_ids = tuple(sorted({*train_case_ids, int(test_case_id)}))
     if len(train_case_ids) < 2:
         raise ValueError("At least two identification conditions are required")
     if len(set(train_case_ids)) != len(train_case_ids) or test_case_id in train_case_ids:
         raise ValueError("Identification condition IDs must be distinct and exclude the test condition")
-    cases = [
-        _load_case(
-            case_id,
-            data_dir / f"condition_{case_id}.csv",
-            data_dir / f"validation_{case_id}.csv",
-        )
-        for case_id in all_case_ids
-    ]
+    paths = _condition_paths(data_dir, all_case_ids, conditions_file)
+    cases = [_load_case(case_id, *paths[case_id]) for case_id in all_case_ids]
     case_lookup = {case.case_id: case for case in cases}
+    all_fields = _combine_cases(cases)
+    reaction_input_mode = all_fields.resolve_reaction_input_mode(reaction_input)
     grid_alignment = _grid_alignment(cases)
     train_cases = [case_lookup[case_id] for case_id in train_case_ids]
     test_case = case_lookup[test_case_id]
+    surface_optimization = SurfaceOptimizationSettings(
+        loss_name=surface_loss,
+        sampler=surface_sampler,
+        trials=surface_trials,
+        seed=seed,
+        sampler_options=dict(surface_sampler_options or {}),
+        edge_uncertainty_ratio=edge_uncertainty_ratio,
+        radial_power=radial_uncertainty_power,
+    )
 
     primary, ranking, selected_fit, test_prediction, train, test = _split_evaluation(
         train_cases,
         test_case,
         response_structure=response_structure,
         response_model=response_model,
+        model_families=model_families,
+        candidate_id=candidate_id,
+        surface_optimization=surface_optimization,
+        reaction_input_mode=reaction_input_mode,
+        record_optimization_history=True,
     )
     selected_row = next(row for row in ranking if row["model_id"] == primary["selected_model"])
     unrestricted_row = next(
@@ -1750,10 +2186,62 @@ def analyze_cvd_multicond_case(
         angular_groups,
         samples=max(int(bootstrap_samples), 100),
         seed=seed,
+        surface_optimization=surface_optimization,
     )
     coefficient_rows = _coefficient_rows(selected_fit, bootstrap)
 
     test_prediction, test_diagnostics = _predict_response(selected_fit, test)
+    train_chemical_prediction, _ = _predict_response(selected_fit, train)
+    spatial_fit = fit_spatial_response(
+        spatial_response, train, train_chemical_prediction
+    )
+    spatial_prediction, spatial_factor = apply_spatial_response(
+        spatial_fit, test, test_prediction
+    )
+    chemical_test_metrics = _transfer_metrics(
+        test.rate, test_prediction, _condition_mean_rate(train)
+    )
+    spatial_test_metrics = _transfer_metrics(
+        test.rate, spatial_prediction, _condition_mean_rate(train)
+    )
+    primary.update(
+        {
+            "chemical_test_rmse_nm_s": chemical_test_metrics["rmse_nm_s"],
+            "chemical_test_centered_spatial_r2": chemical_test_metrics[
+                "centered_spatial_r2"
+            ],
+            "spatial_response_model": spatial_fit.mode,
+            "spatial_response_test_rmse_nm_s": spatial_test_metrics["rmse_nm_s"],
+            "spatial_response_test_centered_spatial_r2": spatial_test_metrics[
+                "centered_spatial_r2"
+            ],
+            "spatial_response_test_spatial_correlation": spatial_test_metrics[
+                "spatial_correlation"
+            ],
+            "spatial_response_preserves_chemical_mean": True,
+        }
+    )
+    selected_input_metadata = (
+        test.reaction_input_metadata(selected_fit.candidate.transport_mode)
+        if isinstance(selected_fit, SurfaceKineticFit)
+        else {
+            "mode": "bulk_as_surface",
+            "quantity": "concentration",
+            "location": "reference_plane",
+            "unit": "kmol/m^3",
+            "interpretation": "empirical bulk-concentration response",
+        }
+    )
+    model_input_concentrations = (
+        test.reaction_inputs_for(selected_fit.candidate.transport_mode)
+        if isinstance(selected_fit, SurfaceKineticFit)
+        else test.bulk_concentrations
+    )
+    reference_input_shares = (
+        selected_fit.reference_input_shares
+        if isinstance(selected_fit, SurfaceKineticFit)
+        else selected_fit.reference_species_fractions
+    )
     test_prediction_rows: list[dict[str, Any]] = []
     for index in range(test.rate.size):
         if isinstance(selected_fit, SurfaceKineticFit):
@@ -1771,11 +2259,23 @@ def analyze_cvd_multicond_case(
         row: dict[str, Any] = {
             "condition": test_case_id,
             "response_structure": selected_fit.response_structure,
+            "transport_mode": getattr(
+                selected_fit.candidate, "transport_mode", "empirical"
+            ),
+            "reaction_input_quantity": selected_input_metadata["quantity"],
+            "reaction_input_location": selected_input_metadata["location"],
+            "reaction_input_unit": selected_input_metadata["unit"],
             "x": float(test.xyz[index, 0]),
             "y": float(test.xyz[index, 1]),
             "z": float(test.xyz[index, 2]),
             "measured_rate_nm_s": float(test.rate[index]),
             "predicted_rate_nm_s": float(test_prediction[index]),
+            "chemical_prediction_nm_s": float(test_prediction[index]),
+            "spatial_response_prediction_nm_s": float(spatial_prediction[index]),
+            "spatial_response_factor": float(spatial_factor[index]),
+            "spatial_response_residual_nm_s": float(
+                spatial_prediction[index] - test.rate[index]
+            ),
             "residual_pred_minus_measured_nm_s": float(test_prediction[index] - test.rate[index]),
             "total_concentration_kmol_m3": float(test.total_concentration[index]),
             "common_log_contribution": common_log_contribution,
@@ -1786,22 +2286,38 @@ def analyze_cvd_multicond_case(
             "predicted_rate_delta_from_reference_nm_s": float(
                 test_prediction[index] - selected_fit.reference_rate_nm_s
             ),
-            "kinetic_limit": getattr(selected_fit.candidate, "kinetic_limit", "empirical"),
+            "reduction_id": getattr(selected_fit.candidate, "reduction_id", "empirical"),
         }
         for name in test.species:
-            row[f"concentration_{name}_kmol_m3"] = float(test.concentrations[name][index])
-            row[f"assumed_wall_concentration_{name}_kmol_m3"] = 0.0
-            row[f"wall_zero_driving_concentration_{name}_kmol_m3"] = float(
-                test.concentrations[name][index]
+            row[f"bulk_concentration_{name}_kmol_m3"] = float(
+                test.bulk_concentrations[name][index]
             )
-            row[f"fraction_{name}"] = float(test.species_fractions[name][index])
-            row[f"reference_fraction_{name}"] = float(
-                selected_fit.reference_species_fractions[name]
-            )
-            if isinstance(selected_fit, SurfaceKineticFit):
-                row[f"reference_concentration_{name}_kmol_m3"] = float(
-                    selected_fit.reference_concentrations[name]
+            if selected_input_metadata["quantity"] == "transport_capacity_flux":
+                row[f"model_input_flux_{name}_kmol_m2_s"] = float(
+                    model_input_concentrations[name][index]
                 )
+            else:
+                row[f"model_input_concentration_{name}_kmol_m3"] = float(
+                    model_input_concentrations[name][index]
+                )
+            if name in test.surface_concentrations:
+                row[f"surface_concentration_{name}_kmol_m3"] = float(
+                    test.surface_concentrations[name][index]
+                )
+            row[f"bulk_fraction_{name}"] = float(test.species_fractions[name][index])
+            row[f"fraction_{name}"] = float(test.species_fractions[name][index])
+            row[f"reference_reaction_input_share_{name}"] = float(
+                reference_input_shares[name]
+            )
+            if selected_input_metadata["mode"] == "bulk_as_surface":
+                row[f"reference_fraction_{name}"] = float(reference_input_shares[name])
+            if isinstance(selected_fit, SurfaceKineticFit):
+                reference_label = (
+                    f"reference_flux_{name}_kmol_m2_s"
+                    if selected_input_metadata["quantity"] == "transport_capacity_flux"
+                    else f"reference_concentration_{name}_kmol_m3"
+                )
+                row[reference_label] = float(selected_fit.reference_concentrations[name])
         if isinstance(selected_fit, SurfaceKineticFit):
             assert isinstance(test_diagnostics, dict)
             for name, values in test_diagnostics.items():
@@ -1823,9 +2339,52 @@ def analyze_cvd_multicond_case(
     selected_row["holdout_metrics"] = {test_case_id: _transfer_metrics(test.rate, test_prediction, _condition_mean_rate(train))}
     for held_out in all_case_ids:
         split_train = [case for case in cases if case.case_id != held_out]
-        split_result, split_ranking, _, _, _, _ = _split_evaluation(split_train, case_lookup[held_out],
+        (
+            split_result,
+            split_ranking,
+            split_fit,
+            split_chemical_prediction,
+            split_train_fields,
+            split_test_fields,
+        ) = _split_evaluation(split_train, case_lookup[held_out],
                                                                   response_structure=response_structure,
-                                                                  response_model=response_model)
+                                                                  response_model=response_model,
+                                                                  model_families=model_families,
+                                                                  candidate_id=candidate_id,
+                                                                  surface_optimization=surface_optimization,
+                                                                  reaction_input_mode=reaction_input_mode)
+        split_train_prediction, _ = _predict_response(split_fit, split_train_fields)
+        split_spatial_fit = fit_spatial_response(
+            spatial_response, split_train_fields, split_train_prediction
+        )
+        split_spatial_prediction, _ = apply_spatial_response(
+            split_spatial_fit, split_test_fields, split_chemical_prediction
+        )
+        split_spatial_metrics = _transfer_metrics(
+            split_test_fields.rate,
+            split_spatial_prediction,
+            _condition_mean_rate(split_train_fields),
+        )
+        split_result.update(
+            {
+                "chemical_test_centered_spatial_r2": split_result[
+                    "test_centered_spatial_r2"
+                ],
+                "spatial_response_model": split_spatial_fit.mode,
+                "spatial_response_test_rmse_nm_s": split_spatial_metrics[
+                    "rmse_nm_s"
+                ],
+                "spatial_response_test_relative_rmse": split_spatial_metrics[
+                    "relative_rmse_vs_test_mean"
+                ],
+                "spatial_response_test_centered_spatial_r2": split_spatial_metrics[
+                    "centered_spatial_r2"
+                ],
+                "spatial_response_test_spatial_correlation": split_spatial_metrics[
+                    "spatial_correlation"
+                ],
+            }
+        )
         split_rows.append(split_result)
         refits = {r["role_model_id"]: r for r in split_ranking}
         for row in ranking:
@@ -1845,12 +2404,118 @@ def analyze_cvd_multicond_case(
         for row in split_rows
     ]
     role_stability_rows, stability = build_role_stability(ranking, score_epsilon=0.0)
+    role_stability_warning = bool(stability["warning"])
+    selected_families = [str(row["selected_equation_family"]) for row in split_rows]
+    family_counts = {
+        name: selected_families.count(name) for name in sorted(set(selected_families))
+    }
+    family_warning = len(family_counts) > 1
+    selected_structures = [
+        json.dumps(_selection_structure(row), ensure_ascii=True, sort_keys=True)
+        for row in split_rows
+    ]
+    structure_counts = {
+        name: selected_structures.count(name)
+        for name in sorted(set(selected_structures))
+    }
+    structure_warning = len(structure_counts) > 1
+    stability["equation_family_counts"] = family_counts
+    stability["equation_family_warning"] = family_warning
+    stability["model_structure_counts"] = structure_counts
+    stability["model_structure_warning"] = structure_warning
+    stability["warning"] = bool(stability["warning"] or structure_warning)
+    equation_family_assessments = (
+        _equation_family_assessments(
+            ranking,
+            split_rows,
+            _surface_families(response_model, model_families),
+            train.available_inputs(),
+        )
+        if _uses_surface_response(response_model)
+        else []
+    )
+    reaction_mechanism_assessments = (
+        _reaction_mechanism_assessments(ranking, equation_family_assessments)
+        if _uses_surface_response(response_model)
+        else []
+    )
+    optimization_history_rows = _optimization_history_rows(
+        ranking, equation_family_assessments
+    )
+    family_role_rows = _best_family_role_rows(
+        ranking, equation_family_assessments, selected_input_metadata
+    )
+    input_correlation_rows = _condition_mean_input_correlation_rows(
+        all_fields, reaction_input_mode
+    )
+    if isinstance(selected_fit, SurfaceKineticFit):
+        role_sensitivity_rows = role_input_sensitivity_rows(selected_fit, all_fields)
+        role_response_rows = role_response_curve_rows(selected_fit, all_fields)
+        parameter_sensitivity_diagnostic_rows = parameter_sensitivity_rows(selected_fit)
+        parameter_loss_rows = parameter_loss_slice_rows(
+            selected_fit,
+            train,
+            optimization=surface_optimization,
+        )
+        family_prediction_rows, family_state_rows = _best_family_diagnostic_rows(
+            ranking,
+            equation_family_assessments,
+            train,
+            test,
+            selected_fit,
+            test_prediction,
+            surface_optimization,
+        )
+    else:
+        role_sensitivity_rows = []
+        role_response_rows = []
+        parameter_sensitivity_diagnostic_rows = []
+        parameter_loss_rows = []
+        family_prediction_rows = []
+        family_state_rows = []
+    role_importance_rows = _role_importance_and_stability_rows(
+        role_sensitivity_rows,
+        split_rows,
+        held_out_rmse_nm_s=float(primary["test_rmse_nm_s"]),
+    )
+    reaction_state_rows = _reaction_state_summary_rows(
+        test_prediction_rows,
+        selected_fit if isinstance(selected_fit, SurfaceKineticFit) else None,
+    )
+    workflow_layers = _workflow_layers(
+        equation_family_assessments,
+        selected_reaction_input=selected_input_metadata,
+        spatial_response_mode=spatial_fit.mode,
+    )
+    role_stability_rows.extend(
+        {
+            "slot": "equation_family",
+            "species": name,
+            "count": count,
+            "frequency": count / len(selected_families),
+            "refit_count": len(selected_families),
+            "basis": "outer_condition_cv_selection",
+        }
+        for name, count in family_counts.items()
+    )
+    role_stability_rows.extend(
+        {
+            "slot": "model_structure",
+            "species": name,
+            "count": count,
+            "frequency": count / len(selected_structures),
+            "refit_count": len(selected_structures),
+            "basis": "outer_condition_cv_selection",
+        }
+        for name, count in structure_counts.items()
+    )
     split_role_rows = [
         {
             "held_out_condition": row["test_case"],
             "identification_conditions": row["train_cases"],
             "selected_model": row["selected_model"],
             "selected_role_model_id": row["selected_role_model_id"],
+            "selected_equation_family": row["selected_equation_family"],
             "selected_role_A": row["selected_role_A"],
             "selected_role_I": row["selected_role_I"],
             "selected_role_B": row["selected_role_B"],
@@ -1872,15 +2537,23 @@ def analyze_cvd_multicond_case(
         for row in split_rows
     ]
 
-    alternative_rows = _alternative_predictors(train, test)
-    candidate_test_rows = _candidate_test_diagnostics(train, test, ranking)
     extrapolation_rows = _extrapolation_summary(train, test)
+    model_uncertainty_rows, model_uncertainty = _model_structure_uncertainty(
+        train,
+        test,
+        (primary, *split_rows),
+        response_model=response_model,
+        selected_prediction=test_prediction,
+        model_families=model_families,
+        candidate_id=candidate_id,
+        surface_optimization=surface_optimization,
+    )
     quality_rows = _condition_quality_rows(cases)
     scaling_rows = _scaling_rows(cases)
     correlation_rows = _correlation_rows(cases)
 
     all_concentrations = np.vstack(
-        [np.column_stack([case.concentrations[name] for name in case.species]) for case in cases]
+        [np.column_stack([case.bulk_concentrations[name] for name in case.species]) for case in cases]
     )
     pooled_corr = np.corrcoef(all_concentrations, rowvar=False)
     max_pooled_correlation = float(
@@ -1909,7 +2582,6 @@ def analyze_cvd_multicond_case(
         for name in case.species
         if int(case.quality["precision"]["species"][name]["unique_count"]) < 5
     ]
-    primary_role_id = str(primary["selected_role_model_id"])
     selected_role_a = str(primary.get("selected_role_A", ""))
     loco_role_consistency = float(
         np.mean(
@@ -1923,38 +2595,49 @@ def analyze_cvd_multicond_case(
         and row.get("selected_role_A_coefficient", "") != ""
     ]
     role_summary_rows = build_role_summary(
-        ranking, score_epsilon=0.0, role_stability_warning=stability["warning"],
+        ranking, score_epsilon=0.0, role_stability_warning=role_stability_warning,
+        model_structure_stability_warning=structure_warning,
         parameter_identifiability_warning=not selected_row["design_identifiable"],
         application=application,
     )
     assessment = role_summary_rows[0]
     role_ambiguous = assessment["role_support"] == "unresolved"
     cv_supported = selected_row.get("validation_skill", 0.0) > 0.0
-    test_supported = primary["test_rmse_improvement_vs_constant_train_mean"] > 0.0
-    spatial_supported = primary["test_centered_spatial_r2"] > 0.0
+    chemical_spatial_supported = primary["test_centered_spatial_r2"] > 0.0
     decision = assessment["decision"]
     validity = {
         "overall_assessment": "needs_revision" if decision == "reject_prediction" else "share_with_caveats",
         "condition_mean_transfer_assessment": ("improves_constant_baseline" if
             float(np.mean(test_prediction - test.rate))**2 < (float(np.mean(test.rate)) - _condition_mean_rate(train))**2
             else "not_supported"),
-        "spatial_map_assessment": "improves_centered_constant_baseline" if spatial_supported else "not_supported",
+        "chemical_spatial_prediction": (
+            "improves_centered_constant_baseline"
+            if chemical_spatial_supported
+            else "not_supported"
+        ),
+        "spatial_response_assessment": (
+            "not_enabled"
+            if spatial_fit.mode == "none"
+            else "improves_chemical_spatial_prediction"
+            if spatial_test_metrics["centered_spatial_r2"]
+            > chemical_test_metrics["centered_spatial_r2"]
+            else "no_holdout_improvement"
+        ),
         "species_role_assessment": assessment["role_support"],
         "species_role_adoption": decision,
         "composition_role_cross_condition_validation": "unresolved" if role_ambiguous else "see_condition_refits",
+        "equation_family_cross_condition_validation": (
+            "unstable" if family_warning else "stable"
+        ),
+        "model_structure_cross_condition_validation": (
+            "unstable" if structure_warning else "stable"
+        ),
         "condition_holdout_cv_assessment": "improves_constant_baseline" if cv_supported else "not_supported",
         "elementary_kinetics_validated": False,
         "test_was_refit": False,
         "test_relative_rmse": primary["test_relative_rmse_vs_test_mean"],
         "test_spatial_r2": primary["test_centered_spatial_r2"],
         "test_range_capture_fraction": primary["test_range_capture_fraction"],
-        "diagnostic_role_candidate_assessment": "test_metrics_are_diagnostic_only",
-        "diagnostic_role_candidate_test_spatial_r2": primary[
-            "unrestricted_test_centered_spatial_r2"
-        ],
-        "diagnostic_role_candidate_range_capture_fraction": primary[
-            "unrestricted_test_range_capture_fraction"
-        ],
         "max_pooled_species_correlation": max_pooled_correlation,
         "test_outside_train_range_fraction_max": test_outside_fraction,
         "loco_common_order_min": min(order_values) if order_values else None,
@@ -1969,6 +2652,10 @@ def analyze_cvd_multicond_case(
         "quantized_rate_cases": quantized_rate_cases,
         "low_species_precision": low_species_precision,
         "decision": decision,
+        "numerical_prediction_winner": primary["selected_model"],
+        "adopted_model": (
+            primary["selected_model"] if decision == "adopt_candidate" else None
+        ),
         "role_ambiguous": role_ambiguous,
         "prediction_status": assessment["prediction_status"],
         "application_status": assessment["application_status"],
@@ -1980,6 +2667,40 @@ def analyze_cvd_multicond_case(
         "inactive_roles": selected_row["inactive_roles"],
         "role_symmetry": selected_row["role_symmetry"],
     }
+
+    chemical_spatial_transfer_supported = bool(
+        split_rows
+        and all(float(row["test_centered_spatial_r2"]) > 0.0 for row in split_rows)
+    )
+    spatial_response_transfer_supported = bool(
+        spatial_fit.mode != "none"
+        and split_rows
+        and all(
+            float(row["spatial_response_test_centered_spatial_r2"]) > 0.0
+            for row in split_rows
+        )
+    )
+    role_supported = bool(
+        assessment["role_support"] != "unresolved"
+        and selected_row.get("contrast_status") == "sufficient"
+        and not role_stability_warning
+    )
+    capability_assessments, data_requirement_rows = build_capability_requirements(
+        spatial_supported=(
+            spatial_response_transfer_supported
+            if spatial_fit.mode != "none"
+            else chemical_spatial_transfer_supported
+        ),
+        role_supported=role_supported,
+        parameter_identifiability_status=str(
+            selected_row.get("parameter_identifiability_status", "not_assessed")
+        ),
+        concentration_location=str(
+            getattr(selected_fit.candidate, "transport_mode", "empirical")
+        ),
+        has_measurement_uncertainty=train.rate_sigma is not None,
+        family_stable=not family_warning,
+    )
 
     condition_mean_rows: list[dict[str, Any]] = []
     for case in cases:
@@ -2002,36 +2723,66 @@ def analyze_cvd_multicond_case(
     summary = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "estimation": {"response_model": response_model,
-                       "loss": ("condition-balanced squared raw-rate error" if response_model == "surface_qss"
-                                else "condition-balanced squared log-rate error"),
+                       "loss": (surface_optimization.loss_name if _uses_surface_response(response_model)
+                                 else "condition-balanced squared log-rate error"),
+                       "sampler": (surface_optimization.sampler if _uses_surface_response(response_model)
+                                   else "analytic_regularized_linear_fit"),
+                       "sampler_trials": (
+                           surface_optimization.trials
+                           if _uses_surface_response(response_model)
+                           and surface_optimization.sampler != "pattern"
+                           else None
+                       ),
+                       "edge_uncertainty_ratio": (surface_optimization.edge_uncertainty_ratio
+                                                  if _uses_surface_response(response_model) else None),
+                       "radial_uncertainty_power": (surface_optimization.radial_power
+                                                    if _uses_surface_response(response_model) else None),
                        "penalty": ("none; exact site-balance reductions and condition CV control complexity"
-                                   if response_model == "surface_qss" else
+                                   if _uses_surface_response(response_model) else
                                    "shared: lambda*||beta||^2; within_between: lambda*((||between||^2+||within||^2)/2+||between-within||^2); intercept unpenalized"),
-                       "regularization_grid": [] if response_model == "surface_qss" else list(REGULARIZATION_GRID),
-                       "response_structure_policy": "site_balance_qss" if response_model == "surface_qss" else response_structure,
-                       "response_structures": (["surface_qss"] if response_model == "surface_qss" else
+                       "regularization_grid": [] if _uses_surface_response(response_model) else list(REGULARIZATION_GRID),
+                       "response_structure_policy": "site_balance_qss_family_comparison" if response_model == "surface_compare" else response_structure,
+                       "response_structures": (list(_surface_families(response_model, model_families)) if _uses_surface_response(response_model) else
                                                list(RESPONSE_STRUCTURES) if response_structure == "select" else [response_structure]),
+                       "candidate_filter": candidate_id,
                        "map_centering": ("not used; absolute concentrations are normalized by identification-data references"
-                                         if response_model == "surface_qss" else
+                                         if _uses_surface_response(response_model) else
                                          "full supplied Fluent input map, independent of measured rates and prediction batch"),
-                       "selection": ("role/reduction inner condition CV MSE in rate units"
-                                     if response_model == "surface_qss" else
-                                     "joint role/response-structure/regularization inner condition CV MSE in rate units")},
+                       "selection": ("equation-family/role/reduction fitted by the named loss; ranked by no-refit condition CV RMSE in rate units"
+                                     if _uses_surface_response(response_model) else
+                                     "joint role/response-structure/regularization inner condition CV MSE in rate units"),
+                       "reaction_input": selected_input_metadata,
+                       "spatial_response": {
+                           "mode": spatial_fit.mode,
+                           "fit_stage": "after chemical-model selection",
+                           "participates_in_chemical_selection": False,
+                       }},
         "analysis_type": (
             f"{len(train_case_ids)}-condition identification plus one-condition no-refit test"
         ),
         "surface_state_assumption": (
-            "quasi-steady site balance with observable lumped parameters; no fitted condition-specific offsets"
-            if response_model == "surface_qss" else
+            "quasi-steady site balance with observable lumped parameters, uniform wafer temperature, and no fitted condition-specific offsets"
+            if _uses_surface_response(response_model) else
             "effective response coefficients transfer across conditions; no fitted condition-specific offsets"
         ),
         "primary_split": primary,
+        # Compatibility name for the model used to make the fixed prediction.
+        # Adoption remains an independent evidence decision in ``validity``.
         "selected_model": {
             "model_id": primary["selected_model"],
+            "equation_family": primary["selected_equation_family"],
             "formula": _fit_formula(selected_fit),
             "reference_rate_nm_s": selected_fit.reference_rate_nm_s,
-            "reference_total_concentration_kmol_m3": selected_fit.reference_total_concentration,
-            "reference_species_fractions": selected_fit.reference_species_fractions,
+            "reference_total_concentration_kmol_m3": (
+                selected_fit.reference_total_concentration
+                if selected_input_metadata["quantity"] == "concentration"
+                else None
+            ),
+            "reference_species_fractions": (
+                selected_fit.reference_species_fractions
+                if selected_input_metadata["mode"] == "bulk_as_surface"
+                else {}
+            ),
             "common_total_order": selected_fit.common_order,
             "within_total_order": selected_fit.within_order,
             "response_structure": selected_fit.response_structure,
@@ -2041,51 +2792,113 @@ def analyze_cvd_multicond_case(
             "selection_reason": primary["selection_reason"],
             "regularization": selected_fit.regularization,
             "effective_roles": selected_fit.effective_roles,
-            "kinetic_limit": getattr(selected_fit.candidate, "kinetic_limit", "empirical"),
+            "reduction_id": getattr(selected_fit.candidate, "reduction_id", "empirical"),
             "observable_parameters": (
                 selected_fit.shape_parameters if isinstance(selected_fit, SurfaceKineticFit) else {}
             ),
-            "reference_concentrations_kmol_m3": (
+            "applicability_status": selected_row.get(
+                "applicability_status", "production"
+            ),
+            "contrast_status": selected_row.get(
+                "contrast_status", "not_assessed"
+            ),
+            "distinguishable": bool(selected_row.get("distinguishable", False)),
+            "supported_claims": selected_row.get("supported_claims", []),
+            "missing_evidence": selected_row.get("missing_evidence", []),
+            "reference_reaction_inputs": (
                 selected_fit.reference_concentrations if isinstance(selected_fit, SurfaceKineticFit) else {}
             ),
+            "reference_reaction_input_total": (
+                selected_fit.reference_input_total
+                if isinstance(selected_fit, SurfaceKineticFit)
+                else selected_fit.reference_total_concentration
+            ),
+            "reference_reaction_input_shares": (
+                selected_fit.reference_input_shares
+                if isinstance(selected_fit, SurfaceKineticFit)
+                else selected_fit.reference_species_fractions
+            ),
+            "reaction_input": selected_input_metadata,
         },
-        "transport_proxy_assumption": {
-            "wall_species_concentration_kmol_m3": 0.0,
-            "driving_concentration_definition": "bulk_concentration_minus_wall_concentration",
-            "driving_concentration_equals_supplied_concentration": True,
-            "absolute_wall_molar_flux_calculated": False,
-            "missing_for_absolute_flux": [
-                "species diffusivity or mass-transfer coefficient",
-                "wall-normal distance or concentration gradient",
-            ],
+        "model_inputs": {
+            "available": list(train.available_inputs()),
+            "selected_reaction_input": selected_input_metadata,
+            "bulk_as_surface_approximation": getattr(
+                selected_fit.candidate, "transport_mode", "empirical"
+            ) == "bulk_as_surface",
+            "wafer_flux_supplied": (
+                selected_input_metadata["quantity"] == "transport_capacity_flux"
+            ),
+            "realized_reactive_flux_used_as_model_input": False,
+            "wafer_temperature": {
+                "spatial_mode": "uniform",
+                "value_K": wafer_temperature_k,
+                "used_as_spatial_correction": False,
+            },
+        },
+        "spatial_response": {
+            "model": spatial_fit.mode,
+            "terms": list(spatial_fit.terms),
+            "coefficients": spatial_fit.coefficients,
+            "center_xy_source_units": spatial_fit.center_xy,
+            "radius_scale_source_units": spatial_fit.radius_scale,
+            "weighting": spatial_fit.weighting,
+            "mean_rate_policy": "conditionwise chemical mean preserved",
+            "participates_in_role_or_equation_selection": False,
+            "fixed_holdout": {
+                "chemical_centered_r2": chemical_test_metrics[
+                    "centered_spatial_r2"
+                ],
+                "corrected_centered_r2": spatial_test_metrics[
+                    "centered_spatial_r2"
+                ],
+                "chemical_rmse_nm_s": chemical_test_metrics["rmse_nm_s"],
+                "corrected_rmse_nm_s": spatial_test_metrics["rmse_nm_s"],
+            },
+            "outer_condition_transfer_supported": spatial_response_transfer_supported,
         },
         "unrestricted_numerical_winner": unrestricted_row,
+        "equation_family_assessments": equation_family_assessments,
+        "reaction_mechanism_assessments": reaction_mechanism_assessments,
+        "reaction_model_prediction_comparison": family_prediction_rows,
+        "reaction_model_state_comparison": family_state_rows,
+        "role_importance_and_stability": role_importance_rows,
+        "parameter_sensitivity_correlations": parameter_sensitivity_diagnostic_rows,
+        "workflow_layers": workflow_layers,
+        "capability_assessments": capability_assessments,
+        "data_requirements": data_requirement_rows,
         "validity": validity,
+        "model_structure_uncertainty": model_uncertainty,
         "grid_alignment": grid_alignment,
         "data_quality": [case.quality for case in cases],
-        "missing_information": [
-            "independent feasible composition perturbations to distinguish competing role assignments",
-            ("independent concentration perturbations that traverse low-coverage and saturation regimes"
-             if response_model == "surface_qss" else
-             "another independent total-concentration level at nearly fixed composition to validate the common total order"),
-            "species diffusivity or mass-transfer coefficient and wall-normal distance for absolute wall flux",
-            "chemical identities, molar masses, feed/byproduct roles, and stoichiometry",
-            "coordinate unit, wafer temperature map, and pressure",
-            "surface/site density and adsorption/desorption or sticking information",
-            "measurement uncertainty and replicate deposition maps",
-        ],
+        "missing_information": list(dict.fromkeys([
+            *selected_row.get("missing_evidence", []),
+            *[
+                measurement
+                for capability in (
+                    "wafer_spatial_correction",
+                    "anonymous_species_role_assignment",
+                    "elementary_kinetic_parameter_estimation",
+                )
+                for measurement in required_measurements_for(
+                    data_requirement_rows, capability
+                )
+            ],
+        ])),
         "interpretation_limits": [
             ("Roles and exact kinetic reductions are chosen by inner condition CV; only outer predictions evaluate the selected procedure."
-             if response_model == "surface_qss" else
+             if _uses_surface_response(response_model) else
              "Regularization and roles are jointly chosen by inner condition CV; only outer predictions evaluate the selected procedure."),
             "A numerical score tie is not statistical or practical equivalence. A no-inhibitor steady AB response cannot identify A/B direction.",
             ("Observable dimensionless groups are not separate elementary rate constants or a surface relaxation time."
-             if response_model == "surface_qss" else
+             if _uses_surface_response(response_model) else
              "The common order describes the supplied condition scaling and is not an elementary reaction order."),
             "A species excluded by the adoption gate is not proven inert.",
+            "The optional spatial residual response is evaluated after chemical selection and cannot support a reaction-role or mechanism claim.",
+            "Uniform wafer temperature is assumed; no radial temperature field is fitted.",
             "Negative test R2 can coexist with low relative RMSE because within-map variation is much smaller than the absolute condition-level rate.",
             "See test_extrapolation.csv for the supplied test condition; a reduced physical form does not establish the true mechanism out of domain.",
-            "Bootstrap intervals condition on the same identification conditions and do not include between-condition or model-form uncertainty.",
+            "Bootstrap intervals condition on the same identification conditions. model_structure_uncertainty.csv separately shows the prediction envelope of structures selected across outer condition folds, but is not a confidence interval.",
         ],
         "sources": [
             {
@@ -2099,31 +2912,96 @@ def analyze_cvd_multicond_case(
         ],
     }
 
+    spatial_response_rows = [
+        {
+            "held_out_condition": row["test_case"],
+            "spatial_model": row["spatial_response_model"],
+            "selected_chemical_model": row["selected_model"],
+            "chemical_rmse_nm_s": row["test_rmse_nm_s"],
+            "corrected_rmse_nm_s": row["spatial_response_test_rmse_nm_s"],
+            "chemical_centered_spatial_r2": row["test_centered_spatial_r2"],
+            "corrected_centered_spatial_r2": row[
+                "spatial_response_test_centered_spatial_r2"
+            ],
+            "corrected_spatial_correlation": row[
+                "spatial_response_test_spatial_correlation"
+            ],
+            "chemical_selection_uses_spatial_response": False,
+        }
+        for row in split_rows
+    ]
 
     _write_rows(output_dir / "condition_quality.csv", quality_rows)
     _write_rows(output_dir / "concentration_scaling.csv", scaling_rows)
     _write_rows(output_dir / "pooled_concentration_correlations.csv", correlation_rows)
-    _write_rows(output_dir / "model_ranking.csv", ranking)
+    _write_rows(
+        output_dir / "condition_mean_input_correlations.csv", input_correlation_rows
+    )
     _write_rows(output_dir / "role_ranking.csv", ranking)
     _write_rows(output_dir / "role_summary.csv", role_summary_rows)
+    _write_rows(output_dir / "best_model_role_assignments.csv", family_role_rows)
+    _write_rows(output_dir / "optimization_history.csv", optimization_history_rows)
+    _write_rows(output_dir / "role_input_sensitivity.csv", role_sensitivity_rows)
+    _write_rows(
+        output_dir / "role_importance_and_stability.csv", role_importance_rows
+    )
+    _write_rows(output_dir / "role_response_curves.csv", role_response_rows)
+    _write_rows(output_dir / "reaction_state_summary.csv", reaction_state_rows)
+    _write_rows(output_dir / "reaction_model_predictions.csv", family_prediction_rows)
+    _write_rows(output_dir / "reaction_model_states.csv", family_state_rows)
+    _write_rows(
+        output_dir / "parameter_sensitivity_correlations.csv",
+        parameter_sensitivity_diagnostic_rows,
+    )
+    _write_rows(output_dir / "parameter_loss_slices.csv", parameter_loss_rows)
     _write_rows(output_dir / "coefficients.csv", coefficient_rows)
+    _write_rows(
+        output_dir / "spatial_response_coefficients.csv",
+        spatial_coefficient_rows(spatial_fit),
+    )
+    _write_rows(
+        output_dir / "spatial_response_summary.csv", spatial_response_rows
+    )
     _write_rows(output_dir / "test_predictions.csv", test_prediction_rows)
     _write_rows(output_dir / "split_sensitivity.csv", split_rows)
     _write_rows(output_dir / "role_stability.csv", role_stability_rows)
     _write_rows(output_dir / "condition_scores.csv", build_condition_scores(ranking))
-    _write_rows(output_dir / "alternative_predictors.csv", alternative_rows)
-    _write_rows(output_dir / "candidate_test_diagnostics.csv", candidate_test_rows)
     _write_rows(output_dir / "test_extrapolation.csv", extrapolation_rows)
+    _write_rows(output_dir / "model_structure_uncertainty.csv", model_uncertainty_rows)
     _write_rows(output_dir / "condition_means.csv", condition_mean_rows)
+    _write_rows(output_dir / "data_requirements.csv", data_requirement_rows)
     _write_json(output_dir / "analysis_summary.json", summary)
-    plot_paths = _plot_results(
+    condition_predictions = {
+        case.case_id: _predict_response(selected_fit, _combine_cases([case]))[0]
+        for case in cases
+    }
+    plot_paths = plot_multicond_results(
         output_dir,
         cases,
-        selected_fit,
+        condition_predictions,
         train,
         test,
         test_prediction,
         ranking,
+        equation_family_assessments,
+        split_rows,
+        model_uncertainty_rows,
+        test_prediction_rows,
+        spatial_prediction=(
+            spatial_prediction if spatial_fit.mode != "none" else None
+        ),
+        reaction_input_mode=reaction_input_mode,
+        optimization_history_rows=optimization_history_rows,
+        family_role_rows=family_role_rows,
+        input_correlation_rows=input_correlation_rows,
+        role_sensitivity_rows=role_sensitivity_rows,
+        role_importance_rows=role_importance_rows,
+        role_response_rows=role_response_rows,
+        reaction_state_rows=reaction_state_rows,
+        family_prediction_rows=family_prediction_rows,
+        family_state_rows=family_state_rows,
+        parameter_sensitivity_rows=parameter_sensitivity_diagnostic_rows,
+        parameter_loss_rows=parameter_loss_rows,
     )
 
     _write_markdown_report(
@@ -2140,7 +3018,10 @@ def analyze_cvd_multicond_case(
         for path in (case.condition_path, case.validation_path)
     ]
     source_metadata = {
-        "label": "CVD Fluent concentration maps and deposition-rate maps for conditions 1–3",
+        "label": (
+            "CVD Fluent reaction-input maps and deposition-rate maps for "
+            f"conditions {list(all_case_ids)}"
+        ),
         "files": source_files,
         "filters": [
             f"Identification conditions: {list(train_case_ids)}",
@@ -2148,9 +3029,6 @@ def analyze_cvd_multicond_case(
             f"{sum(case.rate.size for case in cases)} matched observations across {len(cases)} conditions",
         ],
     }
-    source_metadata["label"] = (
-        f"CVD Fluent concentration maps and deposition-rate maps for conditions {list(all_case_ids)}"
-    )
     report_snapshot = {
         "title": f"CVD role evaluation: {validity['decision']}",
         "generatedAt": summary["generated_at"],
@@ -2172,11 +3050,11 @@ def analyze_cvd_multicond_case(
                             "sourceLineage": [{"files": source_files}],
                         },
                         {
-                            "label": ("Observable surface-response parameters" if response_model == "surface_qss"
+                            "label": ("Observable surface-response parameters" if _uses_surface_response(response_model)
                                       else "Common total-concentration order"),
                             "definition": (
                                 "Dimensionless groups of the quasi-steady site balance; they are not separate elementary constants."
-                                if response_model == "surface_qss" else
+                                if _uses_surface_response(response_model) else
                                 "Effective power response to the sum of supplied concentration_* fields; not an elementary reaction order."
                             ),
                             "componentIds": ["coefficient-table", "report-summary"],
@@ -2200,6 +3078,22 @@ def analyze_cvd_multicond_case(
                 },
             },
             "condition_quality": {"rows": quality_rows, "source": source_metadata},
+            "equation_family_assessments": {
+                "rows": equation_family_assessments,
+                "source": source_metadata,
+            },
+            "reaction_mechanism_assessments": {
+                "rows": reaction_mechanism_assessments,
+                "source": source_metadata,
+            },
+            "capability_assessments": {
+                "rows": capability_assessments,
+                "source": source_metadata,
+            },
+            "data_requirements": {
+                "rows": data_requirement_rows,
+                "source": source_metadata,
+            },
             "model_ranking": {
                 "rows": ranking,
                 "source": {
@@ -2209,7 +3103,7 @@ def analyze_cvd_multicond_case(
                             "label": "Candidate selection",
                             "definition": (
                                 ("Training-condition CV compares independently refitted role assignments and exact kinetic reductions. "
-                                 if response_model == "surface_qss" else
+                                 if _uses_surface_response(response_model) else
                                  "Training-condition CV compares independently refitted structures and regularization strengths. ")
                                 + "Numerical score ties prefer fewer effects; application adoption requires independent evidence and declared tolerances."
                             ),
@@ -2220,6 +3114,10 @@ def analyze_cvd_multicond_case(
                 },
             },
             "coefficients": {"rows": coefficient_rows, "source": source_metadata},
+            "spatial_response": {
+                "rows": spatial_response_rows,
+                "source": source_metadata,
+            },
             "test_predictions": {
                 "rows": test_prediction_rows,
                 "source": {
@@ -2239,12 +3137,23 @@ def analyze_cvd_multicond_case(
             },
             "split_sensitivity": {"rows": split_rows, "source": source_metadata},
             "role_stability": {"rows": role_stability_rows, "source": source_metadata},
-            "alternative_predictors": {"rows": alternative_rows, "source": source_metadata},
-            "candidate_test_diagnostics": {
-                "rows": candidate_test_rows,
+            "role_importance_and_stability": {
+                "rows": role_importance_rows,
+                "source": source_metadata,
+            },
+            "reaction_model_predictions": {
+                "rows": family_prediction_rows,
+                "source": source_metadata,
+            },
+            "parameter_sensitivity_correlations": {
+                "rows": parameter_sensitivity_diagnostic_rows,
                 "source": source_metadata,
             },
             "test_extrapolation": {"rows": extrapolation_rows, "source": source_metadata},
+            "model_structure_uncertainty": {
+                "rows": model_uncertainty_rows,
+                "source": source_metadata,
+            },
         },
     }
     report_snapshot["title"] = (
@@ -2256,18 +3165,30 @@ def analyze_cvd_multicond_case(
         output_dir / "condition_quality.csv",
         output_dir / "concentration_scaling.csv",
         output_dir / "pooled_concentration_correlations.csv",
-        output_dir / "model_ranking.csv",
+        output_dir / "condition_mean_input_correlations.csv",
         output_dir / "role_ranking.csv",
         output_dir / "role_summary.csv",
+        output_dir / "best_model_role_assignments.csv",
+        output_dir / "optimization_history.csv",
+        output_dir / "role_input_sensitivity.csv",
+        output_dir / "role_importance_and_stability.csv",
+        output_dir / "role_response_curves.csv",
+        output_dir / "reaction_state_summary.csv",
+        output_dir / "reaction_model_predictions.csv",
+        output_dir / "reaction_model_states.csv",
+        output_dir / "parameter_sensitivity_correlations.csv",
+        output_dir / "parameter_loss_slices.csv",
         output_dir / "coefficients.csv",
+        output_dir / "spatial_response_coefficients.csv",
+        output_dir / "spatial_response_summary.csv",
         output_dir / "test_predictions.csv",
         output_dir / "split_sensitivity.csv",
         output_dir / "role_stability.csv",
         output_dir / "condition_scores.csv",
-        output_dir / "alternative_predictors.csv",
-        output_dir / "candidate_test_diagnostics.csv",
         output_dir / "test_extrapolation.csv",
+        output_dir / "model_structure_uncertainty.csv",
         output_dir / "condition_means.csv",
+        output_dir / "data_requirements.csv",
         output_dir / "analysis_summary.json",
         output_dir / "report.md",
         output_dir / "report_snapshot.json",
@@ -2276,6 +3197,9 @@ def analyze_cvd_multicond_case(
     ]
     manifest = {
         "generated_at": summary["generated_at"],
+        "analysis_type": summary["analysis_type"],
+        "estimation": summary["estimation"],
+        "sources": summary["sources"],
         "artifacts": [
             {
                 "path": str(path.relative_to(output_dir)),

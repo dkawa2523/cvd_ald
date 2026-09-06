@@ -1,0 +1,14 @@
+slot,species,count,frequency,refit_count,basis
+A,__NONE__,3.0,0.6,5,repeated_condition_cv_selection
+A,idn_2,2.0,0.4,5,repeated_condition_cv_selection
+I,__NONE__,3.0,0.6,5,repeated_condition_cv_selection
+I,n2,2.0,0.4,5,repeated_condition_cv_selection
+B,__NONE__,3.0,0.6,5,repeated_condition_cv_selection
+B,adn_2,2.0,0.4,5,repeated_condition_cv_selection
+AB,"[""adn_2"", ""idn_2""]",3.0,0.6,5,repeated_condition_cv_selection
+AB,__NONE__,2.0,0.4,5,repeated_condition_cv_selection
+equation_family,aib_qss,3,0.6,5,outer_condition_cv_selection
+equation_family,langmuir_hinshelwood_qss,2,0.4,5,outer_condition_cv_selection
+model_structure,"{""equation_family"": ""aib_qss"", ""regularization"": 0.0, ""response_structure"": ""surface_qss"", ""role_model_id"": ""cvd:aib_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2"", ""transport_mode"": ""bulk_as_surface""}",1,0.2,5,outer_condition_cv_selection
+model_structure,"{""equation_family"": ""aib_qss"", ""regularization"": 0.0, ""response_structure"": ""surface_qss"", ""role_model_id"": ""cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2"", ""transport_mode"": ""bulk_as_surface""}",2,0.4,5,outer_condition_cv_selection
+model_structure,"{""equation_family"": ""langmuir_hinshelwood_qss"", ""regularization"": 0.0, ""response_structure"": ""surface_lh_qss"", ""role_model_id"": ""cvd:langmuir_hinshelwood_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2"", ""transport_mode"": ""bulk_as_surface""}",2,0.4,5,outer_condition_cv_selection

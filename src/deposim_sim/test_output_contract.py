@@ -12,7 +12,6 @@ except ModuleNotFoundError:  # pragma: no cover
 
 from deposim_schema import compose_sim_config
 
-from .benchmark_wafer2d import run_wafer2d_benchmark
 from .output_manifest import ManifestError, SCHEMA_VERSION, validate_manifest, validate_manifest_files
 from .pipeline import run_aib_from_spec
 from .run_manager import save_run_outputs
@@ -112,23 +111,6 @@ class TestOutputContract(unittest.TestCase):
             self.assertEqual(payload["schema_version"], SCHEMA_VERSION)
             self.assertEqual(payload["metadata"]["workflow_name"], "simulation")
             self.assertIn("config_fingerprint", payload["metadata"])
-
-    def test_benchmark_manifest_written_and_valid(self) -> None:
-        with TemporaryDirectory() as tmp:
-            out = run_wafer2d_benchmark(
-                config_name="cvd_steady_min",
-                overrides=[f"sim.output.root_dir={tmp}", "sim.output.project=manifest_bench"],
-                with_physviz=True,
-                physviz_fast=True,
-            )
-            run_dir = Path(out["run_dir"])
-            payload = json.loads((run_dir / "outputs" / "manifest.json").read_text(encoding="utf-8"))
-            validate_manifest(payload)
-            artifact_ids = {row["id"] for row in payload["artifacts"]}
-            self.assertIn("ranking", artifact_ids)
-            self.assertIn("class_compare", artifact_ids)
-            self.assertEqual(payload["metadata"]["workflow_name"], "benchmark_wafer2d")
-
 
 if __name__ == "__main__":
     unittest.main()

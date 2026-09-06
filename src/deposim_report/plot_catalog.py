@@ -58,14 +58,6 @@ RUN_REPORT_IDENTIFIABILITY_MAPS: tuple[PlotSpec, ...] = (
     ),
 )
 
-BENCHMARK_PHYSVIZ_MAPS: tuple[PlotSpec, ...] = (
-    PlotSpec("physviz_h_nm", "physviz_h_nm.png", "h_nm", "Representative h_nm", "viridis"),
-    PlotSpec("physviz_phi_B", "physviz_phi_B.png", "phi_B", "Representative phi_B", "viridis"),
-    PlotSpec("physviz_f_I", "physviz_f_I.png", "f_I", "Representative f_I", "viridis"),
-    PlotSpec("physviz_km_A", "physviz_km_A.png", "km_A", "Representative km_A [m/s]", "magma"),
-    PlotSpec("physviz_tau_A", "physviz_tau_A.png", "tau_A", "Representative tau_A [mm*s/m]", "plasma"),
-)
-
 DOE_KPI_MAPS: tuple[PlotSpec, ...] = (
     PlotSpec("kpi_nu_percent", "kpi_nu_percent.png", "nu_percent", "NU Percent", "line"),
     PlotSpec("kpi_center_edge_delta", "kpi_center_edge_delta.png", "center_edge_delta", "Center-Edge Delta", "line"),
@@ -106,13 +98,6 @@ def run_report_species_spec(metric_key: str, species: str) -> PlotSpec:
     raise ValueError(f"unsupported run_report species metric: {metric_key}")
 
 
-def benchmark_physviz_specs(*, fast: bool) -> list[PlotSpec]:
-    specs = list(BENCHMARK_PHYSVIZ_MAPS)
-    if fast:
-        return specs[:2]
-    return specs
-
-
 def to_plot_record(spec: PlotSpec, *, rel_path: str) -> dict[str, Any]:
     return {
         "plot_id": spec.plot_id,
@@ -130,11 +115,9 @@ __all__ = [
     "RUN_REPORT_COMPARISON_MAPS",
     "RUN_REPORT_PROFILE_PLOTS",
     "RUN_REPORT_IDENTIFIABILITY_MAPS",
-    "BENCHMARK_PHYSVIZ_MAPS",
     "DOE_KPI_MAPS",
     "DOE_ZREF_PLOT",
     "sanitize_plot_token",
     "run_report_species_spec",
-    "benchmark_physviz_specs",
     "to_plot_record",
 ]

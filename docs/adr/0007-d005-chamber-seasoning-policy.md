@@ -30,7 +30,7 @@ No promotion to requirement-level implementation is made in this phase.
 ## Consequences
 
 1. No chamber-history state module is added by this decision.
-2. `MODEL_GAP` tracks this as deferred and blocked for silent implementation.
+2. `docs/GAPS.md` tracks this as deferred and blocked for silent implementation.
 3. Future adoption must include schema, persistence, reproducibility, and rollback policy.
 
 ## Trigger To Reopen

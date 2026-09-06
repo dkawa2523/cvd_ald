@@ -1,165 +1,100 @@
-# Evaluation Protocol (EVAL_PROTOCOL)
+# Verification and evaluation protocol
 
-This document defines the verification gates and commands that MUST pass.
+This protocol defines the checks required for code changes and for a new scientific
+evaluation. `scripts/commands.sh` remains the repository entry point for general
+verification; the steady role census has one explicit analysis command so that the
+train/test split and random seed are visible.
 
-All commands MUST be executed via `scripts/commands.sh` to avoid python command mismatch.
+## Routine code gate
 
----
+Run from a Bash environment:
 
-## P0 Gate (must pass before checkpoint)
+```bash
+./scripts/commands.sh smoke cvd
+./scripts/commands.sh smoke ald
+./scripts/commands.sh test
+./scripts/commands.sh verify
+```
 
-### 1) Import sanity
-- Ensure the top-level packages import without side effects.
+The gate passes when imports have no side effects, the minimal configured simulation
+completes, numerical tests pass, and a run contains resolved configuration, fields,
+metrics, plots, and a valid `output.v1` manifest. Model-specific changes must also run
+the closest focused unit modules.
 
-Command:
-- `./scripts/commands.sh import_check`
+| Change area | Focused verification |
+| --- | --- |
+| Steady equations or selection | `deposim_opt.test_surface_kinetics`, `deposim_opt.test_cvd_multicond_analysis` |
+| Objective and uncertainty scaling | `deposim_opt.test_objective` |
+| Dynamic AIB | `deposim_sim.test_aib_ode`, `deposim_sim.test_pipeline_aib` |
+| Mars-van Krevelen | `deposim_sim.test_mvk_state`, `deposim_sim.test_process_models` |
+| ALD state | `deposim_sim.test_ald_role_state` |
+| Transport location or coefficient | `deposim_sim.test_transport_provider` |
+| Configuration semantics | `deposim_schema.test_sim_config_v2`, `tests/test_sim_config_compose.py` |
 
-### 2) Smoke run (synthetic input)
-- Run a minimal CVD steady simulation on synthetic fields.
-- Confirm output directory layout is created and the fixed entrypoint exists.
+## Current steady-data evaluation
 
-Command:
-- `./scripts/commands.sh smoke`
+```powershell
+uv run python scripts/analyze_cvd_multicond_case.py `
+  --data-dir data `
+  --train-cases 1 2 4 5 `
+  --test-case 3 `
+  --response-model surface_compare `
+  --reaction-input bulk_concentration `
+  --models all `
+  --loss mse `
+  --sampler pattern `
+  --bootstrap-samples 100 `
+  --spatial-response radial_quartic `
+  --seed 123 `
+  --output results/current_cvd_separated
+```
 
-Acceptance checks:
-- `results/index.html` exists
-- run directory contains:
-  - `config_resolved.yaml`
-  - `outputs/fields.npz` and `outputs/metrics.json`
-  - `outputs/manifest.json` (`schema_version=output.v1`)
-  - `plots/` and `report.html`
+Acceptance is based on the generated evidence, not process completion alone:
 
-### 3) Unit tests (numerical sanity)
-- Non-negativity and bounds:
-  - C_s >= 0
-  - R in [0, R_max]
-- Regime limits:
-  - reaction-limited vs transport-limited behavior
-- Root solver robustness on monotonic cases
+1. All input rows and coordinates pass the quality checks, or exclusions are listed.
+2. The fixed holdout is absent from fitting, normalization, and model selection.
+3. Every applicable family, exact reduction, and disjoint role assignment is included.
+4. Selection uses condition-refit error and reports an explicit training-only baseline.
+5. Mean error, centered spatial error, correlation, bias, and range capture are reported
+   separately.
+6. Outer condition folds report the stability of the complete selection procedure.
+7. The report states extrapolation, reduction evidence, coefficient uncertainty, and
+   model-structure spread.
+8. `data_requirements.csv` states what measurement and controlled variation would make
+   each unresolved target use assessable.
+9. Equation-family, condition-contrast, reaction-path, alternative-model prediction,
+   role-importance/stability, parameter-sensitivity, heldout spatial, radial-shell,
+   model-structure, and optional spatial-response figures are generated and visually
+   checked against their source CSV files.
+10. The final status is `adopt`, `review`, or `reject`, with the supported use narrower
+   than or equal to the tested evidence.
 
-Command:
-- `./scripts/commands.sh test`
+## Dynamic model evaluation
 
-### 4) Full verify shortcut
-Command:
-- `./scripts/commands.sh verify_p0`
+Dynamic AIB, MvK, and ALD models are first checked for state bounds, mass-transfer
+closure, time-step convergence, and source/sink sign. Scientific comparison additionally
+requires a time-resolved observable. Steady film-rate CSV files may confirm a limiting
+response but cannot rank reservoir or storage dynamics.
 
----
+The following checks are mandatory for a dynamic claim:
 
-## P1 Gate
+- initial state and its preparation are stated;
+- input timestamps, concentration location, temperature, and pressure are known;
+- the same observation operator is applied to all models;
+- at least one full switching, dose/purge, or cycle sequence is withheld;
+- fitted state time constants are resolved by the sampling interval;
+- A-reduction, B-regeneration, conversion, and transport fluxes are reported in
+  compatible units.
 
-Run AIB utility migration gates:
+## Documentation and artifact gate
 
-- `./scripts/commands.sh verify_p1`
+Before release:
 
-This gate includes:
-
-- Utility common AIB execution checks
-- DOE/z_ref workflows on AIB path
-- Physviz benchmark outputs on AIB path
-- Identifiability and assimilation checks on AIB path
-- Residual legacy-utility migration checks (`multiz`, `benchmark`, `phases_driver`)
-
-## Wafer2D AIB Benchmark
-
-Run the benchmark runner that validates:
-
-- A/AI/AB/AIB class coverage
-- AIB diagnostics (`phi_B`, `f_I`, `CsA_over_CrefA`, `CsB_over_CrefB`, `residual_nm`)
-- ranking/class comparison outputs (`ranking.csv`, `class_compare.csv`)
-- summary trend assertions (`overall_passed`)
-
-Command:
-
-- `./scripts/commands.sh benchmark_wafer2d`
-
-Physviz extension command (time-space maps + term-importance plots):
-
-- `./scripts/commands.sh benchmark_wafer2d_physviz`
-
-Flux-km comparison command (free-km vs flux-km judge):
-
-- `./scripts/commands.sh benchmark_wafer2d_flux_km`
-
-## P2 Gate
-
-Run AIB contract/output gates:
-
-- `./scripts/commands.sh verify_p2_quick`
-- `./scripts/commands.sh verify_p2`
-
-This gate includes:
-
-- Opt contract completion checks (`role_enumeration`, `selection`, top-k outputs)
-- selective optimize.md adoption checks (`sampler/pruner/storage`, decomposed objective, multi-condition/hierarchical fidelity)
-- Measurement alignment integration checks
-- Output contract strictness checks (`save_fields`, manifest validation, report map generation)
-- ranking/full-candidate + tri-rendering + IO/run_manager + non-mainline test convergence checks
-
-Recommended usage:
-
-- Daily/dev loop: `./scripts/commands.sh verify_p2_quick`
-- Pre-release/full validation: `./scripts/commands.sh verify_p2`
-
-Final AIB gate:
-
-- `./scripts/commands.sh verify_task P3-038`
-
-`verify_task P3-038` enforces:
-
-- full P1 + P2 AIB gate replay
-- task contract validation
-
-Output/Viz convergence gates:
-
-- `./scripts/commands.sh verify_task D-009`
-- `./scripts/commands.sh verify_task P3-039`
-- `./scripts/commands.sh verify_task P3-040`
-- `./scripts/commands.sh verify_task P3-041`
-- `./scripts/commands.sh verify_task P3-042`
-- `./scripts/commands.sh verify_task P3-043`
-- `./scripts/commands.sh verify_task P3-044`
-- `./scripts/commands.sh verify_task P3-045`
-
-Optimization selective-adoption gates:
-
-- `./scripts/commands.sh verify_task D-010`
-- `./scripts/commands.sh verify_task P3-046`
-- `./scripts/commands.sh verify_task P3-047`
-- `./scripts/commands.sh verify_task P3-048`
-- `./scripts/commands.sh verify_task P3-049`
-- `./scripts/commands.sh verify_task P3-050`
-- `./scripts/commands.sh verify_task P3-051`
-- `./scripts/commands.sh verify_task P3-052`
-
-improve2 selective-adoption gates:
-
-- `./scripts/commands.sh verify_task D-011`
-- `./scripts/commands.sh verify_task P3-053`
-- `./scripts/commands.sh verify_task P3-054`
-- `./scripts/commands.sh verify_task P3-055`
-- `./scripts/commands.sh verify_task P3-056`
-- `./scripts/commands.sh verify_task P3-057`
-
-Refactor stabilization gates:
-
-- `./scripts/commands.sh verify_task D-013`
-- `./scripts/commands.sh verify_task D-014`
-- `./scripts/commands.sh verify_task P3-058`
-- `./scripts/commands.sh verify_task P3-059`
-- `./scripts/commands.sh verify_task P3-060`
-- `./scripts/commands.sh verify_task P3-061`
-- `./scripts/commands.sh verify_task P3-062`
-- `./scripts/commands.sh verify_task P3-063`
-- `./scripts/commands.sh verify_task P3-064`
-- `./scripts/commands.sh verify_task P3-065`
-- `./scripts/commands.sh verify_task P3-066`
-- `./scripts/commands.sh verify_task P3-067`
-- `./scripts/commands.sh verify_task P3-068`
-- `./scripts/commands.sh verify_task P3-069`
-
-## Contract Gate
-
-Task contract and command centralization checks:
-
-- `./scripts/commands.sh verify_task_contracts`
+- `git diff --check` reports no whitespace errors;
+- relative links in current Markdown documents resolve;
+- equations in `THEORY.md` agree with the executable responses;
+- `CURRENT_DATA_EVALUATION.md` is regenerated when source hashes or selection semantics
+  change;
+- report figures are copied from the declared run and visually checked;
+- generated working outputs stay in `results/`, while only selected report figures are
+  retained under `docs/assets/`.

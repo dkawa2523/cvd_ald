@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +20,7 @@ class MeasurementData:
     xy: np.ndarray
     h: np.ndarray
     sigma: np.ndarray | None = None
+    extra: dict[str, np.ndarray] = field(default_factory=dict)
 
 
 def _require_numpy() -> None:
@@ -136,11 +137,22 @@ def _load_measurement_npz(path: Path, *, keys: Any) -> MeasurementData:
         h = np.asarray(data[h_key], dtype=float).reshape(-1)
         sigma_key = _as_key(keys, "sigma", "")
         sigma = np.asarray(data[sigma_key], dtype=float).reshape(-1) if sigma_key else None
+        extra: dict[str, np.ndarray] = {}
+        if isinstance(keys, Mapping):
+            for logical_name, source_key in keys.items():
+                if logical_name in {"xy", "x", "y", "h", "sigma"} or not source_key:
+                    continue
+                if str(source_key) not in data.files:
+                    raise ValueError(
+                        f"measurement npz missing configured key {source_key!r} "
+                        f"for {logical_name!r} in {path}"
+                    )
+                extra[str(logical_name)] = np.asarray(data[str(source_key)], dtype=float)
     if xy.ndim != 2 or xy.shape[1] != 2:
         raise ValueError(f"measurement xy must be shape [n_pts,2], got {xy.shape}")
     if h.shape[0] != xy.shape[0]:
         raise ValueError("measurement h length must match xy rows")
-    return MeasurementData(xy=xy, h=h, sigma=sigma)
+    return MeasurementData(xy=xy, h=h, sigma=sigma, extra=extra)
 
 
 def _load_measurement_csv(path: Path, *, keys: Any) -> MeasurementData:
@@ -155,7 +167,20 @@ def _load_measurement_csv(path: Path, *, keys: Any) -> MeasurementData:
     h = np.asarray(table[h_key], dtype=float).reshape(-1)
     sigma_key = _as_key(keys, "sigma", "")
     sigma = np.asarray(table[sigma_key], dtype=float).reshape(-1) if sigma_key else None
-    return MeasurementData(xy=xy, h=h, sigma=sigma)
+    extra: dict[str, np.ndarray] = {}
+    if isinstance(keys, Mapping):
+        for logical_name, source_key in keys.items():
+            if logical_name in {"xy", "x", "y", "h", "sigma"} or not source_key:
+                continue
+            if str(source_key) not in table.dtype.names:
+                raise ValueError(
+                    f"measurement csv missing configured column {source_key!r} "
+                    f"for {logical_name!r} in {path}"
+                )
+            extra[str(logical_name)] = np.asarray(
+                table[str(source_key)], dtype=float
+            )
+    return MeasurementData(xy=xy, h=h, sigma=sigma, extra=extra)
 
 
 def load_measurement_input(

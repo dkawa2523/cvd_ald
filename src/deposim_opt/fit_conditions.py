@@ -248,9 +248,7 @@ def evaluate_condition(spec: SimSpecV2, objective: Mapping[str, Any]) -> dict[st
     result = run_sim_from_spec(spec)
     components = evaluate_candidate_score(
         residual_nm=result.fields.get("residual_nm"), fields=result.fields,
-        diagnostics=result.diagnostics, role_has_i=spec.roles.I is not None,
-        role_has_b=spec.roles.B is not None, objective=objective,
-        lambda_complex=0.0,
+        diagnostics=result.diagnostics, objective=objective,
     )
     alignment = result.diagnostics.get("observation") or result.diagnostics.get("measurement_alignment", {})
     components.update(

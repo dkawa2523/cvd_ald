@@ -1,0 +1,3 @@
+spatial_model,term,coefficient,unit,train_conditions,weighting
+radial_quartic,rho^2,0.0596442129270574,1,1|2|4|5,condition_balanced_points
+radial_quartic,rho^4,-0.057015225553249976,1,1|2|4|5,condition_balanced_points

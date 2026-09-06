@@ -1,0 +1,4 @@
+interface:
+  display_name: "Extend Reaction Role Models"
+  short_description: "Extend role equations, evidence, and figures"
+  default_prompt: "Use $extend-reaction-role-models to add or revise a reaction-role equation, state model, fitting component, evidence artifact, or scientific visualization in this repository."

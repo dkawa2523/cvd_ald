@@ -1,192 +1,53 @@
-# Domain Context (Semiconductor Deposition Surface Modeling)
+# Domain context and terminology
 
-This repository implements a **surface modeling simulation foundation** for semiconductor
-deposition processes (CVD and ALD), where the available upstream simulation (CFD) provides only
-gas-phase transport fields near the wafer.
+## Product question
 
-The core objective is to **predict wafer film thickness distribution** (2D map) from:
+The repository asks whether anonymous Fluent species fields can be assigned to a small
+set of transferable surface-reaction roles when predicting measured CVD or ALD film
+maps. A result is valuable when it states both the supported role-level claim and the
+evidence still required.
 
-- CFD-derived **reference-plane** fields: concentration(s), velocity magnitude, temperature
-- process scalars: pressure, recipe timing, (optionally) wafer rotation speed
+## Role vocabulary
 
-while **not requiring** full gas-phase composition or full surface microkinetics.
+| Role | Operational meaning | Evidence required for adoption |
+| --- | --- | --- |
+| (A) | species associated with adsorption, storage, or growth-related supply | independent variation and improvement over the model without (A) |
+| (B) | conversion partner or MvK regeneration species | low-(B) contrast, independent variation, or a time response specific to conversion/regeneration |
+| (I) | species that reduces available sites or capacity | independent inhibitor sweep and consistent benefit over the no-(I) reduction |
+| none | species not used by one candidate | exclusion from one selected model is not proof of inertness |
 
----
+Names such as `s0`, `adn_2`, and `n2` remain raw identifiers. Chemical identity,
+stoichiometry, and feed/byproduct status must come from external process knowledge or
+independent measurement.
 
-## Key definitions
+## Spatial and physical locations
 
-### Reference-plane concentration `C_ref`
-CFD outputs are assumed to be provided on a fixed plane at height:
+`C_ref` denotes the concentration at the Fluent extraction plane. `C_s` denotes the
+concentration adjacent to the reactive wall. They are equal only when a supplied wall
+field is used directly or when the transport drop is deliberately neglected. The
+selected concentration location is part of the fitted candidate and the output
+provenance.
 
-- `z_ref_mm` above the wafer surface
+The measured response is deposition rate in nm s\(^{-1}\) for the current CVD CSV
+workflow and thickness in nm for general simulations. Coordinates must carry a declared
+unit before gradients, wafer radius, or transport length scales are interpreted
+dimensionally.
 
-The concentration on that plane is **NOT** the surface concentration.
-We explicitly call it `C_ref` and treat it as a boundary condition for a reduced transport model.
+## Claim vocabulary
 
-**Important:**
-- `z_ref_mm` is configurable and stored as input metadata.
-- Changing `z_ref_mm` may require recalibration of mass-transfer modeling.
-- The platform provides a *z_ref sensitivity* workflow (as a DOE factor) to diagnose fragility.
+- `improves_baseline`: every evaluated condition has lower MSE than its training-only
+  constant reference.
+- `spatial supported`: centered (R^2>0) on every required condition.
+- `consistent_benefit`: an effect's parent model does not lose to its independently
+  refitted reduction on any condition and improves at least one above roundoff.
+- `distinguished`: alternative raw-species assignments are consistently worse for the
+  same effect structure.
+- `adopt_candidate`: fixed independent prediction meets declared application criteria
+  and role/model ambiguity is absent.
+- `review`: a narrower predictive use may be valid, but one or more role, structure,
+  spatial, or application requirements remain unresolved.
+- `reject_prediction`: independent prediction does not beat its declared baseline.
 
-### Surface-adjacent concentration `C_s`
-`C_s` is the concentration that enters the surface kinetic model.
-It is determined by coupling transport with surface reaction.
-
-### Wafer thickness map `h(x,y)` (a.k.a. film thickness / film pressure)
-The deliverable is a 2D thickness distribution:
-- either in polar coordinates `(r, theta)` or XY coordinates `(x, y)` depending on the domain spec.
-
----
-
-## Core physics model: Transport-Coupled Reduced Surface Kinetics (TCRSK)
-
-At each wafer surface location (grid point), we solve a local coupled problem:
-
-### Transport (reference-plane → surface)
-For each species `i`:
-    J_i = k_m,i * (C_ref,i - C_s,i)
-
-### Reduced surface kinetics (rate law family)
-One or more reaction channels:
-    r_j = r_j(C_s, state, T; params)
-
-The rate law family must support:
-- explicit reaction orders (including fractional/negative "apparent" orders)
-- saturation / inhibition (denominator forms; Langmuir/LHHW-like)
-- state-coupled kinetics (coverage/site models for ALD and surface modification)
-
-### Species balance / stoichiometry coupling
-    J_i = Σ_j ν_ij r_j
-
-### State evolution (optional)
-For ALD / modification:
-    d state / dt = g(C_s, state, T; params)
-
-### Thickness update
-    dh/dt = Σ_j α_j r_j
-
----
-
-## Computational reduction: progress-variable root solve
-
-For many practical CVD cases, a single dominant deposition reaction is assumed.
-Then the coupled system can be reduced to a scalar root solve for a progress variable R:
-
-    C_s,i = C_ref,i - (ν_i / k_m,i) * R
-
-    F(R) = R - r(C_s(R), state, T) = 0
-
-with a physically safe bracket:
-
-    0 ≤ R ≤ R_max = min_i (k_m,i * C_ref,i / ν_i)
-
-This enables robust **bracketing** solvers (bisection as default) and vectorization
-over wafer grid points.
-
----
-
-## Coordinate domains
-
-Supported domain specs (configurable):
-
-- `wafer_2d_polar`: (r, theta) grid (natural for single-wafer systems)
-- `wafer_1d_radial`: r-only grid (axisymmetric approximation, optional)
-- `wafer_2d_xy`: (x, y) grid (useful when measurement is native XY)
-
-Measured film thickness is assumed to be a **2D map**.
-Axisymmetric reduction is optional and should be justified by diagnostics.
-
----
-
-## Wafer rotation
-
-The platform is "rotating disk oriented" (single-wafer), but rotation is NOT mandatory.
-
-- Rotation enters primarily through mass-transfer modeling (`k_m`) and optional averaging.
-- If `omega_rad_s = 0`, the simulation still runs.
-- Any rotation-specific correlation must guard `omega=0` (error or fallback) to prevent silent nonsense.
-
----
-
-## Numerical priorities
-
-The platform must prioritize:
-
-1) Physical constraints:
-   - concentrations nonnegative
-   - coverage in [0,1]
-   - thickness sign convention consistent (deposit positive; etch negative)
-
-2) Robust convergence:
-   - bracketing root solvers for the coupled transport-reaction equation
-   - monotonicity diagnostics + fallback strategies where needed
-
-3) Reproducible, non-exploding outputs:
-   - fixed entrypoint `results/index.html`
-   - DOE results stored as case-dimension arrays (avoid per-case directories)
-
-4) Future extensibility:
-   - package separation (sim vs opt/ML)
-   - model registry for adding new models without refactoring
-
----
-
-## Configuration approach (Hydra + YAML)
-
-- CLI is not a primary user interface.
-- The system is configured via YAML files composed by Hydra.
-- YAML configs are split into:
-  - `configs/sim/` (numerical simulation)
-  - `configs/opt/` (data assimilation / optimization)
-
-`config_resolved.yaml` is always saved into the run directory for reproducibility.
-
----
-
-## Diagnostics that MUST be produced
-
-To avoid "it matches but we don't know why", the platform standardizes outputs:
-
-- thickness map
-- radial profile
-- Cs/C_ref map (depletion indicator)
-- Da proxy map (reaction vs transport)
-- apparent reaction order map (n_app)
-- root solver iteration counts / failure rates
-- warnings on monotonicity violations / fallback usage
-
-These diagnostics are required for:
-- model validation
-- extrapolation safety assessment
-- later data assimilation and ML residual modeling
-
----
-
-## Current code boundary in this repo
-
-In the current `deposim_*` implementation, the practical boundary is:
-
-- upstream Fluent-like data preparation provides canonical runtime inputs through
-  `xy`, `cref`, optional `time`, and optional `flux_sink`
-- `deposim_sim.io_plugins` and `deposim_sim.input_builder` are responsible for loading
-  and validating that input contract
-- `deposim_sim.transport_provider` is responsible for transport-closure behavior
-  (`fit_scalar` or `from_cfd_flux_sink`)
-- `deposim_opt.enumerate_roles` is responsible for raw-species to A/I/B role
-  candidate enumeration when the reaction roles are unknown
-- `deposim_sim.models.process_models` is the small process-model registry for
-  CVD/ALD-facing model names
-- `deposim_sim.models.aib_ode` is the current compatibility implementation for
-  role-based surface-state / kinetics updates
-- ALD readiness work should build on the minimal `role_ald_state`
-  role-assimilation model described in ADR 0020 instead of tuning the
-  compatibility alias
-- ADR 0021 makes role B genuinely optional in `role_ald_state`, separates train
-  and holdout scoring, and requires ordinary error-unit and complexity-sensitivity
-  diagnostics before role adoption
-- `deposim_sim.pipeline` is responsible for orchestration only: it maps validated
-  inputs onto domains, dispatches transport + kinetics, and assembles diagnostics
-
-This repo does not auto-classify Knudsen regime or solve a new chamber-scale transport
-model downstream of Fluent. When `km_source=fit_scalar`, effective transport assumptions
-must already be encoded in the provided inputs and parameter choices.
+These are evidence states. They do not establish a named chemical species or elementary
+reaction without the mechanism-specific observations described in
+[THEORY.md](THEORY.md).

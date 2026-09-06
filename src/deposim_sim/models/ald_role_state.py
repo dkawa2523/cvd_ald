@@ -28,6 +28,8 @@ class ALDRoleStateResult:
     r_event: np.ndarray
     cs_a: np.ndarray
     cs_b: np.ndarray
+    j_a_surface: np.ndarray
+    j_b_surface: np.ndarray
     diagnostics: dict[str, Any]
 
 
@@ -35,11 +37,39 @@ def _clip01(arr: np.ndarray) -> np.ndarray:
     return np.clip(np.asarray(arr, dtype=float), 0.0, 1.0)
 
 
-def _surface_effective(cref: np.ndarray, km: np.ndarray, demand: np.ndarray) -> np.ndarray:
+def _surface_sink_concentration(
+    cref: np.ndarray,
+    km: np.ndarray,
+    sink_coefficient: np.ndarray,
+    gamma_s: np.ndarray,
+) -> np.ndarray:
     cref = np.clip(np.asarray(cref, dtype=float), 0.0, np.inf)
     km = np.clip(np.asarray(km, dtype=float), 0.0, np.inf)
-    demand = np.clip(np.asarray(demand, dtype=float), 0.0, np.inf)
-    return cref * km / np.maximum(km + demand, _EPS)
+    demand = np.clip(
+        np.asarray(gamma_s, dtype=float)
+        * np.asarray(sink_coefficient, dtype=float),
+        0.0,
+        np.inf,
+    )
+    inv_km = np.where(np.isinf(km), 0.0, 1.0 / np.maximum(km, _EPS))
+    return cref / np.maximum(1.0 + demand * inv_km, _EPS)
+
+
+def _surface_storage_concentration(
+    cref: np.ndarray,
+    km: np.ndarray,
+    store_coefficient: np.ndarray,
+    release_rate: np.ndarray,
+    gamma_s: np.ndarray,
+) -> np.ndarray:
+    """Close ``km(Cb-Cs)=Gamma_s*(store*Cs-release)``."""
+    cref = np.clip(np.asarray(cref, dtype=float), 0.0, np.inf)
+    km = np.clip(np.asarray(km, dtype=float), 0.0, np.inf)
+    inv_km = np.where(np.isinf(km), 0.0, 1.0 / np.maximum(km, _EPS))
+    capacity = np.asarray(gamma_s, dtype=float)
+    numerator = cref + capacity * np.asarray(release_rate, dtype=float) * inv_km
+    denominator = 1.0 + capacity * np.asarray(store_coefficient, dtype=float) * inv_km
+    return np.clip(numerator / np.maximum(denominator, _EPS), 0.0, np.inf)
 
 
 def run_ald_role_state_transient(
@@ -59,6 +89,8 @@ def run_ald_role_state_transient(
     k_store_i: np.ndarray,
     k_release_i: np.ndarray,
     alpha_h: np.ndarray,
+    gamma_s: np.ndarray,
+    nu_b: np.ndarray,
     has_b: bool,
     has_i: bool,
 ) -> ALDRoleStateResult:
@@ -78,6 +110,8 @@ def run_ald_role_state_transient(
     r_event = np.zeros_like(theta_a, dtype=float)
     cs_a = np.zeros_like(theta_a, dtype=float)
     cs_b = np.full(theta_a.shape, np.nan, dtype=float)
+    j_a_surface = np.zeros_like(theta_a, dtype=float)
+    j_b_surface = np.full(theta_a.shape, np.nan, dtype=float)
     bounded_violation_count = 0
     state_projection_count = 0
     substep_count = 0
@@ -98,17 +132,29 @@ def run_ald_role_state_transient(
         for _ in range(n_sub):
             substep_count += 1
             theta_free = np.clip(1.0 - theta_a - theta_i, 0.0, 1.0)
-            active_convert_coefficient = k_convert_ab if has_b else k_convert_a
-            demand_a = k_store_a * theta_free + k_release_a + active_convert_coefficient
-            demand_b = k_convert_ab * theta_a if has_b else np.zeros_like(theta_a)
-            cs_a = _surface_effective(c_a_i, km_a_i, demand_a)
-            cs_b = _surface_effective(c_b_i, km_b_i, demand_b) if has_b else np.full(theta_a.shape, np.nan, dtype=float)
+            store_coefficient = k_store_a * theta_free
+            release_rate = k_release_a * theta_a
+            cs_a = _surface_storage_concentration(
+                c_a_i, km_a_i, store_coefficient, release_rate, gamma_s
+            )
+            demand_b = nu_b * k_convert_ab * theta_a if has_b else np.zeros_like(theta_a)
+            cs_b = (
+                _surface_sink_concentration(c_b_i, km_b_i, demand_b, gamma_s)
+                if has_b
+                else np.full(theta_a.shape, np.nan, dtype=float)
+            )
             cs_i = np.clip(c_i_i, 0.0, np.inf) if has_i else np.zeros_like(theta_a)
 
             convert = (
                 k_convert_ab * np.nan_to_num(cs_b, nan=0.0) * theta_a
                 if has_b
                 else k_convert_a * theta_a
+            )
+            j_a_surface = gamma_s * (store_coefficient * cs_a - release_rate)
+            j_b_surface = (
+                gamma_s * nu_b * convert
+                if has_b
+                else np.full(theta_a.shape, np.nan, dtype=float)
             )
             dtheta_a = k_store_a * cs_a * theta_free - k_release_a * theta_a - convert
             dtheta_i = k_store_i * cs_i * theta_free - k_release_i * theta_i if has_i else np.zeros_like(theta_a)
@@ -153,6 +199,8 @@ def run_ald_role_state_transient(
         r_event=r_event,
         cs_a=cs_a,
         cs_b=cs_b,
+        j_a_surface=j_a_surface,
+        j_b_surface=j_b_surface,
         diagnostics=diagnostics,
     )
 

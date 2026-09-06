@@ -1,4 +1,4 @@
-"""Current role-based simulation pipeline using the AIB-ODE compatibility model."""
+"""Role-based CVD and ALD simulation pipeline."""
 
 from __future__ import annotations
 
@@ -11,12 +11,18 @@ from deposim_schema import compose_sim_config
 from .common.overrides import as_bool, normalize_overrides
 from .domain import DomainGrid, build_domain_grid
 from .input_builder import apply_roles, build_domain_from_fluent_xy, normalize_xy_mm
-from .io_plugins import load_fluent_from_run_spec, load_measurement_from_run_spec
+from .io_plugins import MeasurementData, load_fluent_from_run_spec, load_measurement_from_run_spec
 from .measurement_adapter import align_point_measurement_to_points, point_alignment_distance_stats, compare_point_observations
 from .models.ald_role_state import run_ald_role_state_transient
 from .models.aib_ode import compute_diagnostics, step_theta_implicit
+from .models.mvk_state import run_mvk_state
 from .models.process_models import canonical_process_implementation, validate_process_model_choice
-from .transport_provider import CfdFluxSinkKmProvider, FitScalarKmProvider, TransportProvider
+from .transport_provider import (
+    CfdFluxSinkKmProvider,
+    DirectSurfaceConcentrationProvider,
+    FitScalarKmProvider,
+    TransportProvider,
+)
 from .validation import validate_run_spec
 
 try:  # pragma: no cover
@@ -82,6 +88,11 @@ def _build_transport_provider(
             reference_shape=reference_shape,
             time_dependent=time_dependent,
         )
+    if km_source == "direct_surface":
+        return km_source, DirectSurfaceConcentrationProvider.from_reference_shape(
+            reference_shape=reference_shape,
+            time_dependent=time_dependent,
+        )
     if km_source == "from_cfd_flux_sink":
         if flux_a is None:
             raise ValueError("km_source=from_cfd_flux_sink requires flux_sink input for role A")
@@ -116,10 +127,16 @@ def _load_measurement(
     prediction_nm: np.ndarray,
     duration_s: float,
     initial_nm: Any = 0.0,
-) -> tuple[np.ndarray | None, np.ndarray | None, dict[str, Any], dict[str, Any] | None]:
+) -> tuple[
+    np.ndarray | None,
+    np.ndarray | None,
+    dict[str, Any],
+    dict[str, Any] | None,
+    MeasurementData | None,
+]:
     meas = sim.measurement
     if not bool(getattr(meas, "enabled", False)):
-        return None, None, {"enabled": False}, None
+        return None, None, {"enabled": False}, None, None
     align = dict(getattr(meas, "align", {}) or {})
     align_enabled = as_bool(align.get("enable", False))
     align["enable"] = align_enabled
@@ -169,14 +186,123 @@ def _load_measurement(
         alignment_diag.update({"enabled": True, "valid_count": int(np.sum(valid))})
         if quantity == "mean_rate":
             aligned += np.broadcast_to(np.asarray(initial_nm), prediction_nm.shape).ravel()
-        return aligned, valid, alignment_diag, observation
+        return aligned, valid, alignment_diag, observation, loaded
 
     if h.ndim != 1 or h.shape[0] != n_pts:
         raise ValueError("measurement h must be shape [n_pts] when alignment is disabled")
     valid = np.isfinite(h)
     if quantity == "mean_rate":
         h += np.broadcast_to(np.asarray(initial_nm), prediction_nm.shape).ravel()
-    return h, valid, {"enabled": False, "valid_count": int(np.sum(valid)), "target_count": n_pts}, observation
+    return (
+        h,
+        valid,
+        {"enabled": False, "valid_count": int(np.sum(valid)), "target_count": n_pts},
+        observation,
+        loaded,
+    )
+
+
+_MVK_HISTORY_OBSERVATIONS = (
+    "h_nm_history",
+    "oxidized_fraction_history",
+    "reduction_rate_history_s-1",
+    "regeneration_rate_history_s-1",
+    "Cs_A_history_kmol_m3",
+    "Cs_B_history_kmol_m3",
+    "J_A_surface_history",
+    "J_B_surface_history",
+)
+
+
+def _mvk_multi_observations(
+    measurement_data: MeasurementData | None,
+    point_observation: dict[str, Any] | None,
+    *,
+    measurement_xy_mm: np.ndarray,
+    model_xy_mm: np.ndarray,
+    align: dict[str, Any],
+    time_s: np.ndarray,
+    fields: dict[str, np.ndarray],
+) -> dict[str, dict[str, Any]]:
+    """Adapt configured MvK histories to the unit-standardized objective."""
+
+    if measurement_data is None:
+        return {}
+    extra = measurement_data.extra
+    configured = [name for name in _MVK_HISTORY_OBSERVATIONS if name in extra]
+    if not configured:
+        return {}
+    if "time" not in extra:
+        raise ValueError("MvK history observations require measurement.keys.time")
+    measured_time = np.asarray(extra["time"], dtype=float).reshape(-1)
+    model_time = np.asarray(time_s, dtype=float).reshape(-1)
+    if measured_time.shape != model_time.shape or not np.allclose(
+        measured_time, model_time, rtol=1.0e-10, atol=1.0e-12
+    ):
+        raise ValueError("MvK history observation times must match Fluent input times")
+    if point_observation is None or point_observation.get("sigma_nm") is None:
+        raise ValueError(
+            "MvK multi-observation fitting requires film measurement uncertainty"
+        )
+
+    observations: dict[str, dict[str, Any]] = {
+        "film": {
+            "target": np.asarray(point_observation["target_nm"], dtype=float),
+            "prediction": np.asarray(point_observation["prediction_nm"], dtype=float),
+            "sigma": np.asarray(point_observation["sigma_nm"], dtype=float),
+        }
+    }
+    for name in configured:
+        sigma_name = f"{name}_sigma"
+        if sigma_name not in extra:
+            raise ValueError(
+                f"MvK history observation {name!r} requires measurement.keys.{sigma_name}"
+            )
+        prediction = np.asarray(fields[name], dtype=float)
+        target = np.asarray(extra[name], dtype=float)
+        if target.ndim < 2 or target.shape[0] != model_time.size:
+            raise ValueError(
+                f"MvK history observation {name!r} must have shape [time, *space]"
+            )
+        target = target.reshape(model_time.size, -1)
+        if target.shape[1] != measurement_xy_mm.shape[0]:
+            raise ValueError(
+                f"MvK history observation {name!r} has {target.shape[1]} spatial values; "
+                f"expected {measurement_xy_mm.shape[0]} measurement points"
+            )
+        sigma = np.asarray(extra[sigma_name], dtype=float)
+        try:
+            sigma = np.broadcast_to(sigma, target.shape)
+        except ValueError as exc:
+            raise ValueError(
+                f"MvK history uncertainty {sigma_name!r} cannot broadcast to "
+                f"{target.shape}"
+            ) from exc
+        prediction = prediction.reshape(model_time.size, -1)
+
+        # Film is already an observation at the final time.  When a complete
+        # thickness history is supplied, omit its final row so that the same
+        # measurement is not counted twice in the objective.
+        stop = model_time.size - 1 if name == "h_nm_history" else model_time.size
+        compared = [
+            compare_point_observations(
+                prediction_nm=prediction[index],
+                model_xy_mm=model_xy_mm,
+                measured=target[index],
+                measurement_xy_mm=measurement_xy_mm,
+                align=align,
+                sigma=sigma[index],
+            )
+            for index in range(stop)
+        ]
+        if not compared:
+            continue
+        observations[name] = {
+            "target": np.concatenate([item["target_nm"] for item in compared]),
+            "prediction": np.concatenate([item["prediction_nm"] for item in compared]),
+            "sigma": np.concatenate([item["sigma_nm"] for item in compared]),
+        }
+    return observations
 
 
 def _grid_xy_points(grid: DomainGrid) -> np.ndarray:
@@ -329,6 +455,7 @@ def _simulate_steady(
     K_I: np.ndarray,
     gamma_s: np.ndarray,
     nu_a: np.ndarray,
+    nu_b: np.ndarray,
     alpha_h: np.ndarray,
     c_b_scale: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, np.ndarray], int, np.ndarray, np.ndarray]:
@@ -355,6 +482,7 @@ def _simulate_steady(
             K_I=K_I,
             gamma_s=gamma_s,
             nu_a=nu_a,
+            nu_b=nu_b,
             alpha_h=alpha_h,
             c_b_scale=c_b_scale,
             m_ads=m_ads,
@@ -396,6 +524,7 @@ def _simulate_transient(
     K_I: np.ndarray,
     gamma_s: np.ndarray,
     nu_a: np.ndarray,
+    nu_b: np.ndarray,
     alpha_h: np.ndarray,
     c_b_scale: np.ndarray,
     time: np.ndarray,
@@ -439,6 +568,7 @@ def _simulate_transient(
                 K_I=K_I,
                 gamma_s=gamma_s,
                 nu_a=nu_a,
+                nu_b=nu_b,
                 alpha_h=alpha_h,
                 c_b_scale=c_b_scale,
                 m_ads=m_ads,
@@ -495,7 +625,7 @@ def run_aib_from_spec(run_spec: Any) -> SimRunResult:
     implementation = canonical_process_implementation(str(sim.model.name))
     if implementation != "aib_ode":
         raise ValueError(f"run_aib_from_spec cannot execute process model implementation {implementation!r}")
-    return _run_aib_compat_from_spec(run_spec)
+    return _run_cvd_aib_from_spec(run_spec)
 
 
 def run_sim_from_config(
@@ -519,9 +649,11 @@ def run_sim_from_spec(run_spec: Any) -> SimRunResult:
         time_mode=str(sim.time_mode),
     )
     if info.implementation == "aib_ode":
-        return _run_aib_compat_from_spec(run_spec)
+        return _run_cvd_aib_from_spec(run_spec)
     if info.implementation == "ald_role_state":
         return _run_ald_role_state_from_spec(run_spec)
+    if info.implementation == "mvk_state":
+        return _run_cvd_mvk_from_spec(run_spec)
     raise ValueError(f"process model implementation is registered but not executable: {info.implementation!r}")
 
 
@@ -570,6 +702,8 @@ def _run_ald_role_state_from_spec(run_spec: Any) -> SimRunResult:
     k_store_i = _param_with_fallback(inhibitor, "k_store_I", "K_I", shape, 0.0)
     k_release_i = _resolve_param(inhibitor.get("k_release_I"), shape, 0.1)
     alpha_h = _resolve_param(thickness.get("alpha_h"), shape, 1.0)
+    gamma_s = _resolve_param(params.transport.get("Gamma_s"), shape, 1.0)
+    nu_b = _resolve_param(params.transport.get("nu_B"), shape, 1.0)
 
     result = run_ald_role_state_transient(
         c_a=c_a,
@@ -587,11 +721,13 @@ def _run_ald_role_state_from_spec(run_spec: Any) -> SimRunResult:
         k_store_i=k_store_i,
         k_release_i=k_release_i,
         alpha_h=alpha_h,
+        gamma_s=gamma_s,
+        nu_b=nu_b,
         has_b=has_b,
         has_i=has_i,
     )
 
-    final_t_index = int(fluent.time.shape[0] - 1)
+    final_t_index = max(int(fluent.time.shape[0] - 2), 0)
     km_a_diag = dict(km_provider.get_diagnostics("A", t_index=final_t_index))
     km_b_diag = (
         dict(km_provider.get_diagnostics("B", t_index=final_t_index))
@@ -603,23 +739,42 @@ def _run_ald_role_state_from_spec(run_spec: Any) -> SimRunResult:
     km_a_cfd = np.asarray(km_a_diag.get("km_cfd", km_a_final), dtype=float)
     km_b_cfd = np.asarray(km_b_diag.get("km_cfd", km_b_final), dtype=float)
     z_ref_mm = float(sim.reference_plane.z_ref_mm)
-    tau_a = z_ref_mm / np.maximum(km_a_final, 1.0e-12)
-    tau_b = z_ref_mm / np.maximum(km_b_final, 1.0e-12)
+    tau_a = (z_ref_mm * 1.0e-3) / np.maximum(km_a_final, 1.0e-12)
+    tau_b = (z_ref_mm * 1.0e-3) / np.maximum(km_b_final, 1.0e-12)
 
-    cref_a_final = np.asarray(c_a[-1], dtype=float)
-    cref_i_final = np.asarray(c_i[-1], dtype=float)
-    cref_b_final = np.asarray(c_b[-1], dtype=float)
+    cref_a_final = np.asarray(c_a[final_t_index], dtype=float)
+    cref_i_final = np.asarray(c_i[final_t_index], dtype=float)
+    cref_b_final = np.asarray(c_b[final_t_index], dtype=float)
     cs_a_ratio = result.cs_a / np.where(cref_a_final > 1.0e-30, cref_a_final, np.nan)
     if has_b:
         cs_b_ratio = result.cs_b / np.where(cref_b_final > 1.0e-30, cref_b_final, np.nan)
-        phi_b = k_convert_ab * np.clip(result.theta_a, 0.0, 1.0) / np.maximum(km_b_final, 1.0e-30)
+        phi_b = (
+            gamma_s
+            * nu_b
+            * k_convert_ab
+            * np.clip(result.theta_a, 0.0, 1.0)
+            / np.maximum(km_b_final, 1.0e-30)
+        )
     else:
         cs_b_ratio = np.full(shape, np.nan, dtype=float)
         phi_b = np.full(shape, np.nan, dtype=float)
     f_i = np.clip(1.0 - result.theta_i, 0.0, 1.0) if has_i else np.ones(shape, dtype=float)
+    with np.errstate(invalid="ignore"):
+        j_a_transport = np.where(
+            np.isfinite(km_a_final), km_a_final * (cref_a_final - result.cs_a), np.nan
+        )
+        j_b_transport = (
+            np.where(
+                np.isfinite(km_b_final),
+                km_b_final * (cref_b_final - result.cs_b),
+                np.nan,
+            )
+            if has_b
+            else np.full(shape, np.nan, dtype=float)
+        )
 
     total_time = float(fluent.time[-1] - fluent.time[0])
-    measurement, meas_valid, measurement_alignment, observation = _load_measurement(
+    measurement, meas_valid, measurement_alignment, observation, _measurement_data = _load_measurement(
         sim, xy_mm=xy_mm, prediction_nm=result.h_nm, duration_s=total_time, initial_nm=h0,
     )
     if measurement is not None:
@@ -647,11 +802,15 @@ def _run_ald_role_state_from_spec(run_spec: Any) -> SimRunResult:
         "CsB_over_CrefB": cs_b_ratio,
         "phi_B": phi_b,
         "f_I": f_i,
+        "J_A_surface": result.j_a_surface,
+        "J_B_surface": result.j_b_surface,
+        "J_A_transport": j_a_transport,
+        "J_B_transport": j_b_transport,
         "residual_nm": residual,
         "km_A": km_a_final,
         "km_B": km_b_final,
-        "tau_A": tau_a,
-        "tau_B": tau_b,
+        "tau_A_s": tau_a,
+        "tau_B_s": tau_b,
     }
 
     diagnostics = {
@@ -663,6 +822,12 @@ def _run_ald_role_state_from_spec(run_spec: Any) -> SimRunResult:
         "solver_kind": str(sim.time.solver.name),
         "root_metrics_applicable": False,
         "km_source": km_source,
+        "concentration_location": str(
+            km_a_diag.get("concentration_location", "reference_plane")
+        ),
+        "flux_semantics": str(
+            km_a_diag.get("flux_semantics", "not_used")
+        ),
         "z_ref_mm": z_ref_mm,
         "xy_mm": xy_mm,
         "species": list(fluent.species),
@@ -676,12 +841,25 @@ def _run_ald_role_state_from_spec(run_spec: Any) -> SimRunResult:
         "f_I": f_i,
         "Da_proxy": np.nan_to_num(phi_b, nan=0.0),
         "R_event": result.r_event,
+        "surface_flux": {"A": result.j_a_surface, "B": result.j_b_surface},
+        "transport_flux": {"A": j_a_transport, "B": j_b_transport},
         "km_A_map": km_a_final,
         "km_B_map": km_b_final,
         "km_A_cfd_map": km_a_cfd,
         "km_B_cfd_map": km_b_cfd,
-        "tau_A_map": tau_a,
-        "tau_B_map": tau_b,
+        "boundary_concentration_A_map": km_a_diag.get("boundary_concentration"),
+        "boundary_concentration_B_map": km_b_diag.get("boundary_concentration"),
+        "transport_driving_A_map": km_a_diag.get("driving_concentration"),
+        "transport_driving_B_map": km_b_diag.get("driving_concentration"),
+        "tau_A_s_map": tau_a,
+        "tau_B_s_map": tau_b,
+        "units": {
+            "Gamma_s": "kmol/m^2",
+            "surface_flux": "kmol/(m^2 s)",
+            "km": "m/s",
+            "transport_time": "s",
+            "alpha_h": "nm per unit coverage converted",
+        },
         "transport_units_hint": str(km_a_diag.get("units_hint", "") or km_b_diag.get("units_hint", "")),
         "root_iteration_count": not_applicable,
         "root_non_bracket_count_map": not_applicable,
@@ -700,8 +878,223 @@ def _run_ald_role_state_from_spec(run_spec: Any) -> SimRunResult:
     )
 
 
-def _run_aib_compat_from_spec(run_spec: Any) -> SimRunResult:
-    """Current compatibility implementation shared by AIB aliases."""
+def _run_cvd_mvk_from_spec(run_spec: Any) -> SimRunResult:
+    """Execute the CVD Mars-van Krevelen redox-reservoir model."""
+
+    _require_numpy()
+    sim = getattr(run_spec, "sim", run_spec)
+    validate_run_spec(sim)
+    fluent = load_fluent_from_run_spec(sim)
+    grid, xy_mm, c_a, _c_i, c_b, flux_a, flux_b = _prepare_domain_inputs(
+        sim=sim, fluent=fluent
+    )
+    km_source, km_provider = _build_transport_provider(
+        sim=sim,
+        c_a=c_a,
+        c_b=c_b,
+        flux_a=flux_a,
+        flux_b=flux_b,
+    )
+
+    shape = tuple(grid.shape)
+    params = sim.model.params
+    kinetics = dict(getattr(params, "kinetics", {}) or {})
+    transport = dict(getattr(params, "transport", {}) or {})
+    thickness_params = dict(getattr(params, "thickness", {}) or {})
+    k_reduce = _resolve_param(kinetics.get("k_reduce"), shape, 1.0)
+    k_regenerate = _resolve_param(kinetics.get("k_regenerate"), shape, 1.0)
+    gamma_s = _resolve_param(transport.get("Gamma_s"), shape, 1.0)
+    nu_b = _resolve_param(transport.get("nu_B"), shape, 1.0)
+    alpha_h = _resolve_param(thickness_params.get("alpha_h"), shape, 1.0)
+    chi0 = np.full(
+        shape,
+        float(sim.initial_conditions.redox_fraction.value),
+        dtype=float,
+    )
+    h0 = np.full(shape, float(sim.initial_conditions.h_nm.value), dtype=float)
+
+    if str(sim.time_mode) == "transient":
+        if fluent.time is None:
+            raise ValueError("role_cvd_mvk transient execution requires Fluent time array")
+        time_s = np.asarray(fluent.time, dtype=float)
+        c_a_history = np.asarray(c_a, dtype=float)
+        c_b_history = np.asarray(c_b, dtype=float)
+        final_t_index = max(int(time_s.size - 2), 0)
+    else:
+        time_s = np.asarray([0.0, float(sim.time.t_proc_s)], dtype=float)
+        c_a_history = np.stack([np.asarray(c_a, dtype=float)] * 2, axis=0)
+        c_b_history = np.stack([np.asarray(c_b, dtype=float)] * 2, axis=0)
+        final_t_index = 0
+
+    result = run_mvk_state(
+        c_a=c_a_history,
+        c_b=c_b_history,
+        km_provider=km_provider,
+        time_s=time_s,
+        dt_max_s=float(sim.time.dt_s),
+        oxidized_fraction0=chi0,
+        h0_nm=h0,
+        k_reduce=k_reduce,
+        k_regenerate=k_regenerate,
+        gamma_s=gamma_s,
+        nu_b=nu_b,
+        alpha_h=alpha_h,
+        max_iter=int(sim.time.solver.max_iter),
+        state_tol=float(sim.time.solver.theta_tol),
+    )
+
+    cref_a_final = np.asarray(c_a_history[final_t_index], dtype=float)
+    cref_b_final = np.asarray(c_b_history[final_t_index], dtype=float)
+    km_a_diag = dict(km_provider.get_diagnostics("A", t_index=final_t_index))
+    km_b_diag = dict(km_provider.get_diagnostics("B", t_index=final_t_index))
+    km_a = np.asarray(km_a_diag["km_used"], dtype=float)
+    km_b = np.asarray(km_b_diag["km_used"], dtype=float)
+    with np.errstate(invalid="ignore"):
+        j_a_transport = np.where(
+            np.isfinite(km_a), km_a * (cref_a_final - result.cs_a), np.nan
+        )
+        j_b_transport = np.where(
+            np.isfinite(km_b), km_b * (cref_b_final - result.cs_b), np.nan
+        )
+    cs_a_ratio = result.cs_a / np.where(cref_a_final > 1.0e-30, cref_a_final, np.nan)
+    cs_b_ratio = result.cs_b / np.where(cref_b_final > 1.0e-30, cref_b_final, np.nan)
+    total_time = float(time_s[-1] - time_s[0])
+
+    measurement, meas_valid, measurement_alignment, observation, measurement_data = _load_measurement(
+        sim,
+        xy_mm=xy_mm,
+        prediction_nm=result.h_nm,
+        duration_s=total_time,
+        initial_nm=h0,
+    )
+    if measurement is not None:
+        measurement = np.asarray(measurement, dtype=float).reshape(shape)
+    if meas_valid is not None:
+        meas_valid = np.asarray(meas_valid, dtype=bool).reshape(shape)
+    residual = (
+        np.full(shape, np.nan, dtype=float)
+        if measurement is None
+        else np.asarray(result.h_nm - measurement, dtype=float)
+    )
+    if measurement is not None and meas_valid is not None:
+        residual[~meas_valid] = np.nan
+
+    dep_rate = (result.h_nm - h0) / max(total_time, 1.0e-12)
+    redox_balance = np.asarray(result.diagnostics["redox_balance_rate"], dtype=float)
+    fields = {
+        "h_nm": result.h_nm,
+        "time_s": result.time_s,
+        "oxidized_fraction": result.oxidized_fraction,
+        "reduced_fraction": 1.0 - result.oxidized_fraction,
+        "reduction_rate_s-1": result.reduction_rate,
+        "regeneration_rate_s-1": result.regeneration_rate,
+        "redox_balance_rate_s-1": redox_balance,
+        "redox_relaxation_time_s": np.asarray(
+            result.diagnostics["relaxation_time_s"], dtype=float
+        ),
+        "CsA_over_CrefA": cs_a_ratio,
+        "CsB_over_CrefB": cs_b_ratio,
+        "J_A_surface": result.j_a_surface,
+        "J_B_surface": result.j_b_surface,
+        "J_A_transport": j_a_transport,
+        "J_B_transport": j_b_transport,
+        "h_nm_history": result.h_nm_history,
+        "oxidized_fraction_history": result.oxidized_fraction_history,
+        "reduction_rate_history_s-1": result.reduction_rate_history,
+        "regeneration_rate_history_s-1": result.regeneration_rate_history,
+        "Cs_A_history_kmol_m3": result.cs_a_history,
+        "Cs_B_history_kmol_m3": result.cs_b_history,
+        "J_A_surface_history": result.j_a_surface_history,
+        "J_B_surface_history": result.j_b_surface_history,
+        "km_A": km_a,
+        "km_B": km_b,
+        "residual_nm": residual,
+    }
+    units = {
+        "concentration": "kmol/m^3",
+        "k_reduce": "m^3/(kmol s)",
+        "k_regenerate": "m^3/(kmol s)",
+        "oxidized_fraction": "1",
+        "reduction_rate": "1/s",
+        "regeneration_rate": "1/s",
+        "Gamma_s": "kmol/m^2",
+        "surface_flux": "kmol/(m^2 s)",
+        "alpha_h": "nm m^2/kmol",
+        "thickness": "nm",
+        "deposition_rate": "nm/s",
+        "km": "m/s",
+    }
+    multi_observations = _mvk_multi_observations(
+        measurement_data,
+        observation,
+        measurement_xy_mm=normalize_xy_mm(
+            measurement_data.xy, getattr(sim.measurement, "xy_unit", "mm")
+        ) if measurement_data is not None else xy_mm,
+        model_xy_mm=xy_mm,
+        align=dict(getattr(sim.measurement, "align", {}) or {}),
+        time_s=result.time_s,
+        fields=fields,
+    )
+    diagnostics = {
+        "dispatch_mode": str(sim.time_mode),
+        "process_model_implementation": "mvk_state",
+        "mechanism": "Mars-van Krevelen surface redox reservoir",
+        "pathways": ["A_reduction_growth", "B_regeneration"],
+        "state_variable": "oxidized_fraction",
+        "state_history_time_s": result.time_s,
+        "history_sampling_convention": (
+            "states at supplied times; endpoint rates, surface concentrations, and "
+            "fluxes use the preceding piecewise-constant Fluent frame"
+        ),
+        "steady_observable_equivalence": "aib_qss:AB:no_desorption",
+        "solver_kind": str(sim.time.solver.name),
+        "root_metrics_applicable": True,
+        "km_source": km_source,
+        "concentration_location": str(
+            km_a_diag.get("concentration_location", "reference_plane")
+        ),
+        "flux_semantics": str(km_a_diag.get("flux_semantics", "not_used")),
+        "xy_mm": xy_mm,
+        "species": list(fluent.species),
+        "roles": {"A": sim.roles.A, "I": None, "B": sim.roles.B},
+        "measurement_thickness": measurement,
+        "measurement_valid_mask": meas_valid,
+        "measurement_alignment": measurement_alignment,
+        "observation": observation,
+        "observations": multi_observations,
+        "R_event": result.reduction_rate,
+        "surface_flux": {"A": result.j_a_surface, "B": result.j_b_surface},
+        "transport_flux": {"A": j_a_transport, "B": j_b_transport},
+        "km_A_map": km_a,
+        "km_B_map": km_b,
+        "km_A_cfd_map": km_a_diag.get("km_cfd", km_a),
+        "km_B_cfd_map": km_b_diag.get("km_cfd", km_b),
+        "root_iteration_count": np.asarray(
+            result.diagnostics["iteration_count"], dtype=float
+        ),
+        "root_non_bracket_count_map": np.asarray(
+            result.diagnostics["fallback_count_map"], dtype=float
+        ),
+        "root_status_map": np.asarray(
+            np.asarray(result.diagnostics["fallback_count_map"], dtype=int) > 0,
+            dtype=int,
+        ),
+        "redox_state": dict(result.diagnostics),
+        "units": units,
+    }
+    return SimRunResult(
+        thickness=result.h_nm,
+        deposition_rate=dep_rate,
+        R=result.reduction_rate,
+        Cs={"A": result.cs_a, "B": result.cs_b},
+        diagnostics=diagnostics,
+        fields=fields,
+        grid=grid,
+    )
+
+
+def _run_cvd_aib_from_spec(run_spec: Any) -> SimRunResult:
+    """Execute the continuous CVD A/I/B surface and transport balances."""
 
     _require_numpy()
     sim = getattr(run_spec, "sim", run_spec)
@@ -727,6 +1120,7 @@ def _run_aib_compat_from_spec(run_spec: Any) -> SimRunResult:
 
     gamma_s = _resolve_param(params.transport.get("Gamma_s"), shape, 1.0)
     nu_a = _resolve_param(params.transport.get("nu_A"), shape, 1.0)
+    nu_b = _resolve_param(params.transport.get("nu_B"), shape, 1.0)
 
     k_ads = _resolve_param(params.kinetics.get("k_ads"), shape, 1.0)
     k_des = _resolve_param(params.kinetics.get("k_des"), shape, 0.1)
@@ -757,6 +1151,7 @@ def _run_aib_compat_from_spec(run_spec: Any) -> SimRunResult:
             K_I=K_I,
             gamma_s=gamma_s,
             nu_a=nu_a,
+            nu_b=nu_b,
             alpha_h=alpha_h,
             c_b_scale=c_b_scale,
         )
@@ -782,13 +1177,18 @@ def _run_aib_compat_from_spec(run_spec: Any) -> SimRunResult:
             K_I=K_I,
             gamma_s=gamma_s,
             nu_a=nu_a,
+            nu_b=nu_b,
             alpha_h=alpha_h,
             c_b_scale=c_b_scale,
             time=fluent.time,
         )
         total_time = float(fluent.time[-1] - fluent.time[0])
 
-    final_t_index = 0 if sim.time_mode == "steady" else int((fluent.time.shape[0] - 1) if fluent.time is not None else 0)
+    final_t_index = (
+        0
+        if sim.time_mode == "steady"
+        else max(int((fluent.time.shape[0] - 2) if fluent.time is not None else 0), 0)
+    )
     km_a_diag = dict(km_provider.get_diagnostics("A", t_index=final_t_index))
     km_b_diag = (
         dict(km_provider.get_diagnostics("B", t_index=final_t_index))
@@ -800,8 +1200,8 @@ def _run_aib_compat_from_spec(run_spec: Any) -> SimRunResult:
     km_a_cfd = np.asarray(km_a_diag.get("km_cfd", km_a_final), dtype=float)
     km_b_cfd = np.asarray(km_b_diag.get("km_cfd", km_b_final), dtype=float)
     z_ref_mm = float(sim.reference_plane.z_ref_mm)
-    tau_a = z_ref_mm / np.maximum(km_a_final, 1.0e-12)
-    tau_b = z_ref_mm / np.maximum(km_b_final, 1.0e-12)
+    tau_a = (z_ref_mm * 1.0e-3) / np.maximum(km_a_final, 1.0e-12)
+    tau_b = (z_ref_mm * 1.0e-3) / np.maximum(km_b_final, 1.0e-12)
 
     theta_star = np.asarray(step_diag.get("theta_star", np.zeros_like(theta)), dtype=float)
     cs_a = np.asarray(step_diag.get("CsA", np.zeros_like(theta)), dtype=float)
@@ -813,9 +1213,9 @@ def _run_aib_compat_from_spec(run_spec: Any) -> SimRunResult:
         cref_i_final = c_i
         cref_b_final = c_b
     else:
-        cref_a_final = c_a[-1]
-        cref_i_final = c_i[-1]
-        cref_b_final = c_b[-1]
+        cref_a_final = c_a[final_t_index]
+        cref_i_final = c_i[final_t_index]
+        cref_b_final = c_b[final_t_index]
 
     diag_fields = compute_diagnostics(
         theta_a=theta,
@@ -826,16 +1226,21 @@ def _run_aib_compat_from_spec(run_spec: Any) -> SimRunResult:
         cref_b=cref_b_final,
         cref_i=cref_i_final,
         gamma_s=gamma_s,
+        k_ads=k_ads,
+        k_des=k_des,
         k_rxn=k_rxn,
+        km_a=km_a_final,
         km_b=km_b_final,
+        nu_b=nu_b,
         c_b_scale=c_b_scale,
+        m_ads=int(orders.adsorption_site_order),
         p_a=int(orders.reaction_site_order_A),
         p_star=int(orders.reaction_site_order_star),
         K_I=K_I,
         has_b=has_b,
     )
 
-    measurement, meas_valid, measurement_alignment, observation = _load_measurement(
+    measurement, meas_valid, measurement_alignment, observation, _measurement_data = _load_measurement(
         sim, xy_mm=xy_mm, prediction_nm=h, duration_s=total_time,
         initial_nm=float(sim.initial_conditions.h_nm.value),
     )
@@ -861,11 +1266,15 @@ def _run_aib_compat_from_spec(run_spec: Any) -> SimRunResult:
         "CsB_over_CrefB": diag_fields["CsB_over_CrefB"],
         "phi_B": diag_fields["phi_B"],
         "f_I": diag_fields["f_I"],
+        "J_A_surface": diag_fields["J_A_surface"],
+        "J_B_surface": diag_fields["J_B_surface"],
+        "J_A_transport": diag_fields["J_A_transport"],
+        "J_B_transport": diag_fields["J_B_transport"],
         "residual_nm": residual,
         "km_A": km_a_final,
         "km_B": km_b_final,
-        "tau_A": tau_a,
-        "tau_B": tau_b,
+        "tau_A_s": tau_a,
+        "tau_B_s": tau_b,
     }
 
     diagnostics = {
@@ -874,6 +1283,10 @@ def _run_aib_compat_from_spec(run_spec: Any) -> SimRunResult:
         "solver_kind": str(sim.time.solver.name),
         "root_metrics_applicable": True,
         "km_source": km_source,
+        "concentration_location": str(
+            km_a_diag.get("concentration_location", "reference_plane")
+        ),
+        "flux_semantics": str(km_a_diag.get("flux_semantics", "not_used")),
         "z_ref_mm": z_ref_mm,
         "xy_mm": xy_mm,
         "species": list(fluent.species),
@@ -890,12 +1303,24 @@ def _run_aib_compat_from_spec(run_spec: Any) -> SimRunResult:
         "f_I": diag_fields["f_I"],
         "Da_proxy": np.nan_to_num(diag_fields["phi_B"], nan=0.0),
         "R_event": r_event,
+        "surface_flux": {
+            "A": diag_fields["J_A_surface"],
+            "B": diag_fields["J_B_surface"],
+        },
+        "transport_flux": {
+            "A": diag_fields["J_A_transport"],
+            "B": diag_fields["J_B_transport"],
+        },
         "km_A_map": km_a_final,
         "km_B_map": km_b_final,
         "km_A_cfd_map": km_a_cfd,
         "km_B_cfd_map": km_b_cfd,
-        "tau_A_map": tau_a,
-        "tau_B_map": tau_b,
+        "boundary_concentration_A_map": km_a_diag.get("boundary_concentration"),
+        "boundary_concentration_B_map": km_b_diag.get("boundary_concentration"),
+        "transport_driving_A_map": km_a_diag.get("driving_concentration"),
+        "transport_driving_B_map": km_b_diag.get("driving_concentration"),
+        "tau_A_s_map": tau_a,
+        "tau_B_s_map": tau_b,
         "transport_units_hint": str(km_a_diag.get("units_hint", "") or km_b_diag.get("units_hint", "")),
         "root_iteration_count": np.asarray(root_iteration_count, dtype=float),
         "root_non_bracket_count_map": np.asarray(root_non_bracket_count_map, dtype=float),

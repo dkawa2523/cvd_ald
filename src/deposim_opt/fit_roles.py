@@ -10,7 +10,7 @@ from deposim_sim.common.overrides import as_bool
 from .enumerate_orders import enumerate_orders
 from .enumerate_roles import RoleCandidate, class_id_from_roles, enumerate_roles
 from .fit_conditions import extract_conditions
-from .fit_optuna import fit_candidate_with_optuna
+from .parameter_fit import fit_candidate_parameters
 from .class_compare import rank_role_candidates
 
 
@@ -53,7 +53,7 @@ def fit_role_candidates(sim: Any, opt: Any) -> list[dict[str, Any]]:
     ]
     if not candidates:
         raise ValueError("no role/order candidates are enabled")
-    records = [fit_candidate_with_optuna(sim_spec=sim, role_candidate=r, order_candidate=o, opt_spec=opt)
+    records = [fit_candidate_parameters(sim_spec=sim, role_candidate=r, order_candidate=o, opt_spec=opt)
                for r, o in candidates]
     conditions = extract_conditions(opt)
     train = sorted([c for c in conditions if c.split == "train" and c.weight > 0], key=lambda c: c.name)
@@ -69,7 +69,7 @@ def fit_role_candidates(sim: Any, opt: Any) -> list[dict[str, Any]]:
         key = (index, names)
         if key not in cache:
             role, order = candidates[index]
-            cache[key] = fit_candidate_with_optuna(
+            cache[key] = fit_candidate_parameters(
                 sim_spec=sim, role_candidate=role, order_candidate=order, opt_spec=opt,
                 conditions_override=[c if c.name in names else replace(c, split="holdout") for c in train],
                 analyze=False,
@@ -79,9 +79,19 @@ def fit_role_candidates(sim: Any, opt: Any) -> list[dict[str, Any]]:
     def evaluation(fold: dict[str, Any], held_out: Any, subset: list[Any]) -> dict[str, Any]:
         metrics = fold["holdout_metrics"][held_out.name]
         baseline = metrics["target_variance_nm2"] + (metrics["target_mean_nm"] - _training_mean(fold, subset))**2
+        baseline_scale = fold.get("selection_baseline_scale")
+        baseline_selection = (
+            float(baseline) * float(baseline_scale)
+            if baseline_scale is not None
+            else float("nan")
+        )
         return {**metrics, "condition": held_out.name, "weight": held_out.weight,
                 "quantity": "thickness", "unit": "nm", "baseline_mse": baseline,
-                "baseline_mse_nm2": baseline, "refit_score": fold["best_score"],
+                "baseline_mse_nm2": baseline,
+                "baseline_selection_score": baseline_selection,
+                "refit_score": fold["best_score"],
+                "optimization": fold.get("optimization", {}),
+                "optimization_trace": fold.get("optimization_trace", []),
                 "effect_groups": fold["effect_groups"], "roles": fold["roles"], "orders": fold["orders"]}
 
     def validation(index: int, subset: list[Any]) -> list[dict[str, Any]]:

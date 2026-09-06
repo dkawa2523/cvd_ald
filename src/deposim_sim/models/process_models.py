@@ -12,29 +12,60 @@ class ProcessModelInfo:
     processes: tuple[str, ...]
     time_modes: tuple[str, ...]
     description: str
+    mechanism: str
+    pathways: tuple[str, ...]
+    state_variables: tuple[str, ...]
+    required_roles: tuple[str, ...]
+    quantity_units: tuple[tuple[str, str], ...]
+    steady_observable_equivalence: str = ""
 
 
 _PROCESS_MODELS: dict[str, ProcessModelInfo] = {
-    "aib_ode": ProcessModelInfo(
-        name="aib_ode",
-        implementation="aib_ode",
-        processes=("cvd", "ald"),
-        time_modes=("steady", "transient"),
-        description="Compatibility role-based A/I/B ODE implementation.",
-    ),
     "role_cvd_aib": ProcessModelInfo(
         name="role_cvd_aib",
         implementation="aib_ode",
         processes=("cvd",),
         time_modes=("steady", "transient"),
-        description="CVD-facing alias for the current role-based A/I/B implementation.",
+        description="Continuous CVD role model with coupled surface and transport balances.",
+        mechanism="Langmuir-Rideal-type adsorbed-A conversion",
+        pathways=("A", "AB"),
+        state_variables=("theta_A",),
+        required_roles=("A",),
+        quantity_units=(
+            ("concentration", "kmol/m^3"),
+            ("theta_A", "1"),
+            ("k_ads", "m^3/(kmol s)"),
+            ("k_des", "1/s"),
+            ("k_rxn", "1/s with dimensionless C_B/C_B_scale"),
+            ("Gamma_s", "kmol/m^2"),
+            ("alpha_h", "nm m^2/kmol"),
+            ("time", "s"),
+        ),
     ),
-    "role_ald_compat": ProcessModelInfo(
-        name="role_ald_compat",
-        implementation="aib_ode",
-        processes=("ald",),
-        time_modes=("transient",),
-        description="ALD-facing compatibility alias used before a dedicated ALD role-state model exists.",
+    "role_cvd_mvk": ProcessModelInfo(
+        name="role_cvd_mvk",
+        implementation="mvk_state",
+        processes=("cvd",),
+        time_modes=("steady", "transient"),
+        description=(
+            "Mars-van Krevelen redox-reservoir model with A reduction/growth "
+            "and B regeneration pathways."
+        ),
+        mechanism="Mars-van Krevelen surface redox reservoir",
+        pathways=("A_reduction_growth", "B_regeneration"),
+        state_variables=("oxidized_fraction",),
+        required_roles=("A", "B"),
+        quantity_units=(
+            ("concentration", "kmol/m^3"),
+            ("oxidized_fraction", "1"),
+            ("k_reduce", "m^3/(kmol s)"),
+            ("k_regenerate", "m^3/(kmol s)"),
+            ("Gamma_s", "kmol/m^2"),
+            ("surface_flux", "kmol/(m^2 s)"),
+            ("alpha_h", "nm m^2/kmol"),
+            ("time", "s"),
+        ),
+        steady_observable_equivalence="aib_qss:AB:no_desorption",
     ),
     "role_ald_state": ProcessModelInfo(
         name="role_ald_state",
@@ -42,12 +73,36 @@ _PROCESS_MODELS: dict[str, ProcessModelInfo] = {
         processes=("ald",),
         time_modes=("transient",),
         description="Minimal ALD latent role-state assimilation model.",
+        mechanism="ALD storage-conversion role state",
+        pathways=("A_storage", "A_or_AB_conversion"),
+        state_variables=("theta_A", "theta_I"),
+        required_roles=("A",),
+        quantity_units=(
+            ("concentration", "kmol/m^3"),
+            ("theta_A", "1"),
+            ("theta_I", "1"),
+            ("k_store_A", "m^3/(kmol s)"),
+            ("k_release_A", "1/s"),
+            ("k_convert_A", "1/s"),
+            ("k_convert_AB", "m^3/(kmol s)"),
+            ("Gamma_s", "kmol/m^2"),
+            ("surface_flux", "kmol/(m^2 s)"),
+            ("alpha_h", "nm per unit coverage converted"),
+            ("time", "s"),
+            ("thickness", "nm"),
+        ),
     ),
 }
 
 
 def available_process_models() -> tuple[str, ...]:
     return tuple(sorted(_PROCESS_MODELS))
+
+
+def primary_process_models() -> tuple[ProcessModelInfo, ...]:
+    """Return the public state-process model inventory."""
+
+    return tuple(_PROCESS_MODELS.values())
 
 
 def get_process_model_info(name: str) -> ProcessModelInfo:
@@ -83,5 +138,6 @@ __all__ = [
     "available_process_models",
     "canonical_process_implementation",
     "get_process_model_info",
+    "primary_process_models",
     "validate_process_model_choice",
 ]

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Transient ALD Role Evaluation"
+  short_description: "Fit ALD roles and review transfer diagnostics"
+  default_prompt: "Use $evaluate-transient-ald-roles to fit anonymous species as transient ALD storage, conversion, and inhibitor roles, then review optimizer, condition-transfer, stability, and visualization evidence."

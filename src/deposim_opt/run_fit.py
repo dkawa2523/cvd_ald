@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from deposim_schema import compose_and_save_opt_config, compose_opt_config
+from deposim_report import write_fit_diagnostic_plots
 from deposim_sim.common.csv_io import write_rows_csv
 from deposim_sim.common.report_html import write_artifact_list_report
 from deposim_sim.common.run_artifacts import (
@@ -21,7 +22,7 @@ from deposim_sim.common.run_artifacts import (
 )
 from deposim_sim.output_manifest import artifact_links
 
-from .class_compare import build_class_compare, build_complexity_sensitivity, build_role_stability, build_role_summary, build_condition_scores
+from .class_compare import build_class_compare, build_role_stability, build_role_summary, build_condition_scores
 from .fit_roles import fit_role_candidates
 
 
@@ -35,6 +36,119 @@ def _json_default(value: Any) -> Any:
     if callable(item):
         return item()
     raise TypeError(f"Object of type {value.__class__.__name__} is not JSON serializable")
+
+
+def _candidate_columns(rank: int, row: dict[str, Any]) -> dict[str, Any]:
+    roles = dict(row.get("roles", {}) or {})
+    return {
+        "rank": int(rank),
+        "class_id": str(row.get("class_id", "")),
+        "role_A": roles.get("A"),
+        "role_I": roles.get("I"),
+        "role_B": roles.get("B"),
+        "orders": json.dumps(row.get("orders", {}), ensure_ascii=True, sort_keys=True),
+    }
+
+
+def _strip_nested_search_details(row: dict[str, Any]) -> dict[str, Any]:
+    compact = dict(row)
+    compact.pop("optimization", None)
+    compact.pop("optimization_trace", None)
+    for key in ("validation_conditions", "evaluation_conditions"):
+        if key in compact:
+            compact[key] = [
+                {
+                    field: value
+                    for field, value in dict(item).items()
+                    if field not in {"optimization", "optimization_trace"}
+                }
+                for item in list(compact.get(key, []) or [])
+            ]
+    return compact
+
+
+def _build_optimization_tables(
+    records: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    summaries: list[dict[str, Any]] = []
+    traces: list[dict[str, Any]] = []
+
+    def append(
+        *, rank: int, row: dict[str, Any], scope: str, condition: str,
+        optimization_value: Any, trace_value: Any,
+    ) -> None:
+        optimization = dict(optimization_value or {})
+        if not optimization:
+            return
+        identity = {**_candidate_columns(rank, row), "scope": scope, "condition": condition}
+        loss_definition = dict(row.get("loss_definition", {}) or {})
+        summaries.append(
+            {
+                **identity,
+                "method": optimization.get("method", ""),
+                "dimension": optimization.get("dimension", 0),
+                "repetitions": optimization.get("repetitions", 0),
+                "seeds": json.dumps(optimization.get("seeds", [])),
+                "trial_count": optimization.get("trial_count", 0),
+                "converged_repetitions": optimization.get("converged_repetitions", 0),
+                "all_repetitions_converged": optimization.get("all_repetitions_converged", False),
+                "repeatability_assessed": optimization.get("repeatability_assessed", False),
+                "termination_reasons": json.dumps(optimization.get("termination_reasons", [])),
+                "best_score": optimization.get("best_score"),
+                "median_best_score": optimization.get("median_best_score"),
+                "best_score_range": optimization.get("best_score_range"),
+                "loss_name": loss_definition.get("name", ""),
+                "loss_standardized": loss_definition.get("standardized", False),
+                "loss_unit": loss_definition.get("unit", ""),
+            }
+        )
+        for trace in list(trace_value or []):
+            traces.append({**identity, **dict(trace)})
+
+    for rank, row in enumerate(records, start=1):
+        append(
+            rank=rank, row=row, scope="train", condition="all",
+            optimization_value=row.get("optimization"), trace_value=row.get("optimization_trace"),
+        )
+        for fold in list(row.get("validation_conditions", []) or []):
+            append(
+                rank=rank, row=row, scope="condition_cv",
+                condition=str(fold.get("condition", "")),
+                optimization_value=fold.get("optimization"),
+                trace_value=fold.get("optimization_trace"),
+            )
+    return summaries, traces
+
+
+def _build_loss_component_rows(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    component_names = (
+        "loss_data", "penalty_solver", "penalty_prior", "score_total", "rmse_nm", "mae_nm",
+    )
+    rows: list[dict[str, Any]] = []
+
+    def append(rank: int, record: dict[str, Any], split: str, condition: str, values: Any) -> None:
+        metrics = dict(values or {})
+        rows.append(
+            {
+                **_candidate_columns(rank, record),
+                "split": split,
+                "condition": condition,
+                "loss_name": dict(record.get("loss_definition", {}) or {}).get("name", ""),
+                "loss_standardized": metrics.get("loss_standardized"),
+                "loss_unit": dict(record.get("loss_definition", {}) or {}).get("unit", ""),
+                **{name: metrics.get(name) for name in component_names},
+            }
+        )
+
+    for rank, record in enumerate(records, start=1):
+        append(rank, record, "train", "all", record.get("best_components"))
+        for condition, metrics in dict(record.get("condition_metrics", {}) or {}).items():
+            append(rank, record, "train", str(condition), metrics)
+        for condition, metrics in dict(record.get("holdout_metrics", {}) or {}).items():
+            append(rank, record, "holdout", str(condition), metrics)
+        for metrics in list(record.get("validation_conditions", []) or []):
+            append(rank, record, "condition_cv", str(metrics.get("condition", "")), metrics)
+    return rows
 
 
 def run_fit(
@@ -87,15 +201,28 @@ def run_fit(
         tie_eps = float(tie_cfg.get("abs_score_epsilon", tie_cfg.get("score_epsilon", 1.0e-8)))
     else:
         tie_eps = float(tie_cfg) if tie_cfg is not None else 1.0e-8
-    class_rows = build_class_compare(all_records, tie_epsilon=tie_eps)
+    class_rows = [
+        _strip_nested_search_details(row)
+        for row in build_class_compare(all_records, tie_epsilon=tie_eps)
+    ]
+    optimization_rows, optimization_trace_rows = _build_optimization_tables(all_records)
+    loss_component_rows = _build_loss_component_rows(all_records)
     topk_overall = max(int(opt.selection.get("topk_overall", len(all_records))), 0)
     topk_per_class = max(int(opt.selection.get("topk_per_class", len(all_records))), 0)
     ranking_rows = []
     role_ranking_rows = []
     for row in all_records:
-        merged = dict(row)
+        merged = _strip_nested_search_details(row)
         components = dict(merged.pop("best_components", {}) or {})
+        optimization = dict(row.get("optimization", {}) or {})
         merged.update({k: float(v) for k, v in components.items()})
+        merged.update(
+            optimizer_method=optimization.get("method", ""),
+            optimizer_dimension=optimization.get("dimension", 0),
+            optimizer_trial_count=optimization.get("trial_count", 0),
+            optimizer_repetitions=optimization.get("repetitions", 0),
+            optimizer_best_score_range=optimization.get("best_score_range"),
+        )
         merged["condition_scores"] = json.dumps(dict(merged.get("condition_scores", {})), ensure_ascii=True, sort_keys=True)
         ranking_rows.append(merged)
     for rank, row in enumerate(ranking_rows, start=1):
@@ -121,10 +248,8 @@ def run_fit(
                 "rmse_nm": row.get("rmse_nm"),
                 "mae_nm": row.get("mae_nm"),
                 "max_abs_nm": row.get("max_abs_nm"),
-                "penalty_profile": row.get("penalty_profile", 0.0),
-                "penalty_phys": row.get("penalty_phys"),
                 "penalty_solver": row.get("penalty_solver"),
-                "penalty_complexity": row.get("penalty_complexity"),
+                "penalty_prior": row.get("penalty_prior"),
                 "condition_scores": row.get("condition_scores", "{}"),
             }
         )
@@ -135,20 +260,14 @@ def run_fit(
     )
     role_stability_enabled = bool(role_stability_cfg.get("enabled", True))
     role_stability_warning = bool(role_stability_diag.get("warning", False)) if role_stability_enabled else False
-    # Preserve the former public field as a compatibility alias while exposing
-    # the role-stability and parameter-identifiability meanings separately.
-    role_identifiability_warning = role_stability_warning
     best_identifiability = {}
     if all_records:
         best_identifiability = dict(all_records[0].get("fit_diagnostics", {}) or {}).get("identifiability", {})
     parameter_identifiability_warning = bool(best_identifiability.get("degeneracy_warning", False))
-    complexity_sensitivity_rows, complexity_sensitivity_diag = build_complexity_sensitivity(all_records)
-    complexity_sensitivity_warning = bool(complexity_sensitivity_diag.get("warning", False)) and all_records[0].get("selection_basis") == "training"
     role_summary_rows = build_role_summary(
         ranking_rows,
         score_epsilon=float(role_stability_cfg.get("score_epsilon", 1.0e-6)),
         role_stability_warning=role_stability_warning,
-        complexity_sensitivity_warning=complexity_sensitivity_warning,
         parameter_identifiability_warning=parameter_identifiability_warning,
         application=opt.selection.get("application"),
     )
@@ -188,7 +307,9 @@ def run_fit(
     write_rows_csv(tables_dir / "class_compare.csv", class_rows)
     write_rows_csv(tables_dir / "topk_assignments.csv", topk_assignments)
     write_rows_csv(tables_dir / "role_stability.csv", role_stability_rows if role_stability_enabled else [])
-    write_rows_csv(tables_dir / "complexity_sensitivity.csv", complexity_sensitivity_rows)
+    write_rows_csv(tables_dir / "optimization_summary.csv", optimization_rows)
+    write_rows_csv(tables_dir / "optimization_trace.csv", optimization_trace_rows)
+    write_rows_csv(tables_dir / "loss_components.csv", loss_component_rows)
 
     cache_totals = {"trial_hits": 0, "global_hits": 0, "misses": 0, "stores": 0, "evictions": 0}
     for row in all_records:
@@ -198,18 +319,18 @@ def run_fit(
 
     fit_diagnostics = {
         "role_stability_enabled": role_stability_enabled,
-        "role_identifiability_warning": role_identifiability_warning,
         "role_stability_warning": role_stability_warning,
         "parameter_identifiability_warning": parameter_identifiability_warning,
         "role_stability": role_stability_diag,
-        "complexity_sensitivity": complexity_sensitivity_diag,
         "cache_stats": cache_totals,
         "best_identifiability": best_identifiability,
+        "best_optimization": dict(all_records[0].get("optimization", {}) or {}) if all_records else {},
     }
     (outputs_dir / "fit_diagnostics.json").write_text(
         json.dumps(fit_diagnostics, indent=2, default=_json_default),
         encoding="utf-8",
     )
+    plot_rows = write_fit_diagnostic_plots(run_dir=run_dir, records=all_records)
 
     artifact_rows = standard_artifact_rows(
         include_report=True,
@@ -221,8 +342,14 @@ def run_fit(
             {"id": "class_compare", "path": "tables/class_compare.csv", "kind": "csv", "required": True},
             {"id": "topk_assignments", "path": "tables/topk_assignments.csv", "kind": "csv", "required": True},
             {"id": "role_stability", "path": "tables/role_stability.csv", "kind": "csv", "required": bool(role_stability_enabled)},
-            {"id": "complexity_sensitivity", "path": "tables/complexity_sensitivity.csv", "kind": "csv", "required": True},
+            {"id": "optimization_summary", "path": "tables/optimization_summary.csv", "kind": "csv", "required": True},
+            {"id": "optimization_trace", "path": "tables/optimization_trace.csv", "kind": "csv", "required": True},
+            {"id": "loss_components", "path": "tables/loss_components.csv", "kind": "csv", "required": True},
             {"id": "fit_diagnostics", "path": "outputs/fit_diagnostics.json", "kind": "json", "required": True},
+            *[
+                {"id": str(row["plot_id"]), "path": str(row["path"]), "kind": "png", "required": True}
+                for row in plot_rows
+            ],
         ],
     )
     timestamp_utc = datetime.now(timezone.utc).isoformat()
@@ -230,7 +357,7 @@ def run_fit(
         run_id=run_id,
         mode="fit",
         artifacts=artifact_rows,
-        plots=[],
+        plots=plot_rows,
         metadata=provenance,
         timestamp_utc=timestamp_utc,
         summary_fields={
@@ -242,6 +369,9 @@ def run_fit(
         "role_summary_count": len(role_summary_rows),
         "role_ranking_count": len(role_ranking_rows),
         "condition_score_count": len(condition_score_rows),
+        "optimization_summary_count": len(optimization_rows),
+        "optimization_trace_count": len(optimization_trace_rows),
+        "loss_component_count": len(loss_component_rows),
         "topk_assignment_count": len(topk_assignments),
         "consistency": {
             "ranking_equals_candidates": len(ranking_rows) == len(all_records),
@@ -252,10 +382,8 @@ def run_fit(
         "selection_basis": all_records[0].get("selection_basis") if all_records else None,
         "decision": role_summary_rows[0]["decision"] if role_summary_rows else "review",
         "diagnostics_path": "outputs/fit_diagnostics.json",
-        "role_identifiability_warning": role_identifiability_warning,
         "role_stability_warning": role_stability_warning,
         "parameter_identifiability_warning": parameter_identifiability_warning,
-        "complexity_sensitivity_warning": complexity_sensitivity_warning,
         "cache_stats": cache_totals,
         **provenance,
         },
@@ -264,8 +392,6 @@ def run_fit(
     warning_msgs: list[str] = []
     if role_stability_warning:
         warning_msgs.append("different role assignments are supported across condition refits or training ties.")
-    if complexity_sensitivity_warning:
-        warning_msgs.append("the best role assignment changes when the complexity penalty is rescaled.")
     if parameter_identifiability_warning:
         warning_msgs.append("identifiability diagnostics detected high correlation / degeneracy.")
     note_lines = [
@@ -273,6 +399,8 @@ def run_fit(
         f"Selected roles: {all_records[0]['roles']}",
         f"Selection basis: {all_records[0]['selection_basis']}; score: {all_records[0]['selection_score']:.6g}",
         "See condition_scores.csv for prediction error, mean bias, spatial shape, and training-only baselines.",
+        "See optimization_summary.csv and optimization_trace.csv for search budget, repeatability, and convergence.",
+        "See loss_components.csv for the data loss and declared penalty terms used by each fit.",
         (
             f"Cache stats: trial_hits={cache_totals['trial_hits']}, "
             f"global_hits={cache_totals['global_hits']}, misses={cache_totals['misses']}"

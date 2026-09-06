@@ -1,0 +1,6 @@
+held_out_condition,spatial_model,selected_chemical_model,chemical_rmse_nm_s,corrected_rmse_nm_s,chemical_centered_spatial_r2,corrected_centered_spatial_r2,corrected_spatial_correlation,chemical_selection_uses_spatial_response
+1,radial_quartic,"cvd:aib_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",0.0006773158028452596,0.00031020811610478564,-0.08456708975908822,0.7959588289975723,0.8922376846242481,False
+2,radial_quartic,"cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",0.0004660178488422262,0.0002825228300125764,-0.10629929577907249,0.6949901760377144,0.8437967110681458,False
+3,radial_quartic,"cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",0.0010486307401464674,0.000570306145283186,-0.014799642556980741,0.8451577487530033,0.9274876976754525,False
+4,radial_quartic,"cvd:langmuir_hinshelwood_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",0.00042281317858202196,0.00021309835298153647,0.037105634437477275,0.7660201060948941,0.8788302001904769,False
+5,radial_quartic,"cvd:langmuir_hinshelwood_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",0.002109312195256103,0.0015762413802821798,-0.19904920084589706,0.7888893360723076,0.9269002248280586,False

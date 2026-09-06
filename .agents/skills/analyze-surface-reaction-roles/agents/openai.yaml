@@ -1,4 +1,0 @@
-interface:
-  display_name: "Surface Reaction Role Analysis"
-  short_description: "Fit and validate interpretable CFD species roles"
-  default_prompt: "Use $analyze-surface-reaction-roles to fit anonymous CFD species to reduced CVD or ALD reaction roles and evaluate what the data can identify."

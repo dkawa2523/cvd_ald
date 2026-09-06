@@ -1,4 +1,0 @@
-# Deprecated helper snippet.
-# Current autorun does NOT pass this file path to --config.
-# It uses key=value overrides directly (for example: --config model="gpt-5.3-codex")
-# plus explicit --sandbox workspace-write.

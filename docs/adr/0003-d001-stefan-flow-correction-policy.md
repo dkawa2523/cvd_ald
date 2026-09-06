@@ -30,7 +30,7 @@ It is not promoted to `docs/REQUIREMENTS.md` in the current phase.
 ## Consequences
 
 1. No code changes to mass-transfer solver stack are introduced in this decision.
-2. `MODEL_GAP` keeps Stefan as deferred with trigger conditions.
+2. `docs/GAPS.md` keeps Stefan as deferred with trigger conditions.
 3. Any future implementation must first add requirement IDs + traceability + acceptance tests.
 
 ## Trigger To Reopen

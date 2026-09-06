@@ -31,23 +31,25 @@ opt:
   class_compare:
     enabled: true
     classes: [A, AI, AB, AIB]
-    complexity_penalty: {lambda_role: 0.1}
 
   parameter_fit:
-    engine: optuna
-    sampler: tpe
-    pruner: none
-    seed: 123
-    n_trials_per_candidate: 40
-    storage: {url: "", study_name: "", load_if_exists: false}
+    search:
+      method: tpe
+      seed: 123
+      min_trials: 48
+      max_trials: 192
+      trials_per_dimension: 24
+      patience: 48
+      relative_improvement: 1.0e-4
+      repetitions: 1
+      pruner: none
+      sampler_options: {n_startup_trials: 24, multivariate: true}
+      storage: {url: "", study_name: "", load_if_exists: false}
     fidelity: {levels: [1]}
     objective:
-      profile: generic
-      loss: huber
-      huber_delta_nm: 10.0
-      phi_B_min: 0.05
+      loss: {name: mse, standardized: auto}
       weights: {measurement: 1.0}
-      penalties: {lambda_complex: 0.0, lambda_role: 0.0, lambda_solver: 0.0, lambda_phys: 0.0, lambda_prior: 0.0}
+      penalties: {lambda_solver: 0.0, lambda_prior: 0.0}
       tie: {abs_score_epsilon: 1.0e-8}
     analysis:
       role_stability: {enabled: true, score_epsilon: 1.0e-6}

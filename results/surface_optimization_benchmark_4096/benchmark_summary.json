@@ -1,0 +1,70 @@
+{
+  "candidate_id": "cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",
+  "train_case_ids": [
+    1,
+    2,
+    4,
+    5
+  ],
+  "fixed_test_case_id": 3,
+  "losses": [
+    "mse",
+    "wafer_normalized_mse",
+    "wafer_normalized_mae",
+    "symmetric_normalized_mse"
+  ],
+  "samplers": [
+    "pattern",
+    "tpe",
+    "cmaes",
+    "de",
+    "pso",
+    "levy",
+    "cma_mae"
+  ],
+  "stochastic_trials_per_fit": 4096,
+  "current_pattern_evaluations_per_full_fit": 1010,
+  "repetitions": 3,
+  "selection_metric": "median leave-one-identification-condition-out RMSE",
+  "fixed_test_used_for_selection": false,
+  "current_baseline": {
+    "loss": "mse",
+    "sampler": "pattern",
+    "seed": 123,
+    "success": true,
+    "objective_value": 7.844918108091601e-07,
+    "train_rmse_nm_s": 0.0008857154231519061,
+    "condition_cv_rmse_nm_s": 0.0008940841559704123,
+    "condition_cv_centered_r2": -0.1403086886335141,
+    "condition_cv_spatial_correlation": -0.13923613060924278,
+    "test_rmse_nm_s": 0.0010486307401464674,
+    "test_relative_rmse": 0.007286473490638807,
+    "test_centered_r2": -0.014799642556980741,
+    "test_spatial_correlation": 0.17206833302148672,
+    "rate_scale_nm_s": 2.527220428930998,
+    "shape_parameters": "{\"conversion_ratio\": 0.09474635256553754, \"desorption_ratio\": 1.4074646633398433, \"inhibition_ratio\": 0.0005139696800771512}",
+    "boundary_parameters": "",
+    "trial_count_per_fit": 1010,
+    "elapsed_s": 0.2631397000513971
+  },
+  "training_selected_combination": {
+    "loss": "wafer_normalized_mse",
+    "sampler": "pattern",
+    "repetitions": 3,
+    "condition_cv_rmse_median_nm_s": 0.000888134404865374,
+    "condition_cv_rmse_min_nm_s": 0.000888134404865374,
+    "condition_cv_rmse_max_nm_s": 0.000888134404865374,
+    "condition_cv_delta_vs_current_nm_s": -5.949751105038294e-06,
+    "test_rmse_median_nm_s": 0.0009938287032508902,
+    "test_rmse_min_nm_s": 0.0009938287032508902,
+    "test_rmse_max_nm_s": 0.0009938287032508902,
+    "test_delta_vs_current_nm_s": -5.480203689557715e-05,
+    "test_centered_r2_median": -0.015335817857951461,
+    "test_spatial_correlation_median": 0.17998193484206076,
+    "elapsed_median_s": 0.7787059999536723,
+    "boundary_run_fraction": 0.0,
+    "training_selection_rank": 1
+  },
+  "combination_count": 28,
+  "workers": 16
+}

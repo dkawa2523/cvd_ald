@@ -42,6 +42,8 @@ sim:
         km_source: fit_scalar
         km_A: {mode: constant, value: 10.0}
         km_B: {mode: constant, value: 0.04}
+        Gamma_s: 1.0
+        nu_B: 1.0
       kinetics:
         k_store_A: 10.0
         k_release_A: 0.05
@@ -70,5 +72,5 @@ sim:
     run_name: ald_state_min
     root_dir: results
     store: {format: npz}
-    save_fields: [h_nm, theta_A, theta_I, theta_free, theta_star, CsA_over_CrefA, CsB_over_CrefB, phi_B, f_I, residual_nm]
+    save_fields: [h_nm, theta_A, theta_I, theta_free, theta_star, CsA_over_CrefA, CsB_over_CrefB, phi_B, f_I, J_A_surface, J_B_surface, J_A_transport, J_B_transport, tau_A_s, tau_B_s, residual_nm]
     report: {enabled: true, index_html: true}

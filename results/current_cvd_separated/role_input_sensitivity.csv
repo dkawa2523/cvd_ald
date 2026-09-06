@@ -1,0 +1,4 @@
+role,species,reaction_input_quantity,reaction_input_unit,rms_prediction_change_nm_s,mean_prediction_change_nm_s,minimum_prediction_change_nm_s,maximum_prediction_change_nm_s
+A,idn_2,concentration,kmol/m^3,0.008714403269598188,0.0015479788131513498,-0.012146510895005055,0.02127020336908106
+I,n2,concentration,kmol/m^3,4.461630239052637e-06,-7.500763301058834e-07,-8.768077135429264e-06,4.983050694296054e-06
+B,adn_2,concentration,kmol/m^3,0.052646716167727724,0.025640230255332772,-0.027824951697958372,0.11013218666524556

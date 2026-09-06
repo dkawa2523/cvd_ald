@@ -1,0 +1,5 @@
+model_id,term,response_scope,response_structure,role,value,unit,bootstrap_p05,bootstrap_p50,bootstrap_p95,bootstrap_zero_fraction,reduction_id,elementary_constant
+"cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",rate_scale_nm_s,observable_reduction,surface_qss,rate_scale,2.527220428930998,nm/s,2.5276092888461474,2.5431479088692654,2.577958293862646,0.0,full,False
+"cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",desorption_ratio,observable_reduction,surface_qss,observable_shape,1.4074646633398433,dimensionless,1.333521432163324,1.4074646633398433,1.485508017172775,0.0,full,False
+"cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",conversion_ratio,observable_reduction,surface_qss,observable_shape,0.09474635256553754,dimensionless,0.08976871324473142,0.09474635256553754,0.09821718891880378,0.0,full,False
+"cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",inhibition_ratio,observable_reduction,surface_qss,observable_shape,0.0005139696800771512,dimensionless,5.2329911468149466e-08,0.0026416483203860926,0.01596338544287942,0.0,full,False

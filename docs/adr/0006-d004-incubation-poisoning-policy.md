@@ -31,7 +31,7 @@ No requirement-level promotion is made in this decision.
 ## Consequences
 
 1. No new state API is introduced by this decision.
-2. `MODEL_GAP` keeps the item deferred with reopen triggers.
+2. `docs/GAPS.md` keeps the item deferred with reopen triggers.
 3. Future adoption must define state contracts and deterministic acceptance tests first.
 
 ## Trigger To Reopen

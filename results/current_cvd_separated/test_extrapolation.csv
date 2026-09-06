@@ -1,0 +1,5 @@
+field,train_min,train_max,test_min,test_max,test_outside_train_range_fraction
+total_concentration,0.00016400367,0.00020500196,0.00024563995,0.00024587281,1.0
+concentration_adn_2,2.22437e-06,7.03569e-06,3.98044e-06,4.29758e-06,0.0
+concentration_idn_2,1.34339e-06,1.88411e-06,2.0115e-06,2.25151e-06,1.0
+concentration_n2,0.000159805,0.000200909,0.000239357,0.000239595,1.0

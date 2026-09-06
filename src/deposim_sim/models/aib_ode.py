@@ -53,8 +53,11 @@ def compute_cs_a(
     gamma_s: np.ndarray,
     m_ads: int,
 ) -> np.ndarray:
-    num = km_a * cref_a + gamma_s * k_des * theta_a
-    den = km_a + gamma_s * k_ads * np.power(np.clip(theta_star, 0.0, 1.0), float(m_ads))
+    inv_km = np.where(np.isinf(km_a), 0.0, 1.0 / np.maximum(km_a, _EPS))
+    num = cref_a + gamma_s * k_des * theta_a * inv_km
+    den = 1.0 + gamma_s * k_ads * np.power(
+        np.clip(theta_star, 0.0, 1.0), float(m_ads)
+    ) * inv_km
     return np.clip(num / np.maximum(den, _EPS), 0.0, np.inf)
 
 
@@ -66,16 +69,17 @@ def compute_cs_b(
     km_b: np.ndarray,
     k_rxn: np.ndarray,
     gamma_s: np.ndarray,
+    nu_b: np.ndarray,
     c_b_scale: np.ndarray,
     p_a: int,
     p_star: int,
 ) -> np.ndarray:
-    base = gamma_s * k_rxn * np.power(np.clip(theta_a, 0.0, 1.0), float(p_a)) * np.power(
+    base = gamma_s * nu_b * k_rxn * np.power(np.clip(theta_a, 0.0, 1.0), float(p_a)) * np.power(
         np.clip(theta_star, 0.0, 1.0),
         float(p_star),
     ) / np.maximum(c_b_scale, _EPS)
-    den = km_b + base
-    return np.clip(km_b * cref_b / np.maximum(den, _EPS), 0.0, np.inf)
+    inv_km = np.where(np.isinf(km_b), 0.0, 1.0 / np.maximum(km_b, _EPS))
+    return np.clip(cref_b / np.maximum(1.0 + base * inv_km, _EPS), 0.0, np.inf)
 
 
 def compute_revent(
@@ -110,6 +114,7 @@ def _theta_rhs(
     K_I: np.ndarray,
     gamma_s: np.ndarray,
     nu_a: np.ndarray,
+    nu_b: np.ndarray,
     c_b_scale: np.ndarray,
     m_ads: int,
     p_a: int,
@@ -135,6 +140,7 @@ def _theta_rhs(
             km_b=km_b,
             k_rxn=k_rxn,
             gamma_s=gamma_s,
+            nu_b=nu_b,
             c_b_scale=c_b_scale,
             p_a=p_a,
             p_star=p_star,
@@ -173,6 +179,7 @@ def step_theta_implicit(
     K_I: np.ndarray,
     gamma_s: np.ndarray,
     nu_a: np.ndarray,
+    nu_b: np.ndarray,
     alpha_h: np.ndarray,
     c_b_scale: np.ndarray,
     m_ads: int,
@@ -207,6 +214,7 @@ def step_theta_implicit(
             K_I=K_I,
             gamma_s=gamma_s,
             nu_a=nu_a,
+            nu_b=nu_b,
             c_b_scale=c_b_scale,
             m_ads=m_ads,
             p_a=p_a,
@@ -257,6 +265,7 @@ def step_theta_implicit(
             K_I=K_I,
             gamma_s=gamma_s,
             nu_a=nu_a,
+            nu_b=nu_b,
             c_b_scale=c_b_scale,
             m_ads=m_ads,
             p_a=p_a,
@@ -279,6 +288,7 @@ def step_theta_implicit(
         K_I=K_I,
         gamma_s=gamma_s,
         nu_a=nu_a,
+        nu_b=nu_b,
         c_b_scale=c_b_scale,
         m_ads=m_ads,
         p_a=p_a,
@@ -314,9 +324,14 @@ def compute_diagnostics(
     cref_b: np.ndarray,
     cref_i: np.ndarray,
     gamma_s: np.ndarray,
+    k_ads: np.ndarray,
+    k_des: np.ndarray,
     k_rxn: np.ndarray,
+    km_a: np.ndarray,
     km_b: np.ndarray,
+    nu_b: np.ndarray,
     c_b_scale: np.ndarray,
+    m_ads: int,
     p_a: int,
     p_star: int,
     K_I: np.ndarray,
@@ -330,6 +345,7 @@ def compute_diagnostics(
         cs_b_ratio = cs_b / cref_b_safe
         phi_b = (
             gamma_s
+            * nu_b
             * k_rxn
             * np.power(np.clip(theta_a, 0.0, 1.0), float(p_a))
             * np.power(np.clip(theta_star, 0.0, 1.0), float(p_star))
@@ -340,6 +356,35 @@ def compute_diagnostics(
         phi_b = np.full(theta_a.shape, np.nan, dtype=float)
 
     f_i = 1.0 / np.maximum(1.0 + K_I * cref_i, _EPS)
+    j_a_surface = gamma_s * (
+        k_ads * cs_a * np.power(np.clip(theta_star, 0.0, 1.0), float(m_ads))
+        - k_des * theta_a
+    )
+    j_b_surface = (
+        gamma_s
+        * nu_b
+        * compute_revent(
+            theta_a=theta_a,
+            theta_star=theta_star,
+            k_rxn=k_rxn,
+            p_a=p_a,
+            p_star=p_star,
+            has_b=has_b,
+            cs_b=np.nan_to_num(cs_b, nan=0.0),
+            c_b_scale=c_b_scale,
+        )
+        if has_b
+        else np.full(theta_a.shape, np.nan, dtype=float)
+    )
+    with np.errstate(invalid="ignore"):
+        j_a_transport = np.where(
+            np.isfinite(km_a), km_a * (cref_a - cs_a), np.nan
+        )
+        j_b_transport = (
+            np.where(np.isfinite(km_b), km_b * (cref_b - cs_b), np.nan)
+            if has_b
+            else np.full(theta_a.shape, np.nan, dtype=float)
+        )
 
     return {
         "theta_A": theta_a,
@@ -348,6 +393,10 @@ def compute_diagnostics(
         "CsB_over_CrefB": cs_b_ratio,
         "phi_B": phi_b,
         "f_I": f_i,
+        "J_A_surface": j_a_surface,
+        "J_B_surface": j_b_surface,
+        "J_A_transport": j_a_transport,
+        "J_B_transport": j_b_transport,
     }
 
 

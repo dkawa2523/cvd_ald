@@ -1,0 +1,76 @@
+sim:
+  process: cvd
+  time_mode: transient
+
+  reference_plane:
+    z_ref_mm: 1.0
+
+  inputs:
+    fluent:
+      mode: transient
+      file: data/fluent_cvd_transient.npz
+      keys:
+        cref: cref
+        xy: xy
+        time: time
+        flux_sink: flux_sink
+      species: [s0, s1, s2, s3]
+    temperature:
+      mode: scalar
+      value_K: 650.0
+
+  domain:
+    kind: from_fluent_xy
+    xy_unit: mm
+    wafer_radius_mm: 150.0
+
+  roles:
+    mode: fixed
+    A: s0
+    I: null
+    B: s1
+
+  model:
+    name: role_cvd_mvk
+    orders:
+      adsorption_site_order: 1
+      reaction_site_order_A: 1
+      reaction_site_order_star: 0
+      enforce_total_order_le: 3
+    params:
+      transport:
+        km_source: fit_scalar
+        km_A: {mode: constant, value: 0.02}
+        km_B: {mode: constant, value: 0.02}
+        Gamma_s: 1.0
+        nu_B: 1.0
+      kinetics:
+        k_reduce: 1.0
+        k_regenerate: 1.0
+      inhibitor: {}
+      thickness:
+        alpha_h: 1.0
+      scaling: {}
+
+  time:
+    t_proc_s: 30.0
+    dt_s: 0.005
+    solver:
+      name: implicit_euler_bisect
+      max_iter: 60
+      theta_tol: 1.0e-10
+
+  initial_conditions:
+    redox_fraction: {mode: scalar, value: 1.0}
+    h_nm: {mode: scalar, value: 0.0}
+
+  measurement:
+    enabled: false
+
+  output:
+    project: demo
+    run_name: cvd_mvk_transient_min
+    root_dir: results
+    store: {format: npz}
+    save_fields: [time_s, h_nm, oxidized_fraction, reduced_fraction, reduction_rate_s-1, regeneration_rate_s-1, redox_relaxation_time_s, CsA_over_CrefA, CsB_over_CrefB, J_A_surface, J_B_surface, J_A_transport, J_B_transport, h_nm_history, oxidized_fraction_history, reduction_rate_history_s-1, regeneration_rate_history_s-1, Cs_A_history_kmol_m3, Cs_B_history_kmol_m3, J_A_surface_history, J_B_surface_history, residual_nm]
+    report: {enabled: true, index_html: true}

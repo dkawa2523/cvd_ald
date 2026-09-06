@@ -1,222 +1,276 @@
-# Architecture
+# Architecture and model responsibilities
 
-This document describes the intended package boundaries, dependency direction, and
-how configuration and outputs are managed.
+## Design objective
 
----
+The architecture serves one product decision: determine which anonymous Fluent fields
+can act as transferable reaction roles when predicting measured film maps, while keeping
+numerically similar but physically different explanations visible.
 
-## Package boundaries (logical separation)
+The main path is
 
-The system is split into top-level Python packages (within a single repo / single editable install),
-to match the requirement that numerical simulation and optimization/ML are separated.
+```text
+raw Fluent fields
+-> aligned role fields
+-> explicit reaction-input selection
+-> registered equation or process model
+-> parameter fit to measured film response
+-> optional post-selection spatial residual response
+-> condition and spatial validation
+-> role/equation stability
+-> concise evidence statement
+```
 
-Recommended top-level packages:
+CVD and ALD use the same role vocabulary and evidence rules but retain separate process
+models. A steady response equation, a dynamic state model, a transport closure, and a
+net-film composition model solve different subproblems and are not interchangeable.
 
-- `deposim_schema`
-  - dataclasses / pydantic models for configs and I/O contracts
-  - unit conventions and validation
-  - minimal dependencies
+## Package boundaries
 
-- `deposim_sim`
-  - numerical simulation core
-  - transport–reaction coupling solver
-  - domain grids and operators
-  - model registry (mass transfer, rate laws, state models, net models)
-  - output writing (arrays + metadata)
-  - does NOT depend on optimization libraries or ClearML
+```mermaid
+flowchart LR
+    S[deposim_schema] --> SIM[deposim_sim]
+    S --> OPT[deposim_opt]
+    SIM --> OPT
+    SIM --> REP[deposim_report]
+    OPT --> REP
+```
 
-- `deposim_report`
-  - plotting and HTML reporting
-  - deterministic outputs for runs
+| Package | Responsibility | Must not own |
+| --- | --- | --- |
+| `deposim_schema` | YAML structure, public model names, defaults, and compatibility validation | Numerical integration, fitting, reporting |
+| `deposim_sim` | Forward simulation, process-state kernels, transport providers, mass-transfer utilities, net-film composition, run artifacts | Candidate ranking or chemical-role adoption |
+| `deposim_opt` | Observation adaptation, role enumeration, fitting, cross-validation, reduction comparison, stability, and decision evidence | Process equations hidden inside optimizer branches |
+| `deposim_report` | Generic plots and run presentation from computed outputs | Fitting, role selection, or changes to model meaning |
 
-- `deposim_opt` (P2)
-  - data assimilation / parameter estimation / surrogate modeling
-  - optional JAX engine, implicit differentiation, adjoints
-  - depends on (optional) heavy deps: jax, jaxopt, diffrax, etc.
+The dependency direction keeps the simulator usable without optimization libraries.
+Heavy packages remain optional.
 
-- `deposim_tracking_clearml` (P2)
-  - ClearML integration layer
-  - optional dependency
-  - core simulation must remain independent
+## Model layers
 
-**Dependency direction:**
-schema -> sim -> report
-schema -> opt (and optionally sim)
-tracking is leaf-only (depends on outputs, not vice versa)
+| Layer | Registry or implementation | Inputs | Output meaning |
+| --- | --- | --- | --- |
+| Reaction input | `deposim_opt.role_fields` | reference concentration, wall concentration, or independently calculated transport-capacity flux | one explicitly selected local driver and its location/unit metadata |
+| Steady observable response | `deposim_sim.models.aib_reductions` | normalized selected driver and role assignment | dimensionless response shape and interpretable surface-state proxies |
+| Spatial residual response | `deposim_opt.spatial_response` | frozen chemical prediction and identification-condition residual maps | positive condition-shape factor that preserves the chemical mean and makes no chemical claim |
+| Dynamic process state | `deposim_sim.models.process_models` plus `aib_ode.py`, `mvk_state.py`, `ald_role_state.py` | time-resolved role concentrations and transport provider | state trajectory, surface concentrations, fluxes, and thickness |
+| Transport source | `deposim_sim.transport_provider` | wall concentration, (k_m), or CFD transport-capacity flux | role-specific (k_m) and concentration-location metadata |
+| Mass-transfer utility | `deposim_sim.models.mass_transfer` | diffusivity, film thickness, rotation, viscosity | candidate (k_m) field |
+| Net film | `deposim_sim.models.net_models` | deposition, etch, and loss rates | signed net thickness rate |
 
----
+The steady census reports the MvK steady equivalent once rather than giving an
+algebraically duplicate mechanism an additional selection vote. Dynamic MvK remains a
+separate process model because its redox memory can only be tested with time-resolved
+data.
 
-## Source layout
+## File responsibilities
 
-We standardize on **src layout** to avoid import ambiguity:
-
-    src/
-      deposim_schema/
-      deposim_sim/
-      deposim_report/
-      deposim_opt/          (later)
-      deposim_tracking_clearml/ (later)
-
-Import stability is handled by `scripts/preflight.sh`:
-- prefers `pip install -e .`
-- otherwise sets `PYTHONPATH=src`
-
----
-
-## Model registry
-
-To keep the code base small and extensible:
-
-- models are discovered via a registry module rather than deep directory trees.
-- the registry provides a stable API for adding new models:
-  - mass transfer models (k_m)
-  - process models (CVD continuous role models, ALD cycle/state role models)
-  - optional internal rate/state kernels used by those process models
-  - net models (dep/etch/loss composition)
-
-The registry pattern supports YAML selection of model names. Existing `aib_ode`
-configs are compatibility inputs; new CVD/ALD work should add model aliases or
-registry entries instead of hard-coding more `aib_ode` checks.
-
-The process-model naming direction is intentionally small:
-
-- `role_cvd_aib`: CVD-facing continuous role model path.
-- `role_ald_compat`: diagnostic ALD transient compatibility path.
-- `role_ald_state`: minimal ALD role-state assimilation model defined by ADR 0020.
-
-`role_ald_state` uses an A-only event when B is absent and an A+B conversion
-event when B is present, as fixed by ADR 0021. This keeps A/AI versus AB/AIB a
-fair role-selection comparison without adding another model family.
-
----
-
-## Configuration management (Hydra + YAML)
-
-- user-facing configuration is YAML-based (no CLI required)
-- Hydra is used to compose configs, but we avoid config file explosions by:
-  - keeping group count small
-  - using `name:` + `params:` patterns rather than per-model YAML files
-  - saving exactly one `config_resolved.yaml` in the run directory
-
-YAML is split:
-- `configs/sim/` for forward simulation
-- `configs/opt/` for assimilation/optimization
-
----
-
-## Output layout (anti-"迷子" design)
-
-All simulation outputs are stored under a **project** directory (user-chosen), with a fixed entrypoint:
-
-    results/
-      index.html        # always the entry point
-      summary.json      # quick glance metrics
-      runs/
-        <run_id>/
-          config_resolved.yaml
-          inputs_preview/
-          outputs/
-            thickness.<store>
-            diagnostics.<store>
-          plots/
-          report.html
-
-Key requirements:
-- avoid nested case directories for DOE
-- store DOE results in a case dimension (zarr/npz/hdf5; chosen by implementation)
-- keep run metadata close to run outputs
-- record dirty-worktree state in provenance so a commit hash is not mistaken for
-  a complete code snapshot
-- fit runs expose training, condition-refit, and external-holdout errors, together
-  with the reason a role assignment is adopted, reviewed, or rejected
-
-### Responsibilities in role assimilation
-
-The existing CVD/ALD dispatcher remains the only simulator entry point. CVD and
-ALD retain their separate process models. Fitting is split into small modules:
-
-| Module | Responsibility |
+| File or module | Single responsibility |
 | --- | --- |
-| `deposim_sim/measurement_adapter.py` | Sample model predictions at original observations; apply coordinate and rate/thickness conversion. Mesh-resampled measurements are for plotting. |
-| `deposim_opt/fit_conditions.py` | Read condition settings, prepare a simulator input, and evaluate one condition. |
-| `deposim_opt/objective.py` | Compute optimization loss and physical error metrics from observations. |
-| `deposim_opt/fit_optuna.py` | Fit continuous parameters for one role/order candidate, including cache and fidelity. |
-| `deposim_opt/enumerate_roles.py` / `cvd_spatial_analysis.py` | Define role effects and permitted reductions; only the empirical AB product is exchangeable. |
-| `deposim_opt/fit_roles.py` | Enumerate candidates, cache simulator refits, and provide the shared condition-fold runner. |
-| `deposim_opt/class_compare.py` | Pure ranking, independently refitted reduction comparisons, effective-role stability, and one adoption summary for both paths. |
-| `deposim_sim/identifiability.py` | Evaluate all fitted parameter directions across all training observations with a scaled sensitivity SVD. |
-| `deposim_opt/run_fit.py` | Write the existing ranking, summary, condition tables, and report. |
+| `scripts/analyze_cvd_multicond_case.py` | Small CLI for model inventory and steady multi-condition execution |
+| `deposim_opt/cvd_analysis_io.py` | Format-level numeric CSV reading, coordinate matching, source hashing, and artifact serialization |
+| `deposim_opt/cvd_conditions.py` | CVD condition-file discovery, column semantics, data-quality facts, and assembly of aligned role fields |
+| `deposim_opt/spatial_validation.py` | Shared spatial blocks and ordinary rate metrics |
+| `deposim_opt/empirical_response.py` | Legacy-compatible empirical role candidates and constrained linear fitting |
+| `deposim_opt/role_fields.py` | Aligned arrays and explicit selection of reference concentration, wall concentration, or transport-capacity flux |
+| `deposim_opt/spatial_response.py` | Post-selection radial residual models; condition-mean preservation and transfer application |
+| `deposim_sim/models/aib_reductions.py` | Registered steady equations, exact reductions, symmetries, required evidence, and formula metadata |
+| `deposim_opt/surface_fit.py` | Whole-wafer weighting, positive shape-parameter orchestration, and separable rate-scale profiling |
+| `deposim_opt/losses.py` | Pure dimensional, wafer-normalized, symmetric, Huber, L1, and uncertainty-standardized losses |
+| `deposim_opt/metrics.py` | Prediction, bias, spatial-shape, and thickness-unit reporting metrics; never changes the fitted objective |
+| `deposim_opt/parameter_space.py` | Model-aware filtering and validation of shared or per-condition search variables |
+| `deposim_opt/samplers.py` | Random, TPE, CMA-ES, DE, PSO, Lévy-flight, and CMA-MAE backends; budgets, seeds, stopping, and traces |
+| `deposim_opt/surface_optimization_benchmark.py` | Fixed-equation Loss-by-sampler comparison using training-condition CV and an untouched test audit |
+| `deposim_opt/parameter_fit.py` | One candidate fit: condition simulation, cache, sampler call, holdout prediction, and identifiability diagnostics |
+| `deposim_opt/fit_conditions.py` | Condition parsing and the sole simulator-to-observation adapter used by train and holdout evaluation |
+| `deposim_opt/evidence_requirements.py` | Translate failed capability criteria into reusable measurement and experimental-design requirements |
+| `deposim_opt/cvd_multicond_analysis.py` | Candidate census orchestration, nested condition evaluation, evidence assembly, and artifact production |
+| `deposim_opt/class_compare.py` | Generic candidate ranking, reduction comparisons, role evidence, stability, and adoption decision |
+| `deposim_opt/cvd_multicond_report.py` | Rendering of already computed steady results; no fitting or selection |
+| `deposim_sim/models/aib_ode.py` | Continuous adsorbed-(A) state and local A/B transport-reaction closure |
+| `deposim_sim/models/mvk_state.py` | Bounded redox-reservoir integration and reduction/regeneration fluxes |
+| `deposim_sim/models/ald_role_state.py` | ALD storage, release, conversion, and inhibitor state integration |
+| `deposim_sim/transport_provider.py` | `direct_surface`, `fit_scalar`, and `from_cfd_flux_sink` semantics |
+| `deposim_sim/pipeline.py` | One process dispatcher connecting config, Fluent input, transport, model, measurement, and outputs |
+| `deposim_schema/sim_config.py` | Public configuration shape and allowed process-model names |
 
-With at least two measured training conditions and shared parameters, the primary
-`selection_score` is the condition-weighted mean squared prediction error from
-condition refits. Only numerical loss ties prefer fewer active effects and
-parameters; CV variability is not a performance-equivalence margin. `best_score` remains
-the full-training optimization loss, so the selected candidate need not minimize
-it. External holdouts do not affect either fit or ranking; they can reject the
-chosen candidate without choosing a replacement using test data.
-Condition refits always use fresh studies. For persistent full-training Optuna
-studies, the configured study name is a prefix; a suffix derived from training
-inputs, candidate settings, and objective prevents reuse of unrelated trials.
+This separation makes a new equation family a local model change: register its metadata,
+response, reductions, and evidence requirements; then exercise the existing enumeration,
+fit, comparison, and reporting path. Model-name conditionals should not be added to the
+analysis unless the model supplies a genuinely different observation type.
 
-Role stability repeats the same condition-CV selection on each training-condition
-subset, sharing votes among numerical ties and counting duplicate signatures once.
-Subset fits are cached. Disabling this optional analysis never disables the
-condition CV used for selection. With fewer than three conditions, repeated
-selection is unavailable; score ties are explicitly not selection stability.
-Prediction status and role support are reported separately in the role summary.
+## Configuration contract
 
-The empirical rate fitter also uses the shared condition-fold runner, metrics,
-ranking, stability and summary. Permitted term reductions are enumerated before
-fitting and select their own regularization using training folds. A zero effect
-on the full fit never filters the fold candidate sets. Effect identity describes
-active terms, not equality of coefficients or predictions. The physical models
-retain ordered A/B roles and only compare reductions enabled by their existing
-configuration; isolated kinetic zeros do not prove that a species is inactive.
+Simulation and fitting configurations are kept separate:
 
-Condition tables label quantity/unit and distinguish training fit, inner
-selection, fixed-model holdout and outer selection-procedure evaluation. An outer
-fold uses its own fitted effects for stability; duplicate aliases share one vote.
-The AB product is reported as an undirected pair in stability tables.
-No application adoption is inferred without user criteria. Optional
-`opt.selection.application` specifies `conditions`, `max_relative_rmse` and
-`require_spatial` (default true). The empirical Python entry point accepts the
-same mapping as `application`. Criteria do not affect selection. A successful
-outer evaluation of model selection cannot certify the primary fixed model.
+```text
+configs/sim/    forward process and state execution
+configs/opt/    parameter estimation and role comparison
+```
 
-Local identifiability uses the observation residuals and all estimated parameters,
-scaled by parameter magnitude and observation uncertainty or signal magnitude.
-SVD exposes dependent combinations involving more than two parameters. A clean
-local result does not prove global uniqueness or a chemical mechanism. Disabled
-analysis is reported as unassessed, not a successful identifiability result.
-Legacy `topk_window` and `max_paths` analysis settings are ignored; examples no
-longer advertise them. `role_stability.score_epsilon` is a relative tie tolerance.
+Public process models are:
 
----
+- `role_cvd_aib`
+- `role_cvd_mvk`
+- `role_ald_state`
 
-## Single Source of Truth: run/test commands
+Implementation module names such as `aib_ode.py` are internal numerical details. The
+steady equation-family registry is selected by the analysis CLI rather than by a dynamic
+process-model name.
 
-All automation and docs MUST reference:
+Every concentration-bearing configuration must state the Fluent file, field keys,
+species ordering, coordinate unit, reference-plane metadata, and time mode. Every
+transport closure must state the concentration location or the source of (k_m). See
+[inputs_fluent.md](inputs_fluent.md) and [transport_km.md](transport_km.md).
 
-- `scripts/commands.sh`
+State-model fitting declares `parameter_fit.search` independently of the search space.
+`method` selects `random`, `tpe`, `cmaes`, `de`, `pso`, or `levy`; the trial budget is bounded by
+`min_trials`, `max_trials`, and `trials_per_dimension`; `repetitions` supplies independent
+seeds. CMA-MAE additionally requires two behavior measures and is connected by the
+steady surface fitter, which supplies mean wafer CV and the log condition-rate span.
+Optuna and OptunaHub backends fail explicitly when the optional dependency is missing.
+A requested method is never replaced silently.
 
-It defines:
-- python executable and env
-- smoke run command
-- verify gates
+Steady surface fitting independently selects one of `mse`, `wafer_normalized_mse`,
+`wafer_normalized_mae`, or `symmetric_normalized_mse` and one sampler. Every fit still
+uses one parameter set across all identification wafers. Optional radial uncertainty
+changes point weights within each wafer and then renormalizes that wafer to the same
+total mass as every other condition.
 
-This avoids python vs python3 accidents and keeps CI consistent.
+`--reaction-input` is fixed before candidate enumeration. Reaction-family ranking cannot
+choose between sampling locations or between concentration and flux. The supported
+steady choices are `bulk_concentration`, `surface_concentration`, and
+`transport_capacity_flux`. They all enter a steady equation as
+\(u_j=X_j/X_{j,\mathrm{ref}}\), while the stored quantity, location, unit, and physical
+interpretation remain different. A realized reactive wall flux is retained as a closure
+observation and is never used as its own reaction driver.
 
----
+`--spatial-response` runs after chemical-family and role selection. `none`,
+`radial_quadratic`, and `radial_quartic` are available. The spatial coefficients do not
+enter `role_ranking.csv`, reduction evidence, or chemical parameter fitting. Every outer
+condition fold refits the spatial response using only the remaining conditions, then
+applies it to the held-out chemical prediction. Wafer temperature is uniform by design;
+an optional scalar value is provenance, not a fitted radial field.
 
-## GPU / CPU support
+`parameter_fit.objective.loss` selects `mse`, `huber`, or `l1`. With
+`standardized: auto`, supplied measurement uncertainty changes all active conditions to
+a dimensionless residual. Mixing standardized and unstandardized conditions in one fit
+is rejected because their losses are not commensurate. Spatial, purge, plateau, role,
+and pathway quantities enter the objective only when supplied as measured observations
+with uncertainty. Unmeasured heuristic role and complexity penalties are not part of
+selection; simpler structures break numerical ties only after predictive scoring.
 
-The simulation engine must be selectable by YAML:
+## Results and provenance
 
-- `engine: numpy` (CPU robust baseline)
-- `engine: jax`   (optional CPU/GPU, differentiable)
+Generated inputs are written under `runs/generated_inputs/`; run outputs are written
+under `results/`. They are excluded from version control because they are reproducible
+artifacts rather than source fixtures.
 
-**Important:**
-- compute resource selection is user-controlled
-- no hard-coded "single=CPU, DOE=GPU" assumptions
+A steady role-evaluation run writes machine-readable CSV/JSON evidence, plots, a compact
+generated report, a notebook, and a manifest. Source file paths and SHA-256 values are
+stored in `analysis_summary.json`. The general scientific specification remains in
+`docs/`; a generated run report cannot redefine the equations or decision thresholds.
 
-A benchmark helper may recommend settings, but must not override explicit user choice.
+The five leading chemical-decision artifacts are:
+
+1. `role_summary.csv`
+2. `role_ranking.csv`
+3. `role_stability.csv`
+4. `condition_scores.csv`
+5. `data_requirements.csv`
+
+State-model fits additionally write `optimization_summary.csv`,
+`optimization_trace.csv`, `loss_components.csv`, `optimization_convergence.png`, and
+`loss_components.png`. Main fits and condition-refit folds use the same rows. They
+separate optimizer behavior from model error and show the exact data-loss scale used in
+ranking. A single seed is marked as repeatability not assessed rather than assigned a
+zero repeatability range.
+
+Additional files diagnose extrapolation, structure sensitivity, coefficients, and input
+quality. `data_requirements.csv` connects each unresolved target use to the measurement,
+experimental variation, ambiguity resolved, and workflow stage needed to establish it.
+This keeps the user-facing path short without discarding evidence needed for audit.
+
+Steady-role interpretation also writes `optimization_history.csv`,
+`best_model_role_assignments.csv`, `condition_mean_input_correlations.csv`,
+`role_input_sensitivity.csv`, `role_importance_and_stability.csv`,
+`role_response_curves.csv`, `reaction_state_summary.csv`,
+`reaction_model_predictions.csv`, `reaction_model_states.csv`,
+`parameter_sensitivity_correlations.csv`, and `parameter_loss_slices.csv`. The fitting
+layer computes these quantities; the report layer only renders them. Input sensitivity
+is a one-at-a-time reference replacement for a nonlinear equation and is not presented
+as an additive or causal rate decomposition. Reaction diagrams render registered model
+steps, while held-out prediction differences and role-selection frequencies determine
+whether ambiguity matters to prediction. Parameter loss slices vary one kinetic ratio,
+reprofile the rate scale, and leave the other ratios fixed.
+
+`spatial_response_summary.csv` and `spatial_response_coefficients.csv` form a separate
+prediction artifact pair. They report chemical and corrected spatial scores side by side
+and explicitly record that the correction did not participate in chemical selection.
+
+Visualization follows the same ownership rule as tabular evidence:
+
+| Computed evidence | Owner | Rendered views |
+| --- | --- | --- |
+| Objective-evaluation history | `surface_fit.py`, `cvd_multicond_analysis.py` | `optimization_convergence.png` |
+| Equation ranking, registered paths, and family holdout predictions | equation registry and analysis orchestration | equation comparison, reaction-path, and model-prediction-agreement figures |
+| Role selection and reference-substitution sensitivity | `cvd_multicond_analysis.py` | assignment, response-curve, and importance-versus-stability figures |
+| Model-defined site/pathway fractions | equation registry plus prediction adapter | state summary and heldout state maps |
+| Local derivative design and parameter slices | `surface_fit.py` | kinetic-parameter sensitivity and Loss-slice figures |
+| Heldout predictions and spatial-response rows | prediction and `spatial_response.py` | measured/predicted/residual maps, radial profiles, and correction-performance figures |
+
+`cvd_multicond_report.py` receives these stored rows and only formats tables, notebook
+content, Markdown, and plots. A new figure must have a machine-readable source artifact
+and manifest entry before it is cited as evidence. This prevents plotting code from
+becoming a second selection or fitting path.
+
+## Extension rules
+
+### Add a steady equation family
+
+1. Implement a pure normalized response and optional state summary in
+   `aib_reductions.py`.
+2. Register required roles, inputs, reductions, symmetry, physical question, and minimum
+   evidence.
+3. Add equation tests for limiting cases and exact reductions.
+4. Confirm that enumeration and reports work without a family-name branch.
+5. Update [THEORY.md](THEORY.md) when the model meaning changes.
+
+### Add a dynamic process model
+
+1. Define the bounded state, rates, units, and required observations.
+2. Implement the state kernel without optimization dependencies.
+3. Register its supported process and time mode in `process_models.py`.
+4. Connect it once in `pipeline.py` and add a minimal YAML example.
+5. Test conservation/bounds, zero-input limits, transport limits, and time-step behavior.
+
+### Add transport physics
+
+Transport changes belong in a provider or mass-transfer utility. The reaction model
+receives (C_{\mathrm{ref}}), (C_s), or (k_m) under explicit semantics. A CFD realized
+reactive flux cannot be reinterpreted as transport capacity, because that would feed the
+modeled reaction result back into its own boundary condition.
+
+### Add an adoption rule
+
+Adoption rules belong in `class_compare.py` and must apply to empirical and physical
+paths consistently. A new diagnostic should only gate adoption when it corresponds to a
+clear scientific failure mode and can be evaluated from the available data. Application
+tolerances remain user-supplied because the code cannot infer acceptable process error.
+
+## Why this design is useful
+
+- Equations remain inspectable and testable independently of optimization.
+- All raw-species assignments receive the same fit and validation procedure.
+- Exact reductions distinguish “a coefficient was fitted” from “the associated effect
+  improved transfer.”
+- Nested condition evaluation separates model selection from performance estimation.
+- Transport and state models can evolve without changing role-ranking semantics.
+- Scientific limits are expressed as missing evidence rather than hidden defaults or
+  excessive validation scaffolding.
+
+The remaining architectural boundary is that the steady CSV census and dynamic NPZ
+fitting paths are separate. MvK now emits observation-time state, pathway,
+surface-concentration, and flux histories; configured NPZ measurement keys can pass
+aligned histories and their uncertainties to the existing multi-observation objective.
+The adapter intentionally requires the measured timestamps to match the Fluent time
+grid. General time resampling and correlated-error models are not implemented.

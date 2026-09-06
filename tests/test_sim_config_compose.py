@@ -8,7 +8,7 @@ from deposim_schema import compose_and_save_sim_config, compose_opt_config, comp
 class TestSimConfigCompose(unittest.TestCase):
     def test_compose_example_cvd(self) -> None:
         run_spec = compose_sim_config("cvd_steady_min")
-        self.assertEqual(run_spec.model.name, "aib_ode")
+        self.assertEqual(run_spec.model.name, "role_cvd_aib")
         self.assertIn(run_spec.time_mode, {"steady", "transient"})
         self.assertTrue(run_spec.output.run_name)
         self.assertEqual(run_spec.inputs.fluent.io_loader_name, "")
@@ -36,7 +36,7 @@ class TestSimConfigCompose(unittest.TestCase):
 
     def test_compose_opt_config(self) -> None:
         spec = compose_opt_config("fit_cvd_steady_min")
-        self.assertEqual(spec.sim.model.name, "aib_ode")
+        self.assertEqual(spec.sim.model.name, "role_cvd_aib")
         self.assertEqual(spec.opt.task, "fit_roles_and_params")
 
     def test_explicit_loader_names_are_composed(self) -> None:

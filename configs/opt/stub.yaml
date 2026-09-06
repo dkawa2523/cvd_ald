@@ -1,4 +1,0 @@
-# Deprecated compatibility config. Use fit_cvd_steady_min.yaml directly.
-defaults:
-  - fit_cvd_steady_min
-  - _self_

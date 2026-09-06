@@ -1,0 +1,5 @@
+quantity,component,mean_fraction,minimum_fraction,maximum_fraction
+site_fraction,vacant sites,0.5570950300832315,0.5354176280199481,0.5648488165523586
+site_fraction,adsorbed A,0.44255873131402335,0.4348002520052292,0.46424967424176894
+site_fraction,sites blocked by I,0.0003462386027451208,0.0003326977382830831,0.00035093144241214925
+pathway_fraction,A + B pathway,1.0,1.0,1.0

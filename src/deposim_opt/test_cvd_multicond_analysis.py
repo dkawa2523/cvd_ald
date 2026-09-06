@@ -13,20 +13,222 @@ from dataclasses import replace
 from .cvd_multicond_analysis import (
     analyze_cvd_multicond_case, _load_case, _split_evaluation,
     _combine_cases, _fit_transfer,
-    _condition_holdout_predictions, _ranking_for_training, CombinedCases,
+    _condition_holdout_predictions, _ranking_for_training,
     _predict_transfer, _transfer_design, _coefficient_rows,
+    _condition_paths, _surface_families,
+    _reaction_mechanism_assessments,
+    _reaction_state_summary_rows,
+    _role_importance_and_stability_rows,
 )
-from .cvd_spatial_analysis import _fit_nonnegative_effects, RoleResponseCandidate, enumerate_role_response_candidates
+from .role_fields import RoleFieldSet
+from deposim_sim.models.aib_reductions import (
+    AIB_QSS,
+    SurfaceKineticCandidate,
+    available_surface_model_families,
+)
+from .surface_fit import SurfaceKineticFit
+from .empirical_response import (
+    RoleResponseCandidate,
+    enumerate_role_response_candidates,
+    fit_nonnegative_effects,
+)
 
 
 class TestCvdMulticondAnalysis(unittest.TestCase):
+    def test_role_importance_is_kept_separate_from_assignment_frequency(self):
+        rows = _role_importance_and_stability_rows(
+            [
+                {"role": "A", "species": "s0", "rms_prediction_change_nm_s": 2.0},
+                {"role": "I", "species": "s2", "rms_prediction_change_nm_s": 0.1},
+            ],
+            [
+                {"selected_role_A": "s0", "selected_role_I": ""},
+                {"selected_role_A": "s1", "selected_role_I": "s2"},
+            ],
+            held_out_rmse_nm_s=1.0,
+        )
+        by_role = {row["role"]: row for row in rows}
+        self.assertEqual(by_role["A"]["selection_frequency"], 0.5)
+        self.assertEqual(by_role["A"]["prediction_change_to_rmse_ratio"], 2.0)
+        self.assertEqual(by_role["I"]["selection_frequency"], 0.5)
+        self.assertEqual(by_role["I"]["prediction_change_to_rmse_ratio"], 0.1)
+
+    def test_reaction_state_summary_omits_states_not_defined_by_the_model(self):
+        candidate = SurfaceKineticCandidate(
+            class_id="AIB", A="s0", I="s1", B="s2", family=AIB_QSS
+        )
+        fit = SurfaceKineticFit(
+            candidate=candidate,
+            rate_scale_nm_s=1.0,
+            shape_parameters={name: 1.0 for name in candidate.parameter_names},
+            reference_concentrations={"s0": 1.0, "s1": 1.0, "s2": 1.0},
+            prediction=np.ones(1),
+            design=np.ones((1, 1)),
+            objective_value=0.0,
+            loss_name="mse",
+            boundary_parameters=(),
+            optimizer_method="pattern",
+            optimizer_trial_count=1,
+        )
+        rows = _reaction_state_summary_rows(
+            [
+                {
+                    "theta_free": 0.5,
+                    "theta_A": 0.4,
+                    "theta_B": 0.0,
+                    "theta_I": 0.1,
+                    "path_A_fraction": 0.0,
+                    "path_AB_fraction": 1.0,
+                }
+            ],
+            fit,
+        )
+        components = {str(row["component"]) for row in rows}
+        self.assertEqual(
+            components,
+            {"vacant sites", "adsorbed A", "sites blocked by I", "A + B pathway"},
+        )
+
+    def test_mvk_is_reported_as_one_steady_equivalence_not_a_duplicate_candidate(self):
+        ranking = [
+            {
+                "equation_family": AIB_QSS,
+                "class_id": "AB",
+                "reduction_id": "no_desorption",
+                "selection_score": 2.0,
+                "role_model_id": "representative",
+                "condition_cv_rmse_nm_s": 0.25,
+            }
+        ]
+        mechanisms = _reaction_mechanism_assessments(ranking, [])
+        mvk = next(row for row in mechanisms if row["mechanism_id"] == "mars_van_krevelen")
+        self.assertEqual(mvk["evaluation_status"], "steady_observable_equivalent")
+        self.assertEqual(mvk["steady_representation"], "representative")
+        self.assertFalse(mvk["distinguishable"])
+
+    def test_all_model_token_expands_to_the_registered_equation_census(self):
+        self.assertEqual(
+            _surface_families("surface_compare", ("all",)),
+            available_surface_model_families(),
+        )
+        with self.assertRaisesRegex(ValueError, "by itself"):
+            _surface_families("surface_compare", ("all", AIB_QSS))
+
+    def test_condition_manifest_removes_filename_convention(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest = root / "cases.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "conditions": [
+                            {
+                                "id": 7,
+                                "condition": "inputs/fluent-seven.csv",
+                                "validation": "measurements/film-seven.csv",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            paths = _condition_paths(root / "unused", (7,), manifest)
+            self.assertEqual(paths[7][0], root / "inputs" / "fluent-seven.csv")
+            self.assertEqual(paths[7][1], root / "measurements" / "film-seven.csv")
+
+    def test_surface_concentration_columns_enable_direct_surface_mode(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_case(root, 1, 1.0, 1.0, surface_scale=0.4)
+            case = _load_case(
+                1, root / "condition_1.csv", root / "validation_1.csv"
+            )
+            fields = _combine_cases([case])
+            self.assertIn("direct_surface", fields.available_transport_modes())
+            np.testing.assert_allclose(
+                fields.surface_concentrations["s0"],
+                0.4 * fields.bulk_concentrations["s0"],
+            )
+
+    def test_flux_input_is_fixed_before_surface_candidate_fitting(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for case_id, scale in enumerate((0.8, 1.0, 1.2), start=1):
+                self._write_case(
+                    root, case_id, scale, scale, transport_flux_scale=0.02
+                )
+            cases = [
+                _load_case(
+                    case_id,
+                    root / f"condition_{case_id}.csv",
+                    root / f"validation_{case_id}.csv",
+                )
+                for case_id in (1, 2, 3)
+            ]
+            mode = _combine_cases(cases).resolve_reaction_input_mode(
+                "transport_capacity_flux"
+            )
+            result, _, fit, _, _, _ = _split_evaluation(
+                cases[:2],
+                cases[2],
+                response_model="surface_compare",
+                model_families=(AIB_QSS,),
+                candidate_id="cvd:aib_qss:A:full:direct_flux:A=s0",
+                reaction_input_mode=mode,
+            )
+            self.assertEqual(result["transport_mode"], "direct_flux")
+            self.assertEqual(fit.candidate.transport_mode, "direct_flux")
+            self.assertEqual(result["reaction_input_quantity"], "transport_capacity_flux")
+            self.assertEqual(result["reaction_input_location"], "wafer_surface")
+            self.assertEqual(result["reaction_input_unit"], "kmol/(m^2 s)")
+            self.assertIsNone(result["reference_total_concentration_kmol_m3"])
+            self.assertAlmostEqual(
+                sum(result["reference_reaction_input_shares"].values()), 1.0
+            )
+            self.assertAlmostEqual(
+                fit.reference_concentrations["s0"],
+                float(
+                    np.median(
+                        np.concatenate(
+                            [case.transport_capacity_flux["s0"] for case in cases[:2]]
+                        )
+                    )
+                ),
+            )
+
+    def test_exact_surface_candidate_filter_repeats_one_structure(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for case_id, scale in enumerate((0.8, 1.0, 1.2), start=1):
+                self._write_case(root, case_id, scale, scale)
+            cases = [
+                _load_case(
+                    case_id,
+                    root / f"condition_{case_id}.csv",
+                    root / f"validation_{case_id}.csv",
+                )
+                for case_id in (1, 2, 3)
+            ]
+            candidate_id = (
+                "cvd:aib_qss:baseline:full:not_applicable:none"
+            )
+            result, ranking, *_ = _split_evaluation(
+                cases[:2],
+                cases[2],
+                response_model="surface_compare",
+                model_families=(AIB_QSS,),
+                candidate_id=candidate_id,
+            )
+            self.assertEqual(result["selected_role_model_id"], candidate_id)
+            self.assertEqual([row["role_model_id"] for row in ranking], [candidate_id])
+
     def _grouped_response(self, ids=(1, 2, 3, 4, 5)):
         means = np.repeat(np.linspace(-.8, .8, len(ids)), 9)
         within = np.tile(np.linspace(-.15, .15, 9), len(ids))
         total = np.exp(means + within)
-        return CombinedCases(case_ids=ids, xyz=np.zeros((total.size, 3)),
+        return RoleFieldSet(case_ids=ids, xyz=np.zeros((total.size, 3)),
                              condition_id=np.repeat(ids, 9), species=("raw:species", "other"),
-                             concentrations={}, species_fractions={"raw:species": np.full(total.size, .2),
+                             bulk_concentrations={}, species_fractions={"raw:species": np.full(total.size, .2),
                                                                      "other": np.full(total.size, .8)},
                              total_concentration=total, rate=np.exp(-2. + 1.6 * means + .15 * within))
 
@@ -109,9 +311,9 @@ class TestCvdMulticondAnalysis(unittest.TestCase):
     def test_full_fit_zero_does_not_remove_an_effect_from_training_folds(self):
         x = np.repeat([-1., 0., 1.], 2)
         fraction = .1 * np.exp(x)
-        data = CombinedCases(case_ids=(1, 2, 3), xyz=np.zeros((6, 3)), condition_id=np.repeat([1, 2, 3], 2),
+        data = RoleFieldSet(case_ids=(1, 2, 3), xyz=np.zeros((6, 3)), condition_id=np.repeat([1, 2, 3], 2),
                              species=("unusual:A|name", "other"),
-                             concentrations={}, species_fractions={"unusual:A|name": fraction, "other": 1 - fraction},
+                             bulk_concentrations={}, species_fractions={"unusual:A|name": fraction, "other": 1 - fraction},
                              total_concentration=np.ones(6), rate=np.exp(np.repeat([2., 0., 1.], 2)))
         candidate = RoleResponseCandidate("arbitrary display name", "A", A="unusual:A|name")
         full = _fit_transfer(candidate, data, np.arange(6))
@@ -139,7 +341,7 @@ class TestCvdMulticondAnalysis(unittest.TestCase):
                 self._write_case(root, case_id, scale, 1.)
             cases = [_load_case(i, root / f"condition_{i}.csv", root / f"validation_{i}.csv") for i in range(1, 4)]
             cases = [replace(case, rate=.1 * (case.total_concentration / 2.03e-4)**1.5 *
-                             (case.concentrations["s1"] / case.total_concentration / .005)**-2.) for case in cases]
+                             (case.bulk_concentrations["s1"] / case.total_concentration / .005)**-2.) for case in cases]
             rows, fits, _, _, _ = _ranking_for_training(cases)
             selected = next(row for row in rows if row["selected"])
             self.assertEqual(selected["role_model_id"], "I_response:s1")
@@ -151,9 +353,9 @@ class TestCvdMulticondAnalysis(unittest.TestCase):
     def test_regularization_stabilizes_a_weak_direction_without_changing_intercept_units(self):
         x = np.column_stack([np.ones(9), np.linspace(-1.e-7, 1.e-7, 9)])
         y = 2. + np.linspace(-.01, .01, 9)
-        raw, _ = _fit_nonnegative_effects(x, y)
-        stable, _ = _fit_nonnegative_effects(x, y, regularization=1.e-4)
-        shifted, _ = _fit_nonnegative_effects(x, y + 5., regularization=1.e-4)
+        raw, _ = fit_nonnegative_effects(x, y)
+        stable, _ = fit_nonnegative_effects(x, y, regularization=1.e-4)
+        shifted, _ = fit_nonnegative_effects(x, y + 5., regularization=1.e-4)
         self.assertGreater(raw[1], 1.e4)
         self.assertLess(stable[1], .01)
         np.testing.assert_allclose(shifted, stable + [5., 0.], atol=1.e-12)
@@ -186,6 +388,8 @@ class TestCvdMulticondAnalysis(unittest.TestCase):
         *,
         s0_multiplier: float = 1.0,
         role_rate: bool = False,
+        surface_scale: float | None = None,
+        transport_flux_scale: float | None = None,
     ) -> None:
         condition_path = root / f"condition_{case_id}.csv"
         validation_path = root / f"validation_{case_id}.csv"
@@ -210,18 +414,47 @@ class TestCvdMulticondAnalysis(unittest.TestCase):
                     )
                 else:
                     rate = rate_scale * 0.1 * (1.0 + 0.004 * np.cos(angle))
-                condition_rows.append(
-                    [x, y, 0.0, c0, c1, c2, c0 / total, c1 / total, c2 / total, 30.0 * total]
+                condition_row = [x, y, 0.0, c0, c1, c2]
+                if surface_scale is not None:
+                    condition_row.extend(
+                        [surface_scale * c0, surface_scale * c1, surface_scale * c2]
+                    )
+                if transport_flux_scale is not None:
+                    condition_row.extend(
+                        [
+                            transport_flux_scale * c0,
+                            transport_flux_scale * c1,
+                            transport_flux_scale * c2,
+                        ]
+                    )
+                condition_row.extend(
+                    [c0 / total, c1 / total, c2 / total, 30.0 * total]
                 )
+                condition_rows.append(condition_row)
                 validation_rows.append([x, y, 0.0, rate])
         with condition_path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle)
-            writer.writerow(
-                [
-                    "x", "y", "z", "concentration_s0", "concentration_s1", "concentration_s2",
-                    "molef_s0", "molef_s1", "molef_s2", "density",
-                ]
-            )
+            header = [
+                "x", "y", "z", "concentration_s0", "concentration_s1", "concentration_s2",
+            ]
+            if surface_scale is not None:
+                header.extend(
+                    [
+                        "surface_concentration_s0",
+                        "surface_concentration_s1",
+                        "surface_concentration_s2",
+                    ]
+                )
+            if transport_flux_scale is not None:
+                header.extend(
+                    [
+                        "transport_capacity_flux_s0",
+                        "transport_capacity_flux_s1",
+                        "transport_capacity_flux_s2",
+                    ]
+                )
+            header.extend(["molef_s0", "molef_s1", "molef_s2", "density"])
+            writer.writerow(header)
             writer.writerows(condition_rows)
         with validation_path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle)
@@ -246,17 +479,25 @@ class TestCvdMulticondAnalysis(unittest.TestCase):
             )
             self.assertFalse(summary["validity"]["test_was_refit"])
             self.assertEqual(summary["primary_split"]["test_case"], 3)
+            self.assertEqual(
+                summary["validity"]["adopted_model"] is not None,
+                summary["validity"]["decision"] == "adopt_candidate",
+            )
+            self.assertEqual(
+                summary["validity"]["numerical_prediction_winner"],
+                summary["primary_split"]["selected_model"],
+            )
             self.assertLess(summary["primary_split"]["test_relative_rmse_vs_test_mean"], 0.02)
             for name in (
                 "analysis_summary.json",
                 "condition_quality.csv",
-                "model_ranking.csv",
                 "role_ranking.csv",
                 "role_summary.csv",
                 "role_stability.csv",
                 "coefficients.csv",
+                "data_requirements.csv",
                 "test_predictions.csv",
-                "candidate_test_diagnostics.csv",
+                "model_structure_uncertainty.csv",
                 "split_sensitivity.csv",
                 "report.md",
                 "report_snapshot.json",
@@ -264,16 +505,19 @@ class TestCvdMulticondAnalysis(unittest.TestCase):
                 "manifest.json",
             ):
                 self.assertTrue((output / name).exists(), name)
+            report = (output / "report.md").read_text(encoding="utf-8")
+            self.assertIn("Numerical prediction winner", report)
+            self.assertIn("Adopted model/candidate", report)
+            self.assertIn("Data required for each target use", report)
+            self.assertNotIn("untouched test", report)
+            self.assertEqual(len(summary["capability_assessments"]), 3)
+            self.assertTrue(summary["data_requirements"])
             with (output / "test_predictions.csv").open(encoding="utf-8") as handle:
                 prediction = next(csv.DictReader(handle))
             for species in ("s0", "s1", "s2"):
-                self.assertEqual(
-                    float(prediction[f"assumed_wall_concentration_{species}_kmol_m3"]),
-                    0.0,
-                )
                 self.assertAlmostEqual(
-                    float(prediction[f"wall_zero_driving_concentration_{species}_kmol_m3"]),
-                    float(prediction[f"concentration_{species}_kmol_m3"]),
+                    float(prediction[f"model_input_concentration_{species}_kmol_m3"]),
+                    float(prediction[f"bulk_concentration_{species}_kmol_m3"]),
                 )
             notebook = json.loads(
                 (output / "cvd_multicond_transfer_analysis.ipynb").read_text(encoding="utf-8")
@@ -310,7 +554,7 @@ class TestCvdMulticondAnalysis(unittest.TestCase):
             self.assertEqual(summary["primary_split"]["selected_role_model_id"], "A:s0")
             self.assertEqual(summary["primary_split"]["response_structure"], "shared")
             self.assertLess(summary["primary_split"]["test_relative_rmse_vs_test_mean"], 0.01)
-            with (output / "model_ranking.csv").open(encoding="utf-8") as handle:
+            with (output / "role_ranking.csv").open(encoding="utf-8") as handle:
                 ranking = list(csv.DictReader(handle))
             selected = next(row for row in ranking if row["role_model_id"] == "A:s0")
             self.assertEqual(selected["eligible_for_adoption"], "True")

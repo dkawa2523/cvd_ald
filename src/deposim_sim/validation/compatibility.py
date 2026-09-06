@@ -69,22 +69,40 @@ def validate_sim_spec_v2(run_spec: Any) -> None:
         raise ValueError("sim.inputs.fluent.mode must be steady|transient")
     if sim.time_mode != sim.inputs.fluent.mode:
         raise ValueError("sim.time_mode and sim.inputs.fluent.mode must match")
-    validate_process_model_choice(
-        name=str(getattr(sim.model, "name", "aib_ode")),
+    model_info = validate_process_model_choice(
+        name=str(getattr(sim.model, "name", "role_cvd_aib")),
         process=str(getattr(sim, "process", "cvd")),
         time_mode=str(getattr(sim, "time_mode", "steady")),
     )
+    if model_info.implementation == "mvk_state":
+        if sim.roles.B is None:
+            raise ValueError("role_cvd_mvk requires sim.roles.B as the regenerating role")
+        if sim.roles.I is not None:
+            raise ValueError(
+                "role_cvd_mvk does not use role I; compare inhibition as a separate mechanism"
+            )
 
     transport = dict(getattr(sim.model.params, "transport", {}) or {})
     km_source = str(transport.get("km_source", "fit_scalar")).strip().lower()
-    if km_source not in {"fit_scalar", "from_cfd_flux_sink"}:
-        raise ValueError("sim.model.params.transport.km_source must be fit_scalar|from_cfd_flux_sink")
+    if km_source not in {"direct_surface", "fit_scalar", "from_cfd_flux_sink"}:
+        raise ValueError(
+            "sim.model.params.transport.km_source must be "
+            "direct_surface|fit_scalar|from_cfd_flux_sink"
+        )
 
     if km_source == "from_cfd_flux_sink":
         flux_key = str(getattr(getattr(sim.inputs.fluent, "keys", {}), "flux_sink", "flux_sink")).strip()
         if not flux_key:
             raise ValueError("sim.inputs.fluent.keys.flux_sink must be non-empty when km_source=from_cfd_flux_sink")
         from_flux = dict(transport.get("from_cfd_flux_sink", {}) or {})
+        flux_semantics = str(
+            from_flux.get("flux_semantics", "transport_capacity")
+        ).strip().lower()
+        if flux_semantics != "transport_capacity":
+            raise ValueError(
+                "from_cfd_flux_sink.flux_semantics must be transport_capacity; "
+                "realized_reactive_flux cannot identify km"
+            )
         policy = str(from_flux.get("flux_negative_policy", "error")).strip().lower()
         if policy not in {"error", "clip_to_zero", "allow"}:
             raise ValueError("flux_negative_policy must be error|clip_to_zero|allow")

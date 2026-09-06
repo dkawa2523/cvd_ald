@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 
-from .objective import metric_value
+from .metrics import metric_value
 
 
 def effect_signature(row: dict[str, Any]) -> str:
@@ -70,10 +70,20 @@ def _role_evidence(row: dict[str, Any], ranked: list[dict[str, Any]]) -> list[di
     evidence = []
     for group, species in row.get("effect_groups", {}).items():
         remaining = {key: value for key, value in declared.items() if key != group}
-        reduced = [c for c in row["reduced_model_comparisons"] if c["effects"] == remaining]
+        reduced = [
+            comparison
+            for comparison in row["reduced_model_comparisons"]
+            if group in comparison.get("removed_effects", ())
+            or (
+                not comparison.get("removed_effects")
+                and comparison["effects"] == remaining
+            )
+        ]
         alternatives = []
         seen = set()
         for other in sorted(ranked, key=_selection_score):
+            if other.get("model_family") != row.get("model_family"):
+                continue
             groups = other.get("declared_effect_groups", other.get("effect_groups", {}))
             signature = effect_signature({"effect_groups": groups})
             if (signature not in seen and set(groups) == set(declared) and groups[group] != species
@@ -102,7 +112,12 @@ def rank_role_candidates(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         row.setdefault("effect_groups", json.loads(effect_signature(row)))
         folds = row.get("validation_conditions", [])
         row["selection_basis"] = "condition_cv" if folds else "training"
-        row["selection_score"] = float(np.average([metric_value(f, "mse") for f in folds], weights=[f["weight"] for f in folds])) if folds else float(row["best_score"])
+        selection_metric = str(row.get("selection_metric", "mse"))
+        row["selection_score"] = (
+            float(np.average([metric_value(f, selection_metric) for f in folds], weights=[f["weight"] for f in folds]))
+            if folds
+            else float(row["best_score"])
+        )
         if not np.isfinite(row["selection_score"]):
             raise ValueError("candidate selection scores must be finite")
     ranked = sorted(records, key=_selection_score)
@@ -132,8 +147,25 @@ def rank_role_candidates(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
             if any(f["weight"] != reference[f["condition"]]["weight"] for f in folds):
                 raise ValueError("candidates must use the same condition weights")
             weights /= weights.sum()
-            baseline = float(np.average([metric_value(f, "baseline_mse") for f in folds], weights=weights))
-            row["validation_skill"] = 1 - row["selection_score"] / baseline if baseline > 0 else 0.0
+            selection_baselines = np.asarray(
+                [
+                    float(
+                        f.get(
+                            "baseline_selection_score",
+                            metric_value(f, "baseline_mse")
+                            if selection_metric == "mse"
+                            else float("nan"),
+                        )
+                    )
+                    for f in folds
+                ],
+                dtype=float,
+            )
+            if np.all(np.isfinite(selection_baselines)):
+                baseline = float(np.average(selection_baselines, weights=weights))
+                row["validation_skill"] = 1 - row["selection_score"] / baseline if baseline > 0 else 0.0
+            else:
+                row["validation_skill"] = float("nan")
     comparable = [row for row in ranked if row["equivalent_to_best"]]
     chosen = min(comparable, key=lambda row: (row.get("active_effect_count", _complexity_count(row.get("roles", {}))), row.get("search_space_count", 0), _selection_score(row), effect_signature(row)))
     for row in ranked:
@@ -141,12 +173,44 @@ def rank_role_candidates(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         row["same_effects_as_selected"] = effect_signature(row) == effect_signature(chosen)
         # Reduced structures have their own refits and CV scores. A boundary
         # coefficient on the full fit cannot substitute for that comparison.
-        reductions = {effect_signature({"effect_groups": group}) for group in row.get("reduced_effect_groups", [])}
-        reduced = [other for other in ranked if effect_signature({"effect_groups": other.get("declared_effect_groups", other.get("effect_groups", {}))}) in reductions]
+        reduced_ids = set(row.get("reduced_model_ids", []))
+        if reduced_ids:
+            reduced = [
+                other for other in ranked
+                if other.get("role_model_id", other.get("model_id")) in reduced_ids
+            ]
+        else:
+            reductions = {
+                effect_signature({"effect_groups": group})
+                for group in row.get("reduced_effect_groups", [])
+            }
+            reduced = [
+                other for other in ranked
+                if effect_signature(
+                    {
+                        "effect_groups": other.get(
+                            "declared_effect_groups", other.get("effect_groups", {})
+                        )
+                    }
+                ) in reductions
+            ]
         unique = {}
+        removed_effects = row.get("reduced_model_effects", {})
         for other in sorted(reduced, key=_selection_score):
             signature = effect_signature({"effect_groups": other.get("declared_effect_groups", other.get("effect_groups", {}))})
-            unique.setdefault(signature, {"effects": json.loads(signature), **_paired_comparison(row, other)})
+            removed = tuple(
+                removed_effects.get(
+                    other.get("role_model_id", other.get("model_id")), ()
+                )
+            )
+            unique.setdefault(
+                (signature, removed),
+                {
+                    "effects": json.loads(signature),
+                    "removed_effects": list(removed),
+                    **_paired_comparison(row, other),
+                },
+            )
         row["reduced_model_comparisons"] = list(unique.values())
         row["role_evidence"] = _role_evidence(row, ranked)
     return [chosen, *[row for row in ranked if row is not chosen]]
@@ -216,61 +280,6 @@ def build_role_stability(
     return rows, {"warning": len(all_signatures) > 1, "tie_group_size": len(all_signatures),
                   "slot_species_counts": counts, "refit_count": len(folds), "basis": basis,
                   "score_epsilon": score_epsilon}
-
-
-def build_complexity_sensitivity(
-    records: list[dict[str, Any]],
-    *,
-    multipliers: tuple[float, ...] = (0.0, 1.0, 10.0),
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Re-rank candidates under simple complexity-penalty multipliers."""
-
-    rows: list[dict[str, Any]] = []
-    winners: list[dict[str, Any]] = []
-    for multiplier in multipliers:
-        ranked: list[tuple[float, dict[str, Any]]] = []
-        for row in records:
-            score = float(row.get("best_score", float("inf")))
-            penalty = float(dict(row.get("best_components", {}) or {}).get("penalty_complexity", 0.0))
-            adjusted = score - penalty + float(multiplier) * penalty
-            ranked.append((adjusted, row))
-        ranked.sort(key=lambda item: item[0])
-        for rank, (adjusted, row) in enumerate(ranked, start=1):
-            roles = dict(row.get("roles", {}) or {})
-            rows.append(
-                {
-                    "complexity_multiplier": float(multiplier),
-                    "rank": rank,
-                    "adjusted_score": float(adjusted),
-                    "nominal_score": float(row.get("best_score", float("inf"))),
-                    "class_id": row.get("class_id", ""),
-                    "role_A": roles.get("A"),
-                    "role_I": roles.get("I"),
-                    "role_B": roles.get("B"),
-                }
-            )
-        if ranked:
-            winner_roles = dict(ranked[0][1].get("roles", {}) or {})
-            winners.append(
-                {
-                    "complexity_multiplier": float(multiplier),
-                    "class_id": ranked[0][1].get("class_id", ""),
-                    "roles": winner_roles,
-                    "adjusted_score": float(ranked[0][0]),
-                }
-            )
-
-    winner_signatures = {
-        (str(row["class_id"]), str(row["roles"].get("A")), str(row["roles"].get("I")), str(row["roles"].get("B")))
-        for row in winners
-    }
-    diagnostics = {
-        "warning": len(winner_signatures) > 1,
-        "winner_count": len(winner_signatures),
-        "multipliers": [float(v) for v in multipliers],
-        "winners": winners,
-    }
-    return rows, diagnostics
 
 
 def _complexity_count(roles: dict[str, Any]) -> int:
@@ -353,8 +362,9 @@ def assess_prediction(conditions: list[dict[str, Any]], *, scope: str,
 
 def build_role_summary(
     records: list[dict[str, Any]], *, score_epsilon: float,
-    role_stability_warning: bool, complexity_sensitivity_warning: bool = False,
+    role_stability_warning: bool,
     parameter_identifiability_warning: bool = False,
+    model_structure_stability_warning: bool = False,
     application: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """One decision path for empirical rates and physical thickness models.
@@ -381,12 +391,14 @@ def build_role_summary(
                         effect_signature(other) != effect_signature(row) for other in ranked)
         symmetry = "AB" in row.get("effect_groups", {})
         role_evidence = row.get("role_evidence", [])
+        contrast_limited = row.get("contrast_status") == "limited"
         necessity_supported = (len(role_evidence) == len(row.get("effect_groups", {}))
                                and all(e["necessity"] == "consistent_benefit" for e in role_evidence))
         assignment_supported = all(e["assignment"] == "distinguished" for e in role_evidence)
-        unresolved = (ambiguous or symmetry or role_stability_warning or
+        unresolved = (ambiguous or symmetry or role_stability_warning or model_structure_stability_warning or
                       parameter_identifiability_warning or ident.get("degeneracy_warning", False)
-                      or not ident.get("assessed", False) or not necessity_supported or not assignment_supported)
+                      or contrast_limited or not ident.get("assessed", False)
+                      or not necessity_supported or not assignment_supported)
         reasons = []
         if evidence["prediction_status"] == "not_supported":
             reasons.append("refitted or held-out prediction fails the training-only constant baseline in: " +
@@ -401,8 +413,12 @@ def build_role_summary(
             reasons.append("term removal has not shown consistent additional predictive benefit across conditions")
         if not assignment_supported:
             reasons.append("alternative raw-species assignments are not distinguished across conditions")
+        if contrast_limited:
+            reasons.append("assigned species lack independent between-condition excitation")
         if role_stability_warning:
             reasons.append("effective roles change across training-condition selections")
+        if model_structure_stability_warning:
+            reasons.append("selected equation family, reduction, or role structure changes across outer condition splits")
         if parameter_identifiability_warning or ident.get("degeneracy_warning", False):
             reasons.append("best-fit parameters are weakly identifiable or strongly correlated")
         if not ident.get("assessed", False):
@@ -413,8 +429,6 @@ def build_role_summary(
             reasons.append("fixed-model application evidence: " + fixed["application_status"])
         if evaluation["application_status"] != "meets_tolerance":
             reasons.append("application scope/error tolerance: " + evaluation["application_status"])
-        if complexity_sensitivity_warning and row.get("selection_basis", "training") == "training":
-            reasons.append("training selection changes with the complexity penalty")
         if rank > 1:
             decision = "review" if row.get("equivalent_to_best", False) else "reject_lower_score"
             reason = ("numerically tied validation score; compare effective effects" if decision == "review"
@@ -428,11 +442,18 @@ def build_role_summary(
             decision, reason = "review", "; ".join(reasons) or "insufficient independent role support"
         rows.append({
             **{key: row[key] for key in (
-                "model_id", "role_model_id", "class_id", "effective_roles", "effect_groups", "effect_basis",
+                "model_id", "role_model_id", "model_family", "equation_family", "class_id", "effective_roles", "effect_groups", "effect_basis",
                 "effect_scopes", "response_structure",
                 "inactive_roles", "role_symmetry", "regularization", "quantity", "unit",
                 "best_score", "selection_score", "selection_basis", "validation_skill",
                 "reduced_model_comparisons", "role_evidence",
+                "computable", "applicability_status", "physical_question",
+                "required_evidence", "contrast_status", "contrast_rank",
+                "contrast_species_count", "contrast_condition_number",
+                "contrast_max_abs_correlation", "contrast_log10_span",
+                "contrast_confounded_species", "family_rank",
+                "reduction_delta_mse", "distinguishable", "supported_claims",
+                "missing_evidence",
             ) if key in row},
             "rank": rank, "decision": decision, "reason": reason,
             "role_A": roles.get("A"), "role_I": roles.get("I"), "role_B": roles.get("B"),
@@ -453,6 +474,6 @@ def build_role_summary(
 
 __all__ = [
     "rank_role_candidates", "effect_signature", "build_class_compare",
-    "build_complexity_sensitivity", "build_role_stability", "build_role_summary",
+    "build_role_stability", "build_role_summary",
     "build_condition_scores", "assess_prediction",
 ]

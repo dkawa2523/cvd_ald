@@ -1,0 +1,4 @@
+role,species,selection_frequency,selection_count,refit_count,alternative_assignments,rms_prediction_change_nm_s,held_out_rmse_nm_s,prediction_change_to_rmse_ratio
+A,idn_2,0.4,2,5,"{""adn_2"": 3, ""idn_2"": 2}",0.008714403269598188,0.0010486307401464674,8.310268749494226
+I,n2,0.4,2,5,"{""n2"": 2, ""none"": 3}",4.461630239052637e-06,0.0010486307401464674,0.00425472005372402
+B,adn_2,0.4,2,5,"{""adn_2"": 2, ""idn_2"": 3}",0.052646716167727724,0.0010486307401464674,50.20520012638033

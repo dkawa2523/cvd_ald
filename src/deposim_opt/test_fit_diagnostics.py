@@ -15,9 +15,25 @@ except ModuleNotFoundError:  # pragma: no cover
 from deposim_schema import compose_sim_config, compose_opt_config
 
 from .class_compare import build_role_summary, rank_role_candidates, build_role_stability, build_class_compare, effect_signature, build_condition_scores
-from .objective import prediction_metrics
+from .metrics import prediction_metrics
 from .enumerate_roles import RoleCandidate
-from .fit_optuna import fit_candidate_with_optuna, _persistent_study_name
+from .parameter_fit import fit_candidate_parameters, _persistent_study_name
+
+
+def _search(trials: int, seed: int) -> dict:
+    return {
+        "method": "random",
+        "seed": seed,
+        "min_trials": trials,
+        "max_trials": trials,
+        "trials_per_dimension": 1,
+        "patience": max(trials, 1),
+        "relative_improvement": 0.0,
+        "repetitions": 1,
+        "pruner": "none",
+        "sampler_options": {},
+        "storage": {"url": "", "study_name": "", "load_if_exists": False},
+    }
 from .run_fit import run_fit
 from .fit_roles import fit_role_candidates
 
@@ -218,8 +234,10 @@ class TestFitDiagnostics(unittest.TestCase):
             ]}
             spec.opt.role_enumeration.roles = {"A": {"candidates": ["s0", "s1"]}, "I": {"candidates": []}, "B": {"candidates": []}}
             spec.opt.class_compare.classes = ["A"]
-            spec.opt.parameter_fit.engine = "random"
-            spec.opt.parameter_fit.n_trials_per_candidate = 1
+            spec.opt.parameter_fit.search.update({
+                "method": "random", "min_trials": 1, "max_trials": 1,
+                "trials_per_dimension": 1, "patience": 1, "repetitions": 1,
+            })
             spec.opt.parameter_fit.search_space = [{"name": "model.params.kinetics.k_rxn", "type": "uniform", "low": .01, "high": .01}]
             before = fit_role_candidates(spec.sim, spec.opt)
             self.assertTrue(all(len(r["selection_refits"]) == 3 for r in before))
@@ -362,8 +380,12 @@ class TestFitDiagnostics(unittest.TestCase):
                     f"opt.output.root_dir={tmp}",
                     "opt.output.run_name=fit_diag_unit",
                     f"opt.measurement.file={meas_path}",
-                    "opt.parameter_fit.engine=random",
-                    "opt.parameter_fit.n_trials_per_candidate=1",
+                    "opt.parameter_fit.search.method=random",
+                    "opt.parameter_fit.search.min_trials=1",
+                    "opt.parameter_fit.search.max_trials=1",
+                    "opt.parameter_fit.search.trials_per_dimension=1",
+                    "opt.parameter_fit.search.patience=1",
+                    "opt.parameter_fit.search.repetitions=1",
                     "opt.role_enumeration.roles.A.candidates=[s0]",
                     "opt.role_enumeration.roles.I.candidates=[s1,s2]",
                     "opt.role_enumeration.roles.B.candidates=[s3]",
@@ -373,7 +395,7 @@ class TestFitDiagnostics(unittest.TestCase):
             run_dir = Path(out["run_dir"])
             self.assertTrue((run_dir / "tables" / "role_stability.csv").exists())
             diag = json.loads((run_dir / "outputs" / "fit_diagnostics.json").read_text(encoding="utf-8"))
-            self.assertTrue(bool(diag.get("role_identifiability_warning")))
+            self.assertTrue(bool(diag.get("role_stability_warning")))
             self.assertIn("cache_stats", diag)
 
     def test_fidelity_cache_hits_exist(self) -> None:
@@ -395,27 +417,22 @@ class TestFitDiagnostics(unittest.TestCase):
                     ],
                 },
                 parameter_fit=SimpleNamespace(
-                    engine="random",
-                    sampler="tpe",
-                    pruner="none",
+                    search=_search(1, 5),
                     fidelity={"levels": [1, 2]},
-                    storage={"url": "", "study_name": "", "load_if_exists": False},
-                    n_trials_per_candidate=1,
-                    seed=5,
                     analysis={
                         "cache": {"enabled": True, "max_entries": 64},
                         "preflight": {"enabled": True, "min_finite_ratio": 0.5},
                         "identifiability": {"enabled": False},
                     },
-                    objective={"loss": "huber", "huber_delta_nm": 10.0, "penalties": {}},
+                    objective={"loss": {"name": "huber", "standardized": False, "delta_nm": 10.0}, "penalties": {}},
                     search_space=[
                         {"name": "model.params.kinetics.k_rxn", "type": "loguniform", "low": 1.0e-6, "high": 1.0e-2}
                     ],
                 ),
-                class_compare=SimpleNamespace(complexity_penalty={"lambda_role": 0.0}),
+                class_compare=SimpleNamespace(),
             )
 
-            out = fit_candidate_with_optuna(
+            out = fit_candidate_parameters(
                 sim_spec=sim_spec,
                 role_candidate=role,
                 order_candidate=order,
@@ -442,24 +459,19 @@ class TestFitDiagnostics(unittest.TestCase):
             opt_spec = SimpleNamespace(
                 measurement={"file": str(meas_path), "keys": {"h": "h_nm", "xy": "xy"}},
                 parameter_fit=SimpleNamespace(
-                    engine="random",
-                    sampler="tpe",
-                    pruner="none",
+                    search=_search(1, 3),
                     fidelity={"levels": [1]},
-                    storage={"url": "", "study_name": "", "load_if_exists": False},
-                    n_trials_per_candidate=1,
-                    seed=3,
                     analysis={"preflight": {"enabled": True, "min_finite_ratio": 0.9}},
-                    objective={"loss": "huber", "huber_delta_nm": 10.0, "penalties": {}},
+                    objective={"loss": {"name": "huber", "standardized": False, "delta_nm": 10.0}, "penalties": {}},
                     search_space=[
                         {"name": "model.params.kinetics.k_rxn", "type": "loguniform", "low": 1.0e-6, "high": 1.0e-2}
                     ],
                 ),
-                class_compare=SimpleNamespace(complexity_penalty={"lambda_role": 0.0}),
+                class_compare=SimpleNamespace(),
             )
 
             with self.assertRaises(ValueError):
-                fit_candidate_with_optuna(
+                fit_candidate_parameters(
                     sim_spec=sim_spec,
                     role_candidate=role,
                     order_candidate=order,
@@ -485,22 +497,17 @@ class TestFitDiagnostics(unittest.TestCase):
                     ],
                 },
                 parameter_fit=SimpleNamespace(
-                    engine="random",
-                    sampler="tpe",
-                    pruner="none",
+                    search=_search(1, 11),
                     fidelity={"levels": [1]},
-                    storage={"url": "", "study_name": "", "load_if_exists": False},
-                    n_trials_per_candidate=1,
-                    seed=11,
                     analysis={"identifiability": {"enabled": False}},
-                    objective={"loss": "huber", "huber_delta_nm": 10.0, "penalties": {}},
+                    objective={"loss": {"name": "huber", "standardized": False, "delta_nm": 10.0}, "penalties": {}},
                     search_space=[
                         {"name": "model.params.kinetics.k_rxn", "type": "loguniform", "low": 1.0e-6, "high": 1.0e-2}
                     ],
                 ),
-                class_compare=SimpleNamespace(complexity_penalty={"lambda_role": 0.0}),
+                class_compare=SimpleNamespace(),
             )
-            out = fit_candidate_with_optuna(
+            out = fit_candidate_parameters(
                 sim_spec=sim_spec,
                 role_candidate=role,
                 order_candidate=order,

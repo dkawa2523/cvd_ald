@@ -21,12 +21,56 @@ collect_candidates() {
   type -a "$name" 2>/dev/null | sed -n "s/^${name} is //p"
 }
 
+create_wsl_python_shim() {
+  if [[ ! -r /proc/version ]] || ! grep -qi microsoft /proc/version; then
+    return
+  fi
+  if ! command -v py.exe >/dev/null 2>&1; then
+    return
+  fi
+  if ! py.exe -3 -c "import numpy, hydra, omegaconf, matplotlib" >/dev/null 2>&1; then
+    return
+  fi
+
+  local shim_dir="$ROOT_DIR/.wslbin"
+  mkdir -p "$shim_dir"
+  cat > "$shim_dir/python3" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+launcher="$(command -v py.exe)"
+translated=()
+for arg in "$@"; do
+  case "$arg" in
+    /mnt/*)
+      translated+=("$(wslpath -w "$arg")")
+      ;;
+    *=/mnt/*)
+      key="${arg%%=*}"
+      value="${arg#*=}"
+      translated+=("$key=$(wslpath -w "$value")")
+      ;;
+    *)
+      translated+=("$arg")
+      ;;
+  esac
+done
+exec "$launcher" -3 "${translated[@]}"
+SH
+  chmod +x "$shim_dir/python3"
+}
+
 choose_python() {
   local chosen=""
   local seen=""
   local -a py3_candidates=()
   local -a py_candidates=()
 
+  if [[ -x "$ROOT_DIR/.venv/Scripts/python.exe" ]]; then
+    py3_candidates+=("$ROOT_DIR/.venv/Scripts/python.exe")
+  elif [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
+    py3_candidates+=("$ROOT_DIR/.venv/bin/python")
+  fi
   if [[ -x "$ROOT_DIR/.wslbin/python3" ]]; then
     py3_candidates+=("$ROOT_DIR/.wslbin/python3")
   fi
@@ -81,6 +125,7 @@ choose_python() {
   printf "%s\n" "$chosen"
 }
 
+create_wsl_python_shim
 PYTHON="$(choose_python)"
 echo "[preflight] Selected PYTHON=$PYTHON"
 
@@ -111,7 +156,8 @@ if [[ -f "$ROOT_DIR/pyproject.toml" ]]; then
     echo "[preflight] Editable install OK."
   fi
 else
-  echo "[preflight] pyproject.toml not found yet (OK for initial autorun)."
+  echo "[preflight] ERROR: pyproject.toml was not found at $ROOT_DIR." >&2
+  exit 1
 fi
 
 # Write env.sh (Single Source of Truth for python/pip)

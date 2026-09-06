@@ -31,7 +31,7 @@ No new requirement is added in this decision.
 ## Consequences
 
 1. No runtime API change is introduced by this decision.
-2. `MODEL_GAP` tracks purge-decay as deferred with reopen conditions.
+2. `docs/GAPS.md` tracks purge-decay as deferred with reopen conditions.
 3. Future adoption must start from requirement + traceability + validator/test design.
 
 ## Trigger To Reopen

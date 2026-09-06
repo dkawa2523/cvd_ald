@@ -75,6 +75,35 @@ class TestIOPlugins(unittest.TestCase):
             np.testing.assert_allclose(csv_out.xy, xy)
             np.testing.assert_allclose(csv_out.h, h)
 
+    def test_measurement_npz_loads_configured_state_histories(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state_meas.npz"
+            xy = np.array([[0.0, 0.0], [10.0, 0.0]], dtype=float)
+            history = np.array([[1.0, 0.9], [0.6, 0.5]], dtype=float)
+            np.savez(
+                path,
+                xy=xy,
+                h_nm=np.array([0.2, 0.3]),
+                time=np.array([0.0, 1.0]),
+                chi=history,
+                chi_sigma=np.full(history.shape, 0.02),
+            )
+            out = load_measurement_input(
+                loader_name="npz",
+                path=path,
+                keys={
+                    "xy": "xy",
+                    "h": "h_nm",
+                    "time": "time",
+                    "oxidized_fraction_history": "chi",
+                    "oxidized_fraction_history_sigma": "chi_sigma",
+                },
+            )
+            np.testing.assert_allclose(out.extra["time"], [0.0, 1.0])
+            np.testing.assert_allclose(
+                out.extra["oxidized_fraction_history"], history
+            )
+
     def test_run_spec_helpers_resolve_loader_from_suffix(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

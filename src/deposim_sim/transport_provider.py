@@ -81,11 +81,38 @@ def _resolve_clip(raw: Any) -> tuple[float, float]:
 class TransportProvider:
     """Role-aware source of km arrays."""
 
+    concentration_location = "reference_plane"
+
     def get_km(self, role: str, *, t_index: int | None = None) -> np.ndarray:
         raise NotImplementedError
 
     def get_diagnostics(self, role: str, *, t_index: int | None = None) -> dict[str, Any]:
-        return {"km_used": self.get_km(role, t_index=t_index)}
+        return {
+            "km_used": self.get_km(role, t_index=t_index),
+            "concentration_location": self.concentration_location,
+        }
+
+
+@dataclass(frozen=True)
+class DirectSurfaceConcentrationProvider(TransportProvider):
+    """Use supplied concentrations at the reactive surface without a film closure."""
+
+    spatial_shape: tuple[int, ...]
+    concentration_location = "wall"
+
+    @classmethod
+    def from_reference_shape(
+        cls, *, reference_shape: tuple[int, ...], time_dependent: bool = False
+    ) -> "DirectSurfaceConcentrationProvider":
+        spatial_shape = tuple(reference_shape[1:]) if time_dependent else tuple(reference_shape)
+        if not spatial_shape:
+            raise ValueError("reference_shape must include a spatial dimension")
+        return cls(spatial_shape=spatial_shape)
+
+    def get_km(self, role: str, *, t_index: int | None = None) -> np.ndarray:
+        if role not in _ALLOWED_ROLES:
+            raise ValueError(f"role must be one of {_ALLOWED_ROLES}")
+        return np.full(self.spatial_shape, np.inf, dtype=float)
 
 
 @dataclass(frozen=True)
@@ -136,11 +163,14 @@ class CfdFluxSinkKmProvider(TransportProvider):
     flux_b: np.ndarray | None
     gamma_km_a: np.ndarray
     gamma_km_b: np.ndarray
+    boundary_concentration_a: np.ndarray
+    boundary_concentration_b: np.ndarray
     spatial_shape: tuple[int, ...]
     eps_cref: float
     km_clip: tuple[float, float]
     flux_negative_policy: str
     units_hint: str
+    flux_semantics: str
 
     @classmethod
     def from_arrays(
@@ -161,6 +191,12 @@ class CfdFluxSinkKmProvider(TransportProvider):
         policy = str(cfg.get("flux_negative_policy", "error")).strip().lower()
         if policy not in {"error", "clip_to_zero", "allow"}:
             raise ValueError("flux_negative_policy must be error|clip_to_zero|allow")
+        flux_semantics = str(cfg.get("flux_semantics", "transport_capacity")).strip().lower()
+        if flux_semantics != "transport_capacity":
+            raise ValueError(
+                "from_cfd_flux_sink requires flux_semantics=transport_capacity; "
+                "a realized reactive flux cannot be reused to infer km"
+            )
 
         cref_a_arr = np.asarray(cref_a, dtype=float)
         cref_b_arr = np.asarray(cref_b, dtype=float)
@@ -180,6 +216,18 @@ class CfdFluxSinkKmProvider(TransportProvider):
             default=1.0,
             allow_time_axis=bool(time_dependent),
         )
+        boundary_concentration_a = _parse_param(
+            cfg.get("boundary_concentration_A"),
+            spatial_shape=spatial_shape,
+            default=0.0,
+            allow_time_axis=bool(time_dependent),
+        )
+        boundary_concentration_b = _parse_param(
+            cfg.get("boundary_concentration_B"),
+            spatial_shape=spatial_shape,
+            default=0.0,
+            allow_time_axis=bool(time_dependent),
+        )
 
         return cls(
             cref_a=cref_a_arr,
@@ -188,22 +236,29 @@ class CfdFluxSinkKmProvider(TransportProvider):
             flux_b=None if flux_b is None else np.asarray(flux_b, dtype=float),
             gamma_km_a=np.asarray(gamma_km_a, dtype=float),
             gamma_km_b=np.asarray(gamma_km_b, dtype=float),
+            boundary_concentration_a=np.asarray(boundary_concentration_a, dtype=float),
+            boundary_concentration_b=np.asarray(boundary_concentration_b, dtype=float),
             spatial_shape=spatial_shape,
             eps_cref=eps_cref,
             km_clip=km_clip,
             flux_negative_policy=policy,
             units_hint=str(cfg.get("units_hint", "")),
+            flux_semantics=flux_semantics,
         )
 
-    def _compute_km_pair(self, role: str, *, t_index: int | None) -> tuple[np.ndarray, np.ndarray]:
+    def _compute_km_pair(
+        self, role: str, *, t_index: int | None
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         if role == "A":
             cref_all = self.cref_a
             flux_all = self.flux_a
             gamma_all = self.gamma_km_a
+            boundary_all = self.boundary_concentration_a
         elif role == "B":
             cref_all = self.cref_b
             flux_all = self.flux_b
             gamma_all = self.gamma_km_b
+            boundary_all = self.boundary_concentration_b
         else:
             raise ValueError(f"role must be one of {_ALLOWED_ROLES}")
 
@@ -213,6 +268,9 @@ class CfdFluxSinkKmProvider(TransportProvider):
         cref = _time_slice(np.asarray(cref_all, dtype=float), t_index, spatial_shape=self.spatial_shape)
         flux_raw = _time_slice(np.asarray(flux_all, dtype=float), t_index, spatial_shape=self.spatial_shape)
         gamma = _time_slice(np.asarray(gamma_all, dtype=float), t_index, spatial_shape=self.spatial_shape)
+        boundary = _time_slice(
+            np.asarray(boundary_all, dtype=float), t_index, spatial_shape=self.spatial_shape
+        )
 
         if self.flux_negative_policy == "error" and np.any(flux_raw < 0.0):
             raise ValueError(f"negative flux_sink detected for role {role}")
@@ -221,20 +279,41 @@ class CfdFluxSinkKmProvider(TransportProvider):
         else:
             flux_work = flux_raw
 
-        km_cfd = flux_work / np.maximum(cref, float(self.eps_cref))
+        driving = cref - boundary
+        invalid_driving = (driving <= float(self.eps_cref)) & (
+            np.abs(flux_work) > float(self.eps_cref)
+        )
+        if np.any(invalid_driving):
+            raise ValueError(
+                f"nonpositive transport driving concentration detected for role {role}"
+            )
+        km_cfd = flux_work / np.maximum(driving, float(self.eps_cref))
         km_cfd = np.clip(km_cfd, float(self.km_clip[0]), float(self.km_clip[1]))
         km_used = np.clip(gamma * km_cfd, float(self.km_clip[0]), float(self.km_clip[1]))
-        return np.asarray(km_cfd, dtype=float), np.asarray(km_used, dtype=float)
+        return (
+            np.asarray(km_cfd, dtype=float),
+            np.asarray(km_used, dtype=float),
+            np.asarray(boundary, dtype=float),
+            np.asarray(driving, dtype=float),
+        )
 
     def get_km(self, role: str, *, t_index: int | None = None) -> np.ndarray:
-        _km_cfd, km_used = self._compute_km_pair(role, t_index=t_index)
+        _km_cfd, km_used, _boundary, _driving = self._compute_km_pair(
+            role, t_index=t_index
+        )
         return km_used
 
     def get_diagnostics(self, role: str, *, t_index: int | None = None) -> dict[str, Any]:
-        km_cfd, km_used = self._compute_km_pair(role, t_index=t_index)
+        km_cfd, km_used, boundary, driving = self._compute_km_pair(
+            role, t_index=t_index
+        )
         return {
             "km_cfd": km_cfd,
             "km_used": km_used,
+            "concentration_location": self.concentration_location,
+            "flux_semantics": self.flux_semantics,
+            "boundary_concentration": boundary,
+            "driving_concentration": driving,
             "flux_negative_policy": self.flux_negative_policy,
             "units_hint": self.units_hint,
         }
@@ -242,6 +321,7 @@ class CfdFluxSinkKmProvider(TransportProvider):
 
 __all__ = [
     "TransportProvider",
+    "DirectSurfaceConcentrationProvider",
     "FitScalarKmProvider",
     "CfdFluxSinkKmProvider",
 ]

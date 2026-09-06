@@ -1,8 +1,0 @@
-# Deprecated compatibility config. Use cvd_steady_min.yaml directly.
-defaults:
-  - cvd_steady_min
-  - _self_
-
-sim:
-  output:
-    run_name: smoke

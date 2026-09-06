@@ -240,6 +240,48 @@ class TestPipelineAIB(unittest.TestCase):
             with self.assertRaises(ValueError):
                 run_aib_from_spec(spec)
 
+    def test_direct_surface_bypasses_transport_closure(self) -> None:
+        with TemporaryDirectory() as tmp:
+            fluent_path = Path(tmp) / "wall_concentration.npz"
+            self._write_fluent(fluent_path)
+            spec = compose_sim_config(
+                "cvd_steady_min",
+                overrides=[
+                    f"sim.inputs.fluent.file={fluent_path}",
+                    "sim.roles.B=s1",
+                    "sim.model.params.transport.km_source=direct_surface",
+                    "sim.time.t_proc_s=0.1",
+                ],
+            )
+            out = run_aib_from_spec(spec)
+            self.assertEqual(out.diagnostics["concentration_location"], "wall")
+            np.testing.assert_allclose(out.fields["CsA_over_CrefA"], 1.0)
+            np.testing.assert_allclose(out.fields["CsB_over_CrefB"], 1.0)
+            self.assertTrue(np.all(np.isnan(out.fields["J_A_transport"])))
+
+    def test_surface_and_transport_fluxes_share_stoichiometric_closure(self) -> None:
+        with TemporaryDirectory() as tmp:
+            fluent_path = Path(tmp) / "reference_concentration.npz"
+            self._write_fluent(fluent_path)
+            spec = compose_sim_config(
+                "cvd_steady_min",
+                overrides=[
+                    f"sim.inputs.fluent.file={fluent_path}",
+                    "sim.roles.B=s1",
+                    "sim.model.params.transport.nu_B=2.0",
+                    "sim.time.t_proc_s=0.1",
+                ],
+            )
+            out = run_aib_from_spec(spec)
+            np.testing.assert_allclose(
+                out.fields["J_A_surface"], out.fields["J_A_transport"], rtol=1.0e-12
+            )
+            np.testing.assert_allclose(
+                out.fields["J_B_surface"], out.fields["J_B_transport"], rtol=1.0e-12
+            )
+            np.testing.assert_allclose(out.fields["tau_A_s"], 0.05)
+            np.testing.assert_allclose(out.fields["tau_B_s"], 0.05)
+
     def test_run_aib_from_spec_wafer2d_xy_steady(self) -> None:
         with TemporaryDirectory() as tmp:
             fluent_path = Path(tmp) / "fluent.npz"

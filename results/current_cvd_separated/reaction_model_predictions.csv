@@ -1,0 +1,4 @@
+equation_family,model_id,role_A,role_I,role_B,condition_cv_rmse_nm_s,held_out_rmse_nm_s,rms_difference_from_selected_nm_s,rms_difference_to_selected_rmse_ratio,maximum_difference_from_selected_nm_s
+aib_qss,"cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",idn_2,n2,adn_2,0.0008940841559704123,0.0010486307401464674,0.0,0.0,0.0
+parallel_a_ab_qss,"cvd:parallel_a_ab_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",adn_2,,idn_2,0.0009033381894203596,0.001848900334702025,0.0011562993396594062,1.1026754179434985,0.002024507139372911
+langmuir_hinshelwood_qss,"cvd:langmuir_hinshelwood_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",adn_2,,idn_2,0.0009259607308688309,0.0009585709714336273,0.0004349953793877412,0.4148222655831959,0.000767904821048826

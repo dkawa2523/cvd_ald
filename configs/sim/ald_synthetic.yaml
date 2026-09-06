@@ -1,8 +1,0 @@
-# Deprecated compatibility config. Use ald_transient_min.yaml directly.
-defaults:
-  - ald_transient_min
-  - _self_
-
-sim:
-  output:
-    run_name: ald_synthetic

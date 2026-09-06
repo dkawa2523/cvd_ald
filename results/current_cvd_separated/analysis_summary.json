@@ -1,0 +1,2584 @@
+{
+  "generated_at": "2026-09-06T17:27:14.492386+00:00",
+  "estimation": {
+    "response_model": "surface_compare",
+    "loss": "mse",
+    "sampler": "pattern",
+    "sampler_trials": null,
+    "edge_uncertainty_ratio": 1.0,
+    "radial_uncertainty_power": 2.0,
+    "penalty": "none; exact site-balance reductions and condition CV control complexity",
+    "regularization_grid": [],
+    "response_structure_policy": "site_balance_qss_family_comparison",
+    "response_structures": [
+      "aib_qss",
+      "parallel_a_ab_qss",
+      "langmuir_hinshelwood_qss"
+    ],
+    "candidate_filter": null,
+    "map_centering": "not used; absolute concentrations are normalized by identification-data references",
+    "selection": "equation-family/role/reduction fitted by the named loss; ranked by no-refit condition CV RMSE in rate units",
+    "reaction_input": {
+      "mode": "bulk_as_surface",
+      "quantity": "concentration",
+      "location": "reference_plane",
+      "unit": "kmol/m^3",
+      "interpretation": "reference concentration used as a surface proxy"
+    },
+    "spatial_response": {
+      "mode": "radial_quartic",
+      "fit_stage": "after chemical-model selection",
+      "participates_in_chemical_selection": false
+    }
+  },
+  "analysis_type": "4-condition identification plus one-condition no-refit test",
+  "surface_state_assumption": "quasi-steady site balance with observable lumped parameters, uniform wafer temperature, and no fitted condition-specific offsets",
+  "primary_split": {
+    "train_cases": "1+2+4+5",
+    "test_case": 3,
+    "selected_model": "cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",
+    "selected_role_model_id": "cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",
+    "selected_role_A": "idn_2",
+    "selected_role_I": "n2",
+    "selected_role_B": "adn_2",
+    "selected_role_terms": "desorption_ratio|conversion_ratio|inhibition_ratio",
+    "response_model": "surface_compare",
+    "selected_equation_family": "aib_qss",
+    "selected_applicability_status": "production",
+    "selected_contrast_status": "limited",
+    "selected_distinguishable": false,
+    "selected_supported_claims": [
+      "improves the conditionwise constant-rate baseline",
+      "finite_loss improves its exact reduction"
+    ],
+    "selected_missing_evidence": [
+      "independent between-condition variation for idn_2, n2",
+      "independent A/B perturbations including a low-B regime",
+      "independent variation of the inhibitor candidate",
+      "consistent parent-versus-reduction benefit for I"
+    ],
+    "transport_mode": "bulk_as_surface",
+    "effective_roles": {
+      "A": "idn_2",
+      "I": "n2",
+      "B": "adn_2"
+    },
+    "effect_groups": {
+      "A": [
+        "idn_2"
+      ],
+      "B": [
+        "adn_2"
+      ],
+      "I": [
+        "n2"
+      ]
+    },
+    "effect_scopes": {
+      "A": [
+        "aib_qss"
+      ],
+      "B": [
+        "aib_qss"
+      ],
+      "I": [
+        "aib_qss"
+      ]
+    },
+    "response_structure": "surface_qss",
+    "inactive_roles": "",
+    "role_symmetry": "",
+    "regularization": 0.0,
+    "selection_reason": "Minimum condition-refit raw-rate prediction error among quasi-steady site-balance reductions; numerical ties prefer fewer observable effects and parameters.",
+    "unrestricted_numerical_winner": "cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",
+    "unrestricted_winner_eligible": true,
+    "unrestricted_winner_rejection_reason": "",
+    "train_blocked_cv_rmse_nm_s": 0.0017828617746724156,
+    "train_condition_cv_rmse_nm_s": 0.0008940841559704123,
+    "train_condition_cv_improvement_vs_baseline": 0.9872722883902952,
+    "train_condition_cv_worst_relative_rmse": 0.007497260375493702,
+    "train_condition_cv_worst_case": 5,
+    "common_total_order": null,
+    "within_total_order": null,
+    "reaction_input_quantity": "concentration",
+    "reaction_input_location": "reference_plane",
+    "reaction_input_unit": "kmol/m^3",
+    "reference_reaction_input_total": 0.00020281610586000002,
+    "reference_reaction_input_shares": {
+      "adn_2": 0.015253807614941255,
+      "idn_2": 0.008371450545313215,
+      "n2": 0.9763747418397455
+    },
+    "reference_total_concentration_kmol_m3": 0.00020281610586000002,
+    "reference_rate_nm_s": 2.527220428930998,
+    "test_mse": 1.099626429180128e-06,
+    "test_rmse": 0.0010486307401464674,
+    "test_mae": 0.0009412973331437277,
+    "test_max_abs": 0.0024610481454290234,
+    "test_observation_count": 49.0,
+    "test_mean_bias": 0.0004310640638207177,
+    "test_mean_mse": 1.8581622711763178e-07,
+    "test_centered_mse": 9.138102020624961e-07,
+    "test_centered_rmse": 0.0009559342038354397,
+    "test_centered_r2": -0.014799642556980741,
+    "test_spatial_correlation": 0.17206833302148672,
+    "test_normalized_rmse": null,
+    "test_target_mean": 0.14391471285714286,
+    "test_target_variance": 9.00483370057145e-07,
+    "test_relative_rmse": 0.007286473490638807,
+    "test_baseline_mse": 0.0007689330687420045,
+    "test_mse_nm2_s2": 1.099626429180128e-06,
+    "test_rmse_nm_s": 0.0010486307401464674,
+    "test_mae_nm_s": 0.0009412973331437277,
+    "test_max_abs_nm_s": 0.0024610481454290234,
+    "test_r2": -0.2211512902346493,
+    "test_bias_nm_s": 0.0004310640638207177,
+    "test_relative_rmse_vs_test_mean": 0.007286473490638807,
+    "test_relative_bias_vs_test_mean": 0.0029952744598713407,
+    "test_centered_spatial_rmse_nm_s": 0.0009559342038354397,
+    "test_centered_spatial_r2": -0.014799642556980741,
+    "test_constant_train_mean_rmse_nm_s": 0.027729642420016968,
+    "test_rmse_improvement_vs_constant_train_mean": 0.9621837626225753,
+    "test_target_range_nm_s": 0.00523752999999999,
+    "test_prediction_range_nm_s": 0.001810482871430541,
+    "test_range_capture_fraction": 0.34567494055987164,
+    "unrestricted_test_rmse_nm_s": 0.0010486307401464674,
+    "unrestricted_test_relative_rmse": 0.007286473490638807,
+    "unrestricted_test_centered_spatial_r2": -0.014799642556980741,
+    "unrestricted_test_spatial_correlation": 0.17206833302148672,
+    "unrestricted_test_prediction_range_nm_s": 0.001810482871430541,
+    "unrestricted_test_range_capture_fraction": 0.34567494055987164,
+    "selected_coefficient_desorption_ratio": 1.4074646633398433,
+    "selected_coefficient_conversion_ratio": 0.09474635256553754,
+    "selected_coefficient_inhibition_ratio": 0.0005139696800771512,
+    "chemical_test_rmse_nm_s": 0.0010486307401464674,
+    "chemical_test_centered_spatial_r2": -0.014799642556980741,
+    "spatial_response_model": "radial_quartic",
+    "spatial_response_test_rmse_nm_s": 0.000570306145283186,
+    "spatial_response_test_centered_spatial_r2": 0.8451577487530033,
+    "spatial_response_test_spatial_correlation": 0.9274876976754525,
+    "spatial_response_preserves_chemical_mean": true
+  },
+  "selected_model": {
+    "model_id": "cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",
+    "equation_family": "aib_qss",
+    "formula": "v = R*uA*b*uB / (uA + (delta + b*uB)*(1 + kappa*uI))",
+    "reference_rate_nm_s": 2.527220428930998,
+    "reference_total_concentration_kmol_m3": 0.00020281610586000002,
+    "reference_species_fractions": {
+      "adn_2": 0.015253807614941255,
+      "idn_2": 0.008371450545313215,
+      "n2": 0.9763747418397455
+    },
+    "common_total_order": null,
+    "within_total_order": null,
+    "response_structure": "surface_qss",
+    "effect_scopes": {
+      "A": [
+        "aib_qss"
+      ],
+      "B": [
+        "aib_qss"
+      ],
+      "I": [
+        "aib_qss"
+      ]
+    },
+    "species_role_terms": [
+      "desorption_ratio",
+      "conversion_ratio",
+      "inhibition_ratio"
+    ],
+    "selection_reason": "Minimum condition-refit raw-rate prediction error among quasi-steady site-balance reductions; numerical ties prefer fewer observable effects and parameters.",
+    "regularization": 0.0,
+    "effective_roles": {
+      "A": "idn_2",
+      "I": "n2",
+      "B": "adn_2"
+    },
+    "reduction_id": "full",
+    "observable_parameters": {
+      "desorption_ratio": 1.4074646633398433,
+      "conversion_ratio": 0.09474635256553754,
+      "inhibition_ratio": 0.0005139696800771512
+    },
+    "applicability_status": "production",
+    "contrast_status": "limited",
+    "distinguishable": false,
+    "supported_claims": [
+      "improves the conditionwise constant-rate baseline",
+      "finite_loss improves its exact reduction"
+    ],
+    "missing_evidence": [
+      "independent between-condition variation for idn_2, n2",
+      "independent A/B perturbations including a low-B regime",
+      "independent variation of the inhibitor candidate",
+      "consistent parent-versus-reduction benefit for I"
+    ],
+    "reference_reaction_inputs": {
+      "adn_2": 3.09371786e-06,
+      "idn_2": 1.697865e-06,
+      "n2": 0.000198024523
+    },
+    "reference_reaction_input_total": 0.00020281610586000002,
+    "reference_reaction_input_shares": {
+      "adn_2": 0.015253807614941255,
+      "idn_2": 0.008371450545313215,
+      "n2": 0.9763747418397455
+    },
+    "reaction_input": {
+      "mode": "bulk_as_surface",
+      "quantity": "concentration",
+      "location": "reference_plane",
+      "unit": "kmol/m^3",
+      "interpretation": "reference concentration used as a surface proxy"
+    }
+  },
+  "model_inputs": {
+    "available": [
+      "bulk_concentration",
+      "concentration",
+      "film_rate",
+      "reaction_driver"
+    ],
+    "selected_reaction_input": {
+      "mode": "bulk_as_surface",
+      "quantity": "concentration",
+      "location": "reference_plane",
+      "unit": "kmol/m^3",
+      "interpretation": "reference concentration used as a surface proxy"
+    },
+    "bulk_as_surface_approximation": true,
+    "wafer_flux_supplied": false,
+    "realized_reactive_flux_used_as_model_input": false,
+    "wafer_temperature": {
+      "spatial_mode": "uniform",
+      "value_K": null,
+      "used_as_spatial_correction": false
+    }
+  },
+  "spatial_response": {
+    "model": "radial_quartic",
+    "terms": [
+      "rho^2",
+      "rho^4"
+    ],
+    "coefficients": [
+      0.0596442129270574,
+      -0.057015225553249976
+    ],
+    "center_xy_source_units": [
+      0.0,
+      0.0
+    ],
+    "radius_scale_source_units": 0.14849242404917498,
+    "weighting": "condition_balanced_points",
+    "mean_rate_policy": "conditionwise chemical mean preserved",
+    "participates_in_role_or_equation_selection": false,
+    "fixed_holdout": {
+      "chemical_centered_r2": -0.014799642556980741,
+      "corrected_centered_r2": 0.8451577487530033,
+      "chemical_rmse_nm_s": 0.0010486307401464674,
+      "corrected_rmse_nm_s": 0.000570306145283186
+    },
+    "outer_condition_transfer_supported": true
+  },
+  "unrestricted_numerical_winner": {
+    "model_id": "cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",
+    "role_model_id": "cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",
+    "model_family": "surface_qss",
+    "equation_family": "aib_qss",
+    "reduction_id": "full",
+    "transport_mode": "bulk_as_surface",
+    "reaction_input": {
+      "mode": "bulk_as_surface",
+      "quantity": "concentration",
+      "location": "reference_plane",
+      "unit": "kmol/m^3",
+      "interpretation": "reference concentration used as a surface proxy"
+    },
+    "roles": {
+      "A": "idn_2",
+      "I": "n2",
+      "B": "adn_2"
+    },
+    "quantity": "deposition_rate",
+    "unit": "nm/s",
+    "effect_groups": {
+      "A": [
+        "idn_2"
+      ],
+      "B": [
+        "adn_2"
+      ],
+      "I": [
+        "n2"
+      ]
+    },
+    "effect_scopes": {
+      "A": [
+        "aib_qss"
+      ],
+      "B": [
+        "aib_qss"
+      ],
+      "I": [
+        "aib_qss"
+      ]
+    },
+    "response_structure": "surface_qss",
+    "declared_effect_groups": {
+      "A": [
+        "idn_2"
+      ],
+      "B": [
+        "adn_2"
+      ],
+      "I": [
+        "n2"
+      ]
+    },
+    "reduced_effect_groups": [
+      {
+        "AB": [
+          "adn_2",
+          "idn_2"
+        ]
+      }
+    ],
+    "reduced_model_ids": [
+      "cvd:aib_qss:AIB:no_desorption:bulk_as_surface:A=idn_2,I=n2,B=adn_2",
+      "cvd:aib_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2"
+    ],
+    "reduced_model_effects": {
+      "cvd:aib_qss:AIB:no_desorption:bulk_as_surface:A=idn_2,I=n2,B=adn_2": [
+        "finite_loss"
+      ],
+      "cvd:aib_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2": [
+        "I"
+      ]
+    },
+    "effect_basis": "declared_state_model_roles",
+    "best_score": 7.844918108091601e-07,
+    "search_space_count": 4,
+    "validation_conditions": [
+      {
+        "mse": 4.4488941923064926e-07,
+        "rmse": 0.00066700031426578,
+        "mae": 0.0005479421348080499,
+        "max_abs": 0.0013891058167892212,
+        "observation_count": 49.0,
+        "mean_bias": 1.0940466334378241e-05,
+        "mean_mse": 1.1969380361366367e-10,
+        "centered_mse": 4.4476972542703556e-07,
+        "centered_rmse": 0.0006669105827823064,
+        "centered_r2": -0.08027981291687403,
+        "spatial_correlation": 0.019955336507712574,
+        "normalized_rmse": null,
+        "target_mean": 0.10921737265306122,
+        "target_variance": 4.1171714967634963e-07,
+        "relative_rmse": 0.0061070899076153965,
+        "baseline_mse": 8.712355577955682e-05,
+        "mse_nm2_s2": 4.4488941923064926e-07,
+        "rmse_nm_s": 0.00066700031426578,
+        "mae_nm_s": 0.0005479421348080499,
+        "max_abs_nm_s": 0.0013891058167892212,
+        "r2": -0.08057053144464921,
+        "bias_nm_s": 1.0940466334378241e-05,
+        "relative_rmse_vs_test_mean": 0.0061070899076153965,
+        "relative_bias_vs_test_mean": 0.00010017148434005653,
+        "centered_spatial_rmse_nm_s": 0.0006669105827823064,
+        "centered_spatial_r2": -0.08027981291687403,
+        "constant_train_mean_rmse_nm_s": 0.009333999988191387,
+        "rmse_improvement_vs_constant_train_mean": 0.9285407847536304,
+        "target_range_nm_s": 0.0033476649999999997,
+        "prediction_range_nm_s": 0.0009536191111662873,
+        "range_capture_fraction": 0.28486097359391915,
+        "condition": 1,
+        "weight": 1.0,
+        "quantity": "deposition_rate",
+        "unit": "nm/s",
+        "refit_score": 8.97653343679716e-07,
+        "effect_groups": {
+          "A": [
+            "idn_2"
+          ],
+          "B": [
+            "adn_2"
+          ],
+          "I": [
+            "n2"
+          ]
+        },
+        "effective_roles": {
+          "A": "idn_2",
+          "I": "n2",
+          "B": "adn_2"
+        },
+        "effect_scopes": {
+          "A": [
+            "aib_qss"
+          ],
+          "B": [
+            "aib_qss"
+          ],
+          "I": [
+            "aib_qss"
+          ]
+        },
+        "response_structure": "surface_qss",
+        "regularization": 0.0,
+        "common_total_order": null,
+        "within_total_order": null,
+        "max_effect_coefficient": 1.4074646633398433,
+        "boundary_parameters": []
+      },
+      {
+        "mse": 2.2732564931336921e-07,
+        "rmse": 0.00047678679649647304,
+        "mae": 0.00037023008637695153,
+        "max_abs": 0.001135907238999631,
+        "observation_count": 49.0,
+        "mean_bias": -0.00019712223354347705,
+        "mean_mse": 3.885717495716911e-08,
+        "centered_mse": 1.8846847435620008e-07,
+        "centered_rmse": 0.0004341295594130859,
+        "centered_r2": -0.09948286506274906,
+        "spatial_correlation": -0.08742041083034223,
+        "normalized_rmse": null,
+        "target_mean": 0.07686286373469386,
+        "target_variance": 1.7141556302966477e-07,
+        "relative_rmse": 0.006203083951466982,
+        "baseline_mse": 0.0027513065521508413,
+        "mse_nm2_s2": 2.2732564931336921e-07,
+        "rmse_nm_s": 0.00047678679649647304,
+        "mae_nm_s": 0.00037023008637695153,
+        "max_abs_nm_s": 0.001135907238999631,
+        "r2": -0.32616692029316363,
+        "bias_nm_s": -0.00019712223354347705,
+        "relative_rmse_vs_test_mean": 0.006203083951466982,
+        "relative_bias_vs_test_mean": -0.0025645965290062604,
+        "centered_spatial_rmse_nm_s": 0.0004341295594130859,
+        "centered_spatial_r2": -0.09948286506274906,
+        "constant_train_mean_rmse_nm_s": 0.05245289841515759,
+        "rmse_improvement_vs_constant_train_mean": 0.9909101916023254,
+        "target_range_nm_s": 0.0019401760000000018,
+        "prediction_range_nm_s": 0.00037742585467348544,
+        "range_capture_fraction": 0.19453176138323797,
+        "condition": 2,
+        "weight": 1.0,
+        "quantity": "deposition_rate",
+        "unit": "nm/s",
+        "refit_score": 9.813707761784416e-07,
+        "effect_groups": {
+          "A": [
+            "idn_2"
+          ],
+          "B": [
+            "adn_2"
+          ],
+          "I": [
+            "n2"
+          ]
+        },
+        "effective_roles": {
+          "A": "idn_2",
+          "I": "n2",
+          "B": "adn_2"
+        },
+        "effect_scopes": {
+          "A": [
+            "aib_qss"
+          ],
+          "B": [
+            "aib_qss"
+          ],
+          "I": [
+            "aib_qss"
+          ]
+        },
+        "response_structure": "surface_qss",
+        "regularization": 0.0,
+        "common_total_order": null,
+        "within_total_order": null,
+        "max_effect_coefficient": 1.4590242156305606,
+        "boundary_parameters": []
+      },
+      {
+        "mse": 1.793900344827226e-07,
+        "rmse": 0.0004235446074296338,
+        "mae": 0.00035274237284407193,
+        "max_abs": 0.0009648362692292467,
+        "observation_count": 49.0,
+        "mean_bias": 4.888919511354644e-05,
+        "mean_mse": 2.3901533988504132e-09,
+        "centered_mse": 1.7699988108387222e-07,
+        "centered_rmse": 0.00042071353803255755,
+        "centered_r2": 0.03256072782602315,
+        "spatial_correlation": 0.23009737523871657,
+        "normalized_rmse": null,
+        "target_mean": 0.07443086153061225,
+        "target_variance": 1.8295709733400396e-07,
+        "relative_rmse": 0.00569044343595884,
+        "baseline_mse": 0.0031019972414936927,
+        "mse_nm2_s2": 1.793900344827226e-07,
+        "rmse_nm_s": 0.0004235446074296338,
+        "mae_nm_s": 0.00035274237284407193,
+        "max_abs_nm_s": 0.0009648362692292467,
+        "r2": 0.019496717554331133,
+        "bias_nm_s": 4.888919511354644e-05,
+        "relative_rmse_vs_test_mean": 0.00569044343595884,
+        "relative_bias_vs_test_mean": 0.0006568403765343906,
+        "centered_spatial_rmse_nm_s": 0.00042071353803255755,
+        "centered_spatial_r2": 0.03256072782602315,
+        "constant_train_mean_rmse_nm_s": 0.05569557649844099,
+        "rmse_improvement_vs_constant_train_mean": 0.9923953636166871,
+        "target_range_nm_s": 0.0023843499999999934,
+        "prediction_range_nm_s": 0.0008202081954586105,
+        "range_capture_fraction": 0.3439965590029202,
+        "condition": 4,
+        "weight": 1.0,
+        "quantity": "deposition_rate",
+        "unit": "nm/s",
+        "refit_score": 9.863456350086828e-07,
+        "effect_groups": {
+          "A": [
+            "idn_2"
+          ],
+          "B": [
+            "adn_2"
+          ],
+          "I": [
+            "n2"
+          ]
+        },
+        "effective_roles": {
+          "A": "idn_2",
+          "I": "n2",
+          "B": "adn_2"
+        },
+        "effect_scopes": {
+          "A": [
+            "aib_qss"
+          ],
+          "B": [
+            "aib_qss"
+          ],
+          "I": [
+            "aib_qss"
+          ]
+        },
+        "response_structure": "surface_qss",
+        "regularization": 0.0,
+        "common_total_order": null,
+        "within_total_order": null,
+        "max_effect_coefficient": 1.4330125702369627,
+        "boundary_parameters": []
+      },
+      {
+        "mse": 2.3459408088025574e-06,
+        "rmse": 0.0015316464372702198,
+        "mae": 0.0013114648150311641,
+        "max_abs": 0.0029437128379389,
+        "observation_count": 49.0,
+        "mean_bias": 0.000122182337177753,
+        "mean_mse": 1.4928523518218123e-08,
+        "centered_mse": 2.3310122852843394e-06,
+        "centered_rmse": 0.0015267653013100407,
+        "centered_r2": -0.1721598841895382,
+        "spatial_correlation": -0.24103207388956033,
+        "normalized_rmse": null,
+        "target_mean": 0.20429415020408165,
+        "target_variance": 1.988647041010162e-06,
+        "relative_rmse": 0.007497260375493702,
+        "baseline_mse": 0.013798163113631348,
+        "mse_nm2_s2": 2.3459408088025574e-06,
+        "rmse_nm_s": 0.0015316464372702198,
+        "mae_nm_s": 0.0013114648150311641,
+        "max_abs_nm_s": 0.0029437128379389,
+        "r2": -0.17966675856712255,
+        "bias_nm_s": 0.000122182337177753,
+        "relative_rmse_vs_test_mean": 0.007497260375493702,
+        "relative_bias_vs_test_mean": 0.0005980706596625394,
+        "centered_spatial_rmse_nm_s": 0.0015267653013100407,
+        "centered_spatial_r2": -0.1721598841895382,
+        "constant_train_mean_rmse_nm_s": 0.11746558267693286,
+        "rmse_improvement_vs_constant_train_mean": 0.9869608918428241,
+        "target_range_nm_s": 0.005754740000000008,
+        "prediction_range_nm_s": 0.0012805829245965683,
+        "range_capture_fraction": 0.22252663449548832,
+        "condition": 5,
+        "weight": 1.0,
+        "quantity": "deposition_rate",
+        "unit": "nm/s",
+        "refit_score": 2.704655385923608e-07,
+        "effect_groups": {
+          "A": [
+            "idn_2"
+          ],
+          "B": [
+            "adn_2"
+          ],
+          "I": [
+            "n2"
+          ]
+        },
+        "effective_roles": {
+          "A": "idn_2",
+          "I": "n2",
+          "B": "adn_2"
+        },
+        "effect_scopes": {
+          "A": [
+            "aib_qss"
+          ],
+          "B": [
+            "aib_qss"
+          ],
+          "I": [
+            "aib_qss"
+          ]
+        },
+        "response_structure": "surface_qss",
+        "regularization": 0.0,
+        "common_total_order": null,
+        "within_total_order": null,
+        "max_effect_coefficient": 1.3823722273578996,
+        "boundary_parameters": []
+      }
+    ],
+    "class_id": "AIB",
+    "role_A": "idn_2",
+    "role_I": "n2",
+    "role_B": "adn_2",
+    "role_effect_count": 3,
+    "active_effect_count": 3,
+    "effective_roles": {
+      "A": "idn_2",
+      "I": "n2",
+      "B": "adn_2"
+    },
+    "inactive_roles": "",
+    "role_symmetry": "",
+    "fit_diagnostics": {
+      "identifiability": {
+        "assessed": true,
+        "degeneracy_warning": false,
+        "boundary_parameters": [],
+        "status": "sufficient",
+        "rank": 4,
+        "direction_count": 4,
+        "full_rank": true,
+        "condition_number": 216.9788124937234,
+        "max_abs_parameter_correlation": 0.911972771498691,
+        "reasons": []
+      }
+    },
+    "regularization": 0.0,
+    "regularization_scores": [],
+    "common_total_order": null,
+    "within_total_order": null,
+    "reference_rate_nm_s": 2.527220428930998,
+    "reference_reaction_inputs": {
+      "adn_2": 3.09371786e-06,
+      "idn_2": 1.697865e-06,
+      "n2": 0.000198024523
+    },
+    "reaction_input_unit": "kmol/m^3",
+    "observable_parameters": {
+      "desorption_ratio": 1.4074646633398433,
+      "conversion_ratio": 0.09474635256553754,
+      "inhibition_ratio": 0.0005139696800771512
+    },
+    "formula": "v = R*uA*b*uB / (uA + (delta + b*uB)*(1 + kappa*uI))",
+    "in_sample_rmse_nm_s": 0.0008857154231519061,
+    "in_sample_r2": 0.9997174062167701,
+    "angular_cv_rmse_nm_s": 0.000901901546474972,
+    "angular_cv_r2": 0.9997069832464073,
+    "radial_cv_rmse_nm_s": 0.0017828617746724156,
+    "radial_cv_r2": 0.9988549893229902,
+    "blocked_cv_rmse_nm_s": 0.0017828617746724156,
+    "condition_cv_rmse_nm_s": 0.0008940841559704123,
+    "condition_cv_r2": 0.9997120407811066,
+    "condition_cv_worst_relative_rmse": 0.007497260375493702,
+    "condition_cv_worst_case": 5,
+    "design_condition_number": 216.9788124937234,
+    "design_full_rank": true,
+    "design_max_abs_parameter_correlation": 0.911972771498691,
+    "parameter_identifiability_status": "sufficient",
+    "eligible_for_adoption": true,
+    "ineligibility_reasons": "",
+    "design_identifiable": true,
+    "design_information": "",
+    "optimizer_method": "pattern",
+    "optimizer_trial_count": 1010,
+    "loss_name": "mse",
+    "computable": true,
+    "applicability_status": "production",
+    "physical_question": "Does adsorbed A require a sequential B-assisted conversion path, with optional blocking by I?",
+    "required_evidence": [
+      "independent A/B perturbations including a low-B regime",
+      "independent variation of the inhibitor candidate"
+    ],
+    "contrast_status": "limited",
+    "contrast_rank": 2,
+    "contrast_species_count": 3,
+    "contrast_condition_number": 1704.2516064338738,
+    "contrast_max_abs_correlation": 0.9999125141212624,
+    "contrast_log10_span": {
+      "idn_2": 0.09842799721241861,
+      "n2": 0.09899407764981862,
+      "adn_2": 0.46686514718288497
+    },
+    "contrast_confounded_species": [
+      "idn_2",
+      "n2"
+    ],
+    "numerical_rank": 1,
+    "selection_basis": "condition_cv",
+    "selection_score": 7.993864779573246e-07,
+    "score_tied_with_best": true,
+    "equivalent_to_best": true,
+    "selection_gap": 0.0,
+    "validation_skill": 0.9998380053571801,
+    "selected": true,
+    "same_effects_as_selected": true,
+    "reduced_model_comparisons": [
+      {
+        "effects": {
+          "AB": [
+            "adn_2",
+            "idn_2"
+          ]
+        },
+        "removed_effects": [
+          "I"
+        ],
+        "basis": "inner_condition_cv",
+        "status": "mixed",
+        "mean_status": "mixed",
+        "spatial_status": "mixed",
+        "selection_error_increase": 1.1127259345548657e-08,
+        "conditions": [
+          {
+            "condition": 1,
+            "weight": 1.0,
+            "mse_increase": 1.8316222134339506e-13,
+            "mean_mse_increase": 1.2451561518851375e-13,
+            "centered_mse_increase": 5.864660626290593e-14
+          },
+          {
+            "condition": 2,
+            "weight": 1.0,
+            "mse_increase": 4.4516947235288885e-08,
+            "mean_mse_increase": 4.435070677535527e-08,
+            "centered_mse_increase": 1.6624045993364938e-10
+          },
+          {
+            "condition": 4,
+            "weight": 1.0,
+            "mse_increase": -8.093213548469739e-12,
+            "mean_mse_increase": -4.171305318151365e-12,
+            "centered_mse_increase": -3.921908230319201e-12
+          },
+          {
+            "condition": 5,
+            "weight": 1.0,
+            "mse_increase": 1.982323911953448e-16,
+            "mean_mse_increase": 1.733958168474073e-16,
+            "centered_mse_increase": 2.4836700079390595e-17
+          }
+        ]
+      },
+      {
+        "effects": {
+          "A": [
+            "idn_2"
+          ],
+          "B": [
+            "adn_2"
+          ],
+          "I": [
+            "n2"
+          ]
+        },
+        "removed_effects": [
+          "finite_loss"
+        ],
+        "basis": "inner_condition_cv",
+        "status": "consistent_benefit",
+        "mean_status": "consistent_benefit",
+        "spatial_status": "consistent_benefit",
+        "selection_error_increase": 0.00033838921743954123,
+        "conditions": [
+          {
+            "condition": 1,
+            "weight": 1.0,
+            "mse_increase": 3.2701542321643327e-05,
+            "mean_mse_increase": 3.0125986119362806e-05,
+            "centered_mse_increase": 2.575556202280512e-06
+          },
+          {
+            "condition": 2,
+            "weight": 1.0,
+            "mse_increase": 0.00013862493797818677,
+            "mean_mse_increase": 0.0001368645348391027,
+            "centered_mse_increase": 1.7604031390840864e-06
+          },
+          {
+            "condition": 4,
+            "weight": 1.0,
+            "mse_increase": 1.9326894435780277e-05,
+            "mean_mse_increase": 1.826721144778759e-05,
+            "centered_mse_increase": 1.0596829879926917e-06
+          },
+          {
+            "condition": 5,
+            "weight": 1.0,
+            "mse_increase": 0.0011629034950225545,
+            "mean_mse_increase": 0.0011626806081712683,
+            "centered_mse_increase": 2.2288685128569137e-07
+          }
+        ]
+      }
+    ],
+    "role_evidence": [
+      {
+        "effect": "A",
+        "species": [
+          "idn_2"
+        ],
+        "necessity": "not_assessed",
+        "assignment": "not_assessed",
+        "alternatives": [],
+        "basis": "inner_condition_cv"
+      },
+      {
+        "effect": "B",
+        "species": [
+          "adn_2"
+        ],
+        "necessity": "not_assessed",
+        "assignment": "not_assessed",
+        "alternatives": [],
+        "basis": "inner_condition_cv"
+      },
+      {
+        "effect": "I",
+        "species": [
+          "n2"
+        ],
+        "necessity": "mixed",
+        "assignment": "not_assessed",
+        "alternatives": [],
+        "basis": "inner_condition_cv"
+      }
+    ],
+    "adoption_rank": 1,
+    "family_rank": 1,
+    "reduction_delta_mse": 1.1127259345548657e-08,
+    "supported_claims": [
+      "improves the conditionwise constant-rate baseline",
+      "finite_loss improves its exact reduction"
+    ],
+    "missing_evidence": [
+      "independent between-condition variation for idn_2, n2",
+      "independent A/B perturbations including a low-B regime",
+      "independent variation of the inhibitor candidate",
+      "consistent parent-versus-reduction benefit for I"
+    ],
+    "distinguishable": false,
+    "condition_cv_improvement_vs_baseline": 0.9872722883902952,
+    "selection_refits": [
+      {
+        "condition": 1,
+        "selected": false,
+        "selection_score": 7.972441918183992e-06,
+        "effect_groups": {
+          "A": [
+            "idn_2"
+          ],
+          "B": [
+            "adn_2"
+          ],
+          "I": [
+            "n2"
+          ]
+        },
+        "effective_roles": {
+          "A": "idn_2",
+          "I": "n2",
+          "B": "adn_2"
+        },
+        "regularization": 0.0,
+        "response_structure": "surface_qss",
+        "effect_scopes": {
+          "A": [
+            "aib_qss"
+          ],
+          "B": [
+            "aib_qss"
+          ],
+          "I": [
+            "aib_qss"
+          ]
+        }
+      },
+      {
+        "condition": 2,
+        "selected": true,
+        "selection_score": 1.1058389682807071e-06,
+        "effect_groups": {
+          "A": [
+            "idn_2"
+          ],
+          "B": [
+            "adn_2"
+          ],
+          "I": [
+            "n2"
+          ]
+        },
+        "effective_roles": {
+          "A": "idn_2",
+          "I": "n2",
+          "B": "adn_2"
+        },
+        "regularization": 0.0,
+        "response_structure": "surface_qss",
+        "effect_scopes": {
+          "A": [
+            "aib_qss"
+          ],
+          "B": [
+            "aib_qss"
+          ],
+          "I": [
+            "aib_qss"
+          ]
+        }
+      },
+      {
+        "condition": 3,
+        "selected": true,
+        "selection_score": 7.993864779573246e-07,
+        "effect_groups": {
+          "A": [
+            "idn_2"
+          ],
+          "B": [
+            "adn_2"
+          ],
+          "I": [
+            "n2"
+          ]
+        },
+        "effective_roles": {
+          "A": "idn_2",
+          "I": "n2",
+          "B": "adn_2"
+        },
+        "regularization": 0.0,
+        "response_structure": "surface_qss",
+        "effect_scopes": {
+          "A": [
+            "aib_qss"
+          ],
+          "B": [
+            "aib_qss"
+          ],
+          "I": [
+            "aib_qss"
+          ]
+        }
+      },
+      {
+        "condition": 4,
+        "selected": false,
+        "selection_score": 1.845418276147432e-05,
+        "effect_groups": {
+          "A": [
+            "idn_2"
+          ],
+          "B": [
+            "adn_2"
+          ],
+          "I": [
+            "n2"
+          ]
+        },
+        "effective_roles": {
+          "A": "idn_2",
+          "I": "n2",
+          "B": "adn_2"
+        },
+        "regularization": 0.0,
+        "response_structure": "surface_qss",
+        "effect_scopes": {
+          "A": [
+            "aib_qss"
+          ],
+          "B": [
+            "aib_qss"
+          ],
+          "I": [
+            "aib_qss"
+          ]
+        }
+      },
+      {
+        "condition": 5,
+        "selected": false,
+        "selection_score": 7.772391741775043e-07,
+        "effect_groups": {
+          "A": [
+            "idn_2"
+          ],
+          "B": [
+            "adn_2"
+          ],
+          "I": [
+            "n2"
+          ]
+        },
+        "effective_roles": {
+          "A": "idn_2",
+          "I": "n2",
+          "B": "adn_2"
+        },
+        "regularization": 0.0,
+        "response_structure": "surface_qss",
+        "effect_scopes": {
+          "A": [
+            "aib_qss"
+          ],
+          "B": [
+            "aib_qss"
+          ],
+          "I": [
+            "aib_qss"
+          ]
+        }
+      }
+    ],
+    "holdout_metrics": {
+      "3": {
+        "mse": 1.099626429180128e-06,
+        "rmse": 0.0010486307401464674,
+        "mae": 0.0009412973331437277,
+        "max_abs": 0.0024610481454290234,
+        "observation_count": 49.0,
+        "mean_bias": 0.0004310640638207177,
+        "mean_mse": 1.8581622711763178e-07,
+        "centered_mse": 9.138102020624961e-07,
+        "centered_rmse": 0.0009559342038354397,
+        "centered_r2": -0.014799642556980741,
+        "spatial_correlation": 0.17206833302148672,
+        "normalized_rmse": null,
+        "target_mean": 0.14391471285714286,
+        "target_variance": 9.00483370057145e-07,
+        "relative_rmse": 0.007286473490638807,
+        "baseline_mse": 0.0007689330687420045,
+        "mse_nm2_s2": 1.099626429180128e-06,
+        "rmse_nm_s": 0.0010486307401464674,
+        "mae_nm_s": 0.0009412973331437277,
+        "max_abs_nm_s": 0.0024610481454290234,
+        "r2": -0.2211512902346493,
+        "bias_nm_s": 0.0004310640638207177,
+        "relative_rmse_vs_test_mean": 0.007286473490638807,
+        "relative_bias_vs_test_mean": 0.0029952744598713407,
+        "centered_spatial_rmse_nm_s": 0.0009559342038354397,
+        "centered_spatial_r2": -0.014799642556980741,
+        "constant_train_mean_rmse_nm_s": 0.027729642420016968,
+        "rmse_improvement_vs_constant_train_mean": 0.9621837626225753,
+        "target_range_nm_s": 0.00523752999999999,
+        "prediction_range_nm_s": 0.001810482871430541,
+        "range_capture_fraction": 0.34567494055987164
+      }
+    },
+    "evaluation_conditions": [
+      {
+        "case": 1,
+        "mse": 4.5875669678391866e-07,
+        "rmse": 0.0006773158028452596,
+        "mae": 0.0005432645305933671,
+        "max_abs": 0.0014705435826978253,
+        "observation_count": 49.0,
+        "mean_bias": -0.00011055236748045382,
+        "mean_mse": 1.2221825955533302e-08,
+        "centered_mse": 4.465348708283854e-07,
+        "centered_rmse": 0.0006682326472332712,
+        "centered_r2": -0.08456708975908822,
+        "spatial_correlation": 0.04381682312523922,
+        "normalized_rmse": null,
+        "target_mean": 0.10921737265306122,
+        "target_variance": 4.1171714967634963e-07,
+        "relative_rmse": 0.006201539062808387,
+        "baseline_mse": 0.00024559327523013025,
+        "mse_nm2_s2": 4.5875669678391866e-07,
+        "rmse_nm_s": 0.0006773158028452596,
+        "mae_nm_s": 0.0005432645305933671,
+        "max_abs_nm_s": 0.0014705435826978253,
+        "r2": -0.11425209550912996,
+        "bias_nm_s": -0.00011055236748045382,
+        "relative_rmse_vs_test_mean": 0.006201539062808387,
+        "relative_bias_vs_test_mean": -0.0010122232827522169,
+        "centered_spatial_rmse_nm_s": 0.0006682326472332712,
+        "centered_spatial_r2": -0.08456708975908822,
+        "constant_train_mean_rmse_nm_s": 0.01567141586552186,
+        "rmse_improvement_vs_constant_train_mean": 0.9567801780861805,
+        "target_range_nm_s": 0.0033476649999999997,
+        "prediction_range_nm_s": 0.0010764949884901343,
+        "range_capture_fraction": 0.32156592385741534,
+        "condition": 1,
+        "weight": 1.0,
+        "selected_model": "cvd:aib_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",
+        "effect_groups": {
+          "AB": [
+            "adn_2",
+            "idn_2"
+          ]
+        },
+        "roles": {
+          "A": "adn_2",
+          "I": null,
+          "B": "idn_2"
+        }
+      },
+      {
+        "case": 2,
+        "mse": 2.1717263543953602e-07,
+        "rmse": 0.0004660178488422262,
+        "mae": 0.0003977144534094681,
+        "max_abs": 0.0009672435296426418,
+        "observation_count": 49.0,
+        "mean_bias": 0.00016593890072627544,
+        "mean_mse": 2.7535718774244695e-08,
+        "centered_mse": 1.8963691666529134e-07,
+        "centered_rmse": 0.0004354732100431568,
+        "centered_r2": -0.10629929577907249,
+        "spatial_correlation": -0.08859746089045648,
+        "normalized_rmse": null,
+        "target_mean": 0.07686286373469386,
+        "target_variance": 1.7141556302966477e-07,
+        "relative_rmse": 0.0060629779609925995,
+        "baseline_mse": 0.0031475396842394897,
+        "mse_nm2_s2": 2.1717263543953602e-07,
+        "rmse_nm_s": 0.0004660178488422262,
+        "mae_nm_s": 0.0003977144534094681,
+        "max_abs_nm_s": 0.0009672435296426418,
+        "r2": -0.2669365114878901,
+        "bias_nm_s": 0.00016593890072627544,
+        "relative_rmse_vs_test_mean": 0.0060629779609925995,
+        "relative_bias_vs_test_mean": 0.002158895631303092,
+        "centered_spatial_rmse_nm_s": 0.0004354732100431568,
+        "centered_spatial_r2": -0.10629929577907249,
+        "constant_train_mean_rmse_nm_s": 0.0561029382852582,
+        "rmse_improvement_vs_constant_train_mean": 0.9916935215322817,
+        "target_range_nm_s": 0.0019401760000000018,
+        "prediction_range_nm_s": 0.00041701910308764023,
+        "range_capture_fraction": 0.21493880095807796,
+        "condition": 2,
+        "weight": 1.0,
+        "selected_model": "cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",
+        "effect_groups": {
+          "A": [
+            "idn_2"
+          ],
+          "B": [
+            "adn_2"
+          ],
+          "I": [
+            "n2"
+          ]
+        },
+        "roles": {
+          "A": "idn_2",
+          "I": "n2",
+          "B": "adn_2"
+        }
+      },
+      {
+        "case": 3,
+        "mse": 1.099626429180128e-06,
+        "rmse": 0.0010486307401464674,
+        "mae": 0.0009412973331437277,
+        "max_abs": 0.0024610481454290234,
+        "observation_count": 49.0,
+        "mean_bias": 0.0004310640638207177,
+        "mean_mse": 1.8581622711763178e-07,
+        "centered_mse": 9.138102020624961e-07,
+        "centered_rmse": 0.0009559342038354397,
+        "centered_r2": -0.014799642556980741,
+        "spatial_correlation": 0.17206833302148672,
+        "normalized_rmse": null,
+        "target_mean": 0.14391471285714286,
+        "target_variance": 9.00483370057145e-07,
+        "relative_rmse": 0.007286473490638807,
+        "baseline_mse": 0.0007689330687420045,
+        "mse_nm2_s2": 1.099626429180128e-06,
+        "rmse_nm_s": 0.0010486307401464674,
+        "mae_nm_s": 0.0009412973331437277,
+        "max_abs_nm_s": 0.0024610481454290234,
+        "r2": -0.2211512902346493,
+        "bias_nm_s": 0.0004310640638207177,
+        "relative_rmse_vs_test_mean": 0.007286473490638807,
+        "relative_bias_vs_test_mean": 0.0029952744598713407,
+        "centered_spatial_rmse_nm_s": 0.0009559342038354397,
+        "centered_spatial_r2": -0.014799642556980741,
+        "constant_train_mean_rmse_nm_s": 0.027729642420016968,
+        "rmse_improvement_vs_constant_train_mean": 0.9621837626225753,
+        "target_range_nm_s": 0.00523752999999999,
+        "prediction_range_nm_s": 0.001810482871430541,
+        "range_capture_fraction": 0.34567494055987164,
+        "condition": 3,
+        "weight": 1.0,
+        "selected_model": "cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",
+        "effect_groups": {
+          "A": [
+            "idn_2"
+          ],
+          "B": [
+            "adn_2"
+          ],
+          "I": [
+            "n2"
+          ]
+        },
+        "roles": {
+          "A": "idn_2",
+          "I": "n2",
+          "B": "adn_2"
+        }
+      },
+      {
+        "case": 4,
+        "mse": 1.787709839826328e-07,
+        "rmse": 0.00042281317858202196,
+        "mae": 0.00035163807257786314,
+        "max_abs": 0.0009113485061002513,
+        "observation_count": 49.0,
+        "mean_bias": 5.101593692216576e-05,
+        "mean_mse": 2.6026258200463955e-09,
+        "centered_mse": 1.7616835816258646e-07,
+        "centered_rmse": 0.000419724145317596,
+        "centered_r2": 0.037105634437477275,
+        "spatial_correlation": 0.2467558771894305,
+        "normalized_rmse": null,
+        "target_mean": 0.07443086153061225,
+        "target_variance": 1.8295709733400396e-07,
+        "relative_rmse": 0.005680616479336673,
+        "baseline_mse": 0.0034978897279603484,
+        "mse_nm2_s2": 1.787709839826328e-07,
+        "rmse_nm_s": 0.00042281317858202196,
+        "mae_nm_s": 0.00035163807257786314,
+        "max_abs_nm_s": 0.0009113485061002513,
+        "r2": 0.022880300422175037,
+        "bias_nm_s": 5.101593692216576e-05,
+        "relative_rmse_vs_test_mean": 0.005680616479336673,
+        "relative_bias_vs_test_mean": 0.0006854137634989446,
+        "centered_spatial_rmse_nm_s": 0.000419724145317596,
+        "centered_spatial_r2": 0.037105634437477275,
+        "constant_train_mean_rmse_nm_s": 0.05914296008791197,
+        "rmse_improvement_vs_constant_train_mean": 0.9928509973468771,
+        "target_range_nm_s": 0.0023843499999999934,
+        "prediction_range_nm_s": 0.0008860024171790937,
+        "range_capture_fraction": 0.3715907552075392,
+        "condition": 4,
+        "weight": 1.0,
+        "selected_model": "cvd:langmuir_hinshelwood_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",
+        "effect_groups": {
+          "AB": [
+            "adn_2",
+            "idn_2"
+          ]
+        },
+        "roles": {
+          "A": "adn_2",
+          "I": null,
+          "B": "idn_2"
+        }
+      },
+      {
+        "case": 5,
+        "mse": 4.44919793705612e-06,
+        "rmse": 0.002109312195256103,
+        "mae": 0.0017984355696675077,
+        "max_abs": 0.003842657144020878,
+        "observation_count": 49.0,
+        "mean_bias": 0.0014369106763359814,
+        "mean_mse": 2.0647122917683276e-06,
+        "centered_mse": 2.3844856452877927e-06,
+        "centered_rmse": 0.0015441779836818659,
+        "centered_r2": -0.19904920084589706,
+        "spatial_correlation": -0.31700332231647416,
+        "normalized_rmse": null,
+        "target_mean": 0.20429415020408165,
+        "target_variance": 1.988647041010162e-06,
+        "relative_rmse": 0.010324878089504691,
+        "baseline_mse": 0.01064968956449839,
+        "mse_nm2_s2": 4.44919793705612e-06,
+        "rmse_nm_s": 0.002109312195256103,
+        "mae_nm_s": 0.0017984355696675077,
+        "max_abs_nm_s": 0.003842657144020878,
+        "r2": -1.2372989501425482,
+        "bias_nm_s": 0.0014369106763359814,
+        "relative_rmse_vs_test_mean": 0.010324878089504691,
+        "relative_bias_vs_test_mean": 0.007033538037680302,
+        "centered_spatial_rmse_nm_s": 0.0015441779836818659,
+        "centered_spatial_r2": -0.19904920084589706,
+        "constant_train_mean_rmse_nm_s": 0.10319733312687102,
+        "rmse_improvement_vs_constant_train_mean": 0.9795604001446151,
+        "target_range_nm_s": 0.005754740000000008,
+        "prediction_range_nm_s": 0.0012192477790639034,
+        "range_capture_fraction": 0.21186843872423455,
+        "condition": 5,
+        "weight": 1.0,
+        "selected_model": "cvd:langmuir_hinshelwood_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",
+        "effect_groups": {
+          "AB": [
+            "adn_2",
+            "idn_2"
+          ]
+        },
+        "roles": {
+          "A": "adn_2",
+          "I": null,
+          "B": "idn_2"
+        }
+      }
+    ]
+  },
+  "equation_family_assessments": [
+    {
+      "equation_family": "aib_qss",
+      "computable": true,
+      "applicability_status": "production",
+      "physical_question": "Does adsorbed A require a sequential B-assisted conversion path, with optional blocking by I?",
+      "mechanism": "Langmuir-Rideal-type adsorbed-A/gas-B conversion",
+      "pathways": [
+        "AB"
+      ],
+      "state_variables": [
+        "theta_A",
+        "theta_I"
+      ],
+      "best_model_id": "cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",
+      "condition_cv_rmse_nm_s": 0.0008940841559704123,
+      "relative_rmse_gap_to_best": 0.0,
+      "outer_selection_count": 3,
+      "outer_selection_frequency": 0.6,
+      "contrast_status": "limited",
+      "distinguishable": false,
+      "supported_claims": [
+        "improves the conditionwise constant-rate baseline",
+        "finite_loss improves its exact reduction"
+      ],
+      "missing_evidence": [
+        "independent between-condition variation for idn_2, n2",
+        "independent A/B perturbations including a low-B regime",
+        "independent variation of the inhibitor candidate",
+        "consistent parent-versus-reduction benefit for I",
+        "stable equation-family selection across outer condition folds"
+      ]
+    },
+    {
+      "equation_family": "parallel_a_ab_qss",
+      "computable": true,
+      "applicability_status": "production",
+      "physical_question": "Does growth contain an A-only path plus a B-assisted parallel path?",
+      "mechanism": "Adsorbed-A conversion with parallel A-only and gas-B paths",
+      "pathways": [
+        "A",
+        "AB"
+      ],
+      "state_variables": [
+        "theta_A",
+        "theta_I"
+      ],
+      "best_model_id": "cvd:parallel_a_ab_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",
+      "condition_cv_rmse_nm_s": 0.0009033381894203596,
+      "relative_rmse_gap_to_best": 0.0103502935245543,
+      "outer_selection_count": 0,
+      "outer_selection_frequency": 0.0,
+      "contrast_status": "sufficient",
+      "distinguishable": false,
+      "supported_claims": [
+        "improves the conditionwise constant-rate baseline",
+        "AB effect improves its exact reduction",
+        "AB raw-species assignment is separated in inner CV",
+        "finite_loss improves its exact reduction"
+      ],
+      "missing_evidence": [
+        "consistent parent-versus-reduction benefit for A",
+        "stable equation-family selection across outer condition folds"
+      ]
+    },
+    {
+      "equation_family": "langmuir_hinshelwood_qss",
+      "computable": true,
+      "applicability_status": "exploratory",
+      "physical_question": "Do A and B compete for one site pool and react as two adsorbates?",
+      "mechanism": "Langmuir-Hinshelwood coadsorption on one site pool",
+      "pathways": [
+        "AB"
+      ],
+      "state_variables": [
+        "theta_A",
+        "theta_B",
+        "theta_I"
+      ],
+      "best_model_id": "cvd:langmuir_hinshelwood_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",
+      "condition_cv_rmse_nm_s": 0.0009259607308688309,
+      "relative_rmse_gap_to_best": 0.03565276790283867,
+      "outer_selection_count": 2,
+      "outer_selection_frequency": 0.4,
+      "contrast_status": "sufficient",
+      "distinguishable": false,
+      "supported_claims": [
+        "improves the conditionwise constant-rate baseline",
+        "AB raw-species assignment is separated in inner CV"
+      ],
+      "missing_evidence": [
+        "independent A/B perturbations spanning low coverage and saturation",
+        "B adsorption, retention, or time-response evidence",
+        "A/B exchange with adsorption-parameter exchange",
+        "stable equation-family selection across outer condition folds"
+      ]
+    }
+  ],
+  "reaction_mechanism_assessments": [
+    {
+      "mechanism_id": "aib_qss",
+      "problem_layer": "steady_surface_response",
+      "mechanism": "Langmuir-Rideal-type adsorbed-A/gas-B conversion",
+      "pathways": [
+        "AB"
+      ],
+      "state_variables": [
+        "theta_A",
+        "theta_I"
+      ],
+      "evaluation_status": "fitted",
+      "steady_representation": "cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",
+      "condition_cv_rmse_nm_s": 0.0008940841559704123,
+      "distinguishable": false,
+      "supported_claims": [
+        "improves the conditionwise constant-rate baseline",
+        "finite_loss improves its exact reduction"
+      ],
+      "missing_evidence": [
+        "independent between-condition variation for idn_2, n2",
+        "independent A/B perturbations including a low-B regime",
+        "independent variation of the inhibitor candidate",
+        "consistent parent-versus-reduction benefit for I",
+        "stable equation-family selection across outer condition folds"
+      ]
+    },
+    {
+      "mechanism_id": "parallel_a_ab_qss",
+      "problem_layer": "steady_surface_response",
+      "mechanism": "Adsorbed-A conversion with parallel A-only and gas-B paths",
+      "pathways": [
+        "A",
+        "AB"
+      ],
+      "state_variables": [
+        "theta_A",
+        "theta_I"
+      ],
+      "evaluation_status": "fitted",
+      "steady_representation": "cvd:parallel_a_ab_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",
+      "condition_cv_rmse_nm_s": 0.0009033381894203596,
+      "distinguishable": false,
+      "supported_claims": [
+        "improves the conditionwise constant-rate baseline",
+        "AB effect improves its exact reduction",
+        "AB raw-species assignment is separated in inner CV",
+        "finite_loss improves its exact reduction"
+      ],
+      "missing_evidence": [
+        "consistent parent-versus-reduction benefit for A",
+        "stable equation-family selection across outer condition folds"
+      ]
+    },
+    {
+      "mechanism_id": "langmuir_hinshelwood_qss",
+      "problem_layer": "steady_surface_response",
+      "mechanism": "Langmuir-Hinshelwood coadsorption on one site pool",
+      "pathways": [
+        "AB"
+      ],
+      "state_variables": [
+        "theta_A",
+        "theta_B",
+        "theta_I"
+      ],
+      "evaluation_status": "fitted",
+      "steady_representation": "cvd:langmuir_hinshelwood_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",
+      "condition_cv_rmse_nm_s": 0.0009259607308688309,
+      "distinguishable": false,
+      "supported_claims": [
+        "improves the conditionwise constant-rate baseline",
+        "AB raw-species assignment is separated in inner CV"
+      ],
+      "missing_evidence": [
+        "independent A/B perturbations spanning low coverage and saturation",
+        "B adsorption, retention, or time-response evidence",
+        "A/B exchange with adsorption-parameter exchange",
+        "stable equation-family selection across outer condition folds"
+      ]
+    },
+    {
+      "mechanism_id": "mars_van_krevelen",
+      "problem_layer": "dynamic_surface_state",
+      "mechanism": "Mars-van Krevelen surface redox reservoir",
+      "pathways": [
+        "A_reduction_growth",
+        "B_regeneration"
+      ],
+      "state_variables": [
+        "oxidized_fraction"
+      ],
+      "evaluation_status": "steady_observable_equivalent",
+      "steady_representation": "cvd:aib_qss:AB:no_desorption:bulk_as_surface:A=adn_2,B=n2",
+      "condition_cv_rmse_nm_s": 0.018136032873978834,
+      "distinguishable": false,
+      "supported_claims": [
+        "steady two-reactant turnover is represented by the exact aib_qss AB no-desorption response"
+      ],
+      "missing_evidence": [
+        "time-resolved A/B switching or pulse response separating reservoir memory",
+        "surface or lattice oxidation-state observation for oxidized_fraction",
+        "independent regeneration conditions that identify k_regenerate"
+      ],
+      "steady_observable_equivalence": "aib_qss:AB:no_desorption"
+    }
+  ],
+  "reaction_model_prediction_comparison": [
+    {
+      "equation_family": "aib_qss",
+      "model_id": "cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",
+      "role_A": "idn_2",
+      "role_I": "n2",
+      "role_B": "adn_2",
+      "condition_cv_rmse_nm_s": 0.0008940841559704123,
+      "held_out_rmse_nm_s": 0.0010486307401464674,
+      "rms_difference_from_selected_nm_s": 0.0,
+      "rms_difference_to_selected_rmse_ratio": 0.0,
+      "maximum_difference_from_selected_nm_s": 0.0
+    },
+    {
+      "equation_family": "parallel_a_ab_qss",
+      "model_id": "cvd:parallel_a_ab_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",
+      "role_A": "adn_2",
+      "role_I": "",
+      "role_B": "idn_2",
+      "condition_cv_rmse_nm_s": 0.0009033381894203596,
+      "held_out_rmse_nm_s": 0.001848900334702025,
+      "rms_difference_from_selected_nm_s": 0.0011562993396594062,
+      "rms_difference_to_selected_rmse_ratio": 1.1026754179434985,
+      "maximum_difference_from_selected_nm_s": 0.002024507139372911
+    },
+    {
+      "equation_family": "langmuir_hinshelwood_qss",
+      "model_id": "cvd:langmuir_hinshelwood_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",
+      "role_A": "adn_2",
+      "role_I": "",
+      "role_B": "idn_2",
+      "condition_cv_rmse_nm_s": 0.0009259607308688309,
+      "held_out_rmse_nm_s": 0.0009585709714336273,
+      "rms_difference_from_selected_nm_s": 0.0004349953793877412,
+      "rms_difference_to_selected_rmse_ratio": 0.4148222655831959,
+      "maximum_difference_from_selected_nm_s": 0.000767904821048826
+    }
+  ],
+  "reaction_model_state_comparison": [
+    {
+      "equation_family": "aib_qss",
+      "model_id": "cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",
+      "quantity": "site_fraction",
+      "component": "theta_free",
+      "mean_fraction": 0.5570950300832315,
+      "minimum_fraction": 0.5354176280199481,
+      "maximum_fraction": 0.5648488165523586
+    },
+    {
+      "equation_family": "aib_qss",
+      "model_id": "cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",
+      "quantity": "site_fraction",
+      "component": "theta_A",
+      "mean_fraction": 0.44255873131402335,
+      "minimum_fraction": 0.4348002520052292,
+      "maximum_fraction": 0.46424967424176894
+    },
+    {
+      "equation_family": "aib_qss",
+      "model_id": "cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",
+      "quantity": "site_fraction",
+      "component": "theta_I",
+      "mean_fraction": 0.0003462386027451208,
+      "minimum_fraction": 0.0003326977382830831,
+      "maximum_fraction": 0.00035093144241214925
+    },
+    {
+      "equation_family": "aib_qss",
+      "model_id": "cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",
+      "quantity": "pathway_fraction",
+      "component": "path_AB_fraction",
+      "mean_fraction": 1.0,
+      "minimum_fraction": 1.0,
+      "maximum_fraction": 1.0
+    },
+    {
+      "equation_family": "parallel_a_ab_qss",
+      "model_id": "cvd:parallel_a_ab_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",
+      "quantity": "site_fraction",
+      "component": "theta_free",
+      "mean_fraction": 0.9521655894486306,
+      "minimum_fraction": 0.9509898590966533,
+      "maximum_fraction": 0.9554863879661928
+    },
+    {
+      "equation_family": "parallel_a_ab_qss",
+      "model_id": "cvd:parallel_a_ab_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",
+      "quantity": "site_fraction",
+      "component": "theta_A",
+      "mean_fraction": 0.04783441055136942,
+      "minimum_fraction": 0.04451361203380719,
+      "maximum_fraction": 0.04901014090334666
+    },
+    {
+      "equation_family": "parallel_a_ab_qss",
+      "model_id": "cvd:parallel_a_ab_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",
+      "quantity": "pathway_fraction",
+      "component": "path_A_fraction",
+      "mean_fraction": 0.1753308392635278,
+      "minimum_fraction": 0.16363860040124734,
+      "maximum_fraction": 0.1796559657048483
+    },
+    {
+      "equation_family": "parallel_a_ab_qss",
+      "model_id": "cvd:parallel_a_ab_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",
+      "quantity": "pathway_fraction",
+      "component": "path_AB_fraction",
+      "mean_fraction": 0.8246691607364722,
+      "minimum_fraction": 0.8203440342951517,
+      "maximum_fraction": 0.8363613995987527
+    },
+    {
+      "equation_family": "langmuir_hinshelwood_qss",
+      "model_id": "cvd:langmuir_hinshelwood_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",
+      "quantity": "site_fraction",
+      "component": "theta_free",
+      "mean_fraction": 0.7409347906492968,
+      "minimum_fraction": 0.7272073408273861,
+      "maximum_fraction": 0.7457563835203546
+    },
+    {
+      "equation_family": "langmuir_hinshelwood_qss",
+      "model_id": "cvd:langmuir_hinshelwood_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",
+      "quantity": "site_fraction",
+      "component": "theta_A",
+      "mean_fraction": 0.02437628584392053,
+      "minimum_fraction": 0.02259025491284558,
+      "maximum_fraction": 0.025011026865069043
+    },
+    {
+      "equation_family": "langmuir_hinshelwood_qss",
+      "model_id": "cvd:langmuir_hinshelwood_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",
+      "quantity": "site_fraction",
+      "component": "theta_B",
+      "mean_fraction": 0.23468892350678253,
+      "minimum_fraction": 0.22923258961457643,
+      "maximum_fraction": 0.2502024042597684
+    },
+    {
+      "equation_family": "langmuir_hinshelwood_qss",
+      "model_id": "cvd:langmuir_hinshelwood_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",
+      "quantity": "pathway_fraction",
+      "component": "path_AB_fraction",
+      "mean_fraction": 1.0,
+      "minimum_fraction": 1.0,
+      "maximum_fraction": 1.0
+    }
+  ],
+  "role_importance_and_stability": [
+    {
+      "role": "A",
+      "species": "idn_2",
+      "selection_frequency": 0.4,
+      "selection_count": 2,
+      "refit_count": 5,
+      "alternative_assignments": "{\"adn_2\": 3, \"idn_2\": 2}",
+      "rms_prediction_change_nm_s": 0.008714403269598188,
+      "held_out_rmse_nm_s": 0.0010486307401464674,
+      "prediction_change_to_rmse_ratio": 8.310268749494226
+    },
+    {
+      "role": "I",
+      "species": "n2",
+      "selection_frequency": 0.4,
+      "selection_count": 2,
+      "refit_count": 5,
+      "alternative_assignments": "{\"n2\": 2, \"none\": 3}",
+      "rms_prediction_change_nm_s": 4.461630239052637e-06,
+      "held_out_rmse_nm_s": 0.0010486307401464674,
+      "prediction_change_to_rmse_ratio": 0.00425472005372402
+    },
+    {
+      "role": "B",
+      "species": "adn_2",
+      "selection_frequency": 0.4,
+      "selection_count": 2,
+      "refit_count": 5,
+      "alternative_assignments": "{\"adn_2\": 2, \"idn_2\": 3}",
+      "rms_prediction_change_nm_s": 0.052646716167727724,
+      "held_out_rmse_nm_s": 0.0010486307401464674,
+      "prediction_change_to_rmse_ratio": 50.20520012638033
+    }
+  ],
+  "parameter_sensitivity_correlations": [
+    {
+      "parameter_1": "desorption_ratio",
+      "parameter_2": "desorption_ratio",
+      "rms_log_rate_sensitivity_1": 0.5668951772376944,
+      "mean_log_rate_sensitivity_1": -0.5662389594009364,
+      "pearson_correlation": 0.9999999999999998
+    },
+    {
+      "parameter_1": "desorption_ratio",
+      "parameter_2": "conversion_ratio",
+      "rms_log_rate_sensitivity_1": 0.5668951772376944,
+      "mean_log_rate_sensitivity_1": -0.5662389594009364,
+      "pearson_correlation": -0.5855354426032489
+    },
+    {
+      "parameter_1": "desorption_ratio",
+      "parameter_2": "inhibition_ratio",
+      "rms_log_rate_sensitivity_1": 0.5668951772376944,
+      "mean_log_rate_sensitivity_1": -0.5662389594009364,
+      "pearson_correlation": -0.911972771498691
+    },
+    {
+      "parameter_1": "conversion_ratio",
+      "parameter_2": "desorption_ratio",
+      "rms_log_rate_sensitivity_1": 0.9528721423406865,
+      "mean_log_rate_sensitivity_1": 0.9526645613939907,
+      "pearson_correlation": -0.5855354426032489
+    },
+    {
+      "parameter_1": "conversion_ratio",
+      "parameter_2": "conversion_ratio",
+      "rms_log_rate_sensitivity_1": 0.9528721423406865,
+      "mean_log_rate_sensitivity_1": 0.9526645613939907,
+      "pearson_correlation": 1.0
+    },
+    {
+      "parameter_1": "conversion_ratio",
+      "parameter_2": "inhibition_ratio",
+      "rms_log_rate_sensitivity_1": 0.9528721423406865,
+      "mean_log_rate_sensitivity_1": 0.9526645613939907,
+      "pearson_correlation": 0.41223386754621677
+    },
+    {
+      "parameter_1": "inhibition_ratio",
+      "parameter_2": "desorption_ratio",
+      "rms_log_rate_sensitivity_1": 0.0003007804119846921,
+      "mean_log_rate_sensitivity_1": -0.000300193557200443,
+      "pearson_correlation": -0.911972771498691
+    },
+    {
+      "parameter_1": "inhibition_ratio",
+      "parameter_2": "conversion_ratio",
+      "rms_log_rate_sensitivity_1": 0.0003007804119846921,
+      "mean_log_rate_sensitivity_1": -0.000300193557200443,
+      "pearson_correlation": 0.41223386754621677
+    },
+    {
+      "parameter_1": "inhibition_ratio",
+      "parameter_2": "inhibition_ratio",
+      "rms_log_rate_sensitivity_1": 0.0003007804119846921,
+      "mean_log_rate_sensitivity_1": -0.000300193557200443,
+      "pearson_correlation": 1.0
+    }
+  ],
+  "workflow_layers": [
+    {
+      "layer": "observation_baseline",
+      "responsibility": "test whether any supplied field is needed",
+      "models": [
+        "constant_rate",
+        "empirical_power_compatibility"
+      ],
+      "execution_scope": "constant-rate baseline evaluated in the current analysis",
+      "output_quantity": "film deposition rate",
+      "output_unit": "nm/s"
+    },
+    {
+      "layer": "steady_surface_response",
+      "responsibility": "compare observable reaction forms and exact reductions",
+      "models": [
+        "aib_qss",
+        "parallel_a_ab_qss",
+        "langmuir_hinshelwood_qss"
+      ],
+      "execution_scope": "enumerated and optimized in the current steady-map analysis",
+      "input_quantity": "normalized local driver u_j=X_j/X_j,ref; X is concentration",
+      "input_location": "reference_plane",
+      "input_unit": "1",
+      "shape_parameter_unit": "1",
+      "rate_scale_unit": "nm/s"
+    },
+    {
+      "layer": "dynamic_surface_state",
+      "responsibility": "represent memory that steady maps cannot identify",
+      "models": [
+        "role_cvd_aib",
+        "role_cvd_mvk",
+        "role_ald_state"
+      ],
+      "execution_scope": "registered process models; not dynamically fitted because the current analysis input has no time axis",
+      "state_unit": "1",
+      "mvk_kinetic_coefficient_unit": "m^3/(kmol s)",
+      "time_unit": "s"
+    },
+    {
+      "layer": "transport_closure",
+      "responsibility": "map reference-plane concentration to surface concentration",
+      "models": [
+        "bulk_as_surface_approximation",
+        "direct_surface",
+        "fit_scalar",
+        "from_cfd_flux_sink"
+      ],
+      "supporting_models": [
+        "stagnant_film",
+        "rotating_disk",
+        "bosanquet_diffusivity"
+      ],
+      "execution_scope": "current analysis mode is bulk_as_surface; direct_surface, fit_scalar, and from_cfd_flux_sink are simulation-pipeline inputs; supporting_models are registered km calculators and are not automatically dispatched",
+      "concentration_unit": "kmol/m^3",
+      "km_unit": "m/s",
+      "flux_unit": "kmol/(m^2 s)"
+    },
+    {
+      "layer": "spatial_residual_response",
+      "responsibility": "model transferable residual map shape after the chemical model is frozen",
+      "models": [
+        "none",
+        "radial_quadratic",
+        "radial_quartic"
+      ],
+      "execution_scope": "current mode is radial_quartic; it does not participate in reaction-family or anonymous-role selection",
+      "mean_rate_policy": "preserve each condition's chemical prediction mean",
+      "temperature_policy": "no temperature spatial term; wafer temperature is uniform"
+    },
+    {
+      "layer": "net_film_balance",
+      "responsibility": "compose deposition, etch, and loss with one sign convention",
+      "models": [
+        "deposition_only",
+        "dep_etch_loss"
+      ],
+      "execution_scope": "registered rate-composition utilities; separate from reaction-role selection",
+      "input_unit": "nm/s",
+      "output_unit": "nm/s"
+    },
+    {
+      "layer": "selection_and_validation",
+      "responsibility": "separate numerical fit, role evidence, and mechanism evidence",
+      "models": [
+        "inner_condition_cv",
+        "exact_reduction",
+        "outer_condition_cv",
+        "fixed_holdout"
+      ],
+      "execution_scope": "all four stages applied in the current analysis"
+    }
+  ],
+  "capability_assessments": [
+    {
+      "capability": "wafer_spatial_correction",
+      "current_status": "demonstrated_on_supplied_holdouts",
+      "ready_when": "centered spatial prediction is positive on every independent holdout, residual structure is acceptably small, and the declared spatial tolerance is met"
+    },
+    {
+      "capability": "anonymous_species_role_assignment",
+      "current_status": "additional_data_required",
+      "ready_when": "condition contrasts have full role rank and the same assignment and effect necessity transfer across independent condition refits"
+    },
+    {
+      "capability": "elementary_kinetic_parameter_estimation",
+      "current_status": "additional_data_required",
+      "ready_when": "absolute surface balances are observed, transient and temperature responses resolve every fitted direction, and uncertainty intervals remain finite on external data"
+    }
+  ],
+  "data_requirements": [
+    {
+      "capability": "wafer_spatial_correction",
+      "needed_for_current_evidence": true,
+      "required_measurement": "replicated, coordinate-registered film maps with pointwise uncertainty",
+      "experimental_design": "repeat the same condition without changing wafer orientation or metrology coordinates",
+      "resolves": "measurement noise versus reproducible in-plane residual structure",
+      "workflow_use": "use uncertainty-weighted centered spatial validation"
+    },
+    {
+      "capability": "wafer_spatial_correction",
+      "needed_for_current_evidence": true,
+      "required_measurement": "wall or near-wall species/transport fields; spatial temperature only if the uniform-temperature assumption is invalid",
+      "experimental_design": "save the fields on the same wafer coordinates for conditions that change flow or pressure, while recording the uniform wafer temperature",
+      "resolves": "surface-response variation versus local delivery under the stated uniform-temperature assumption",
+      "workflow_use": "fit spatial drivers on identification conditions and evaluate centered residuals on held-out wafers"
+    },
+    {
+      "capability": "wafer_spatial_correction",
+      "needed_for_current_evidence": false,
+      "required_measurement": "independent wafer maps spanning the intended operating window",
+      "experimental_design": "reserve complete conditions before choosing equations or spatial corrections",
+      "resolves": "transfer of the correction rather than interpolation of one map",
+      "workflow_use": "apply the frozen correction and compare centered R2, range capture, and residual maps"
+    },
+    {
+      "capability": "anonymous_species_role_assignment",
+      "needed_for_current_evidence": true,
+      "required_measurement": "independently varied candidate-species concentrations",
+      "experimental_design": "use factorial or near-orthogonal A/B/I perturbations, including low or off levels for one candidate at a time",
+      "resolves": "confounded role directions and A/B exchange alternatives",
+      "workflow_use": "require full condition-contrast rank and stable assignment across condition refits"
+    },
+    {
+      "capability": "anonymous_species_role_assignment",
+      "needed_for_current_evidence": true,
+      "required_measurement": "low-coverage and saturation conditions",
+      "experimental_design": "span dilute supply, transition, and plateau regimes without changing all species by the same factor",
+      "resolves": "linear supply response versus adsorption saturation and competitive site occupation",
+      "workflow_use": "compare each parent equation with its exact reductions"
+    },
+    {
+      "capability": "anonymous_species_role_assignment",
+      "needed_for_current_evidence": true,
+      "required_measurement": "surface-state or outlet-species observation tied to the anonymous inputs",
+      "experimental_design": "measure coverage, oxidation state, or consumption/byproduct response during an independent perturbation",
+      "resolves": "an empirical role association versus a chemically assigned pathway",
+      "workflow_use": "combine film prediction with the measured state or pathway observation"
+    },
+    {
+      "capability": "elementary_kinetic_parameter_estimation",
+      "needed_for_current_evidence": true,
+      "required_measurement": "time-resolved uptake, thickness, or surface-state response",
+      "experimental_design": "apply concentration steps or separated pulses with sampling faster than the observed relaxation",
+      "resolves": "storage, release, conversion, and redox time constants",
+      "workflow_use": "fit the dynamic AIB, ALD, or MvK state history rather than a steady lumped group"
+    },
+    {
+      "capability": "elementary_kinetic_parameter_estimation",
+      "needed_for_current_evidence": true,
+      "required_measurement": "multiple calibrated substrate temperatures",
+      "experimental_design": "repeat independent concentration transients at several temperatures with matched transport characterization",
+      "resolves": "Arrhenius prefactors and activation energies from concentration effects",
+      "workflow_use": "share activation parameters across temperature conditions and validate temperature transfer"
+    },
+    {
+      "capability": "elementary_kinetic_parameter_estimation",
+      "needed_for_current_evidence": true,
+      "required_measurement": "site density and absolute wall concentration or reacting-wall molar flux",
+      "experimental_design": "measure or calibrate active-site capacity, stoichiometry, diffusivity, and wall-normal transport",
+      "resolves": "coverage turnover frequency and elementary constants in physical units",
+      "workflow_use": "close molar surface and transport fluxes with Gamma_s and propagate their uncertainty"
+    },
+    {
+      "capability": "elementary_kinetic_parameter_estimation",
+      "needed_for_current_evidence": true,
+      "required_measurement": "replicated dynamic observations with uncertainty",
+      "experimental_design": "repeat the transients used for estimation and retain a new recipe as an external test",
+      "resolves": "practical parameter intervals and predictive uncertainty",
+      "workflow_use": "check sensitivity rank, profile intervals, parameter correlation, and no-refit prediction"
+    }
+  ],
+  "validity": {
+    "overall_assessment": "share_with_caveats",
+    "condition_mean_transfer_assessment": "improves_constant_baseline",
+    "chemical_spatial_prediction": "not_supported",
+    "spatial_response_assessment": "improves_chemical_spatial_prediction",
+    "species_role_assessment": "unresolved",
+    "species_role_adoption": "review",
+    "composition_role_cross_condition_validation": "unresolved",
+    "equation_family_cross_condition_validation": "unstable",
+    "model_structure_cross_condition_validation": "unstable",
+    "condition_holdout_cv_assessment": "improves_constant_baseline",
+    "elementary_kinetics_validated": false,
+    "test_was_refit": false,
+    "test_relative_rmse": 0.007286473490638807,
+    "test_spatial_r2": -0.014799642556980741,
+    "test_range_capture_fraction": 0.34567494055987164,
+    "max_pooled_species_correlation": 0.9797959945041251,
+    "test_outside_train_range_fraction_max": 1.0,
+    "loco_common_order_min": null,
+    "loco_common_order_max": null,
+    "loco_selected_role_consistency_fraction": 0.4,
+    "loco_role_A_coefficient_min": null,
+    "loco_role_A_coefficient_max": null,
+    "quantized_rate_cases": [],
+    "low_species_precision": [],
+    "decision": "review",
+    "numerical_prediction_winner": "cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",
+    "adopted_model": null,
+    "role_ambiguous": true,
+    "prediction_status": "improves_baseline",
+    "application_status": "not_specified",
+    "evaluation_scope": "outer_selection_procedure",
+    "fixed_model_assessment": {
+      "scope": "fixed_model_holdout",
+      "condition_count": 1,
+      "prediction_status": "improves_baseline",
+      "spatial_status": "not_supported",
+      "application_status": "not_specified",
+      "failed_conditions": [],
+      "mse": 1.099626429180128e-06,
+      "baseline_mse": 0.0007689330687420045,
+      "worst_relative_rmse": 0.007286473490638807
+    },
+    "procedure_assessment": {
+      "scope": "outer_selection_procedure",
+      "condition_count": 5,
+      "prediction_status": "improves_baseline",
+      "spatial_status": "not_supported",
+      "application_status": "not_specified",
+      "failed_conditions": [],
+      "mse": 1.2807049364884672e-06,
+      "baseline_mse": 0.003661929064134073,
+      "worst_relative_rmse": 0.010324878089504691
+    },
+    "reason": "prediction does not explain within-condition spatial variation; term removal has not shown consistent additional predictive benefit across conditions; alternative raw-species assignments are not distinguished across conditions; assigned species lack independent between-condition excitation; effective roles change across training-condition selections; selected equation family, reduction, or role structure changes across outer condition splits; application scope/error tolerance: not_specified",
+    "effective_roles": {
+      "A": "idn_2",
+      "I": "n2",
+      "B": "adn_2"
+    },
+    "inactive_roles": "",
+    "role_symmetry": ""
+  },
+  "model_structure_uncertainty": {
+    "interpretation": "Prediction range after refitting the distinct model structures selected across outer condition folds on the primary identification conditions; this is selection sensitivity, not a confidence interval.",
+    "selection_count": 6,
+    "distinct_structure_count": 3,
+    "distinct_prediction_count": 3,
+    "members": [
+      {
+        "selection_count": 3,
+        "equivalent_structures": [
+          {
+            "role_model_id": "cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",
+            "equation_family": "aib_qss",
+            "transport_mode": "bulk_as_surface",
+            "response_structure": "surface_qss",
+            "regularization": 0.0
+          }
+        ]
+      },
+      {
+        "selection_count": 1,
+        "equivalent_structures": [
+          {
+            "role_model_id": "cvd:aib_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",
+            "equation_family": "aib_qss",
+            "transport_mode": "bulk_as_surface",
+            "response_structure": "surface_qss",
+            "regularization": 0.0
+          }
+        ]
+      },
+      {
+        "selection_count": 2,
+        "equivalent_structures": [
+          {
+            "role_model_id": "cvd:langmuir_hinshelwood_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",
+            "equation_family": "langmuir_hinshelwood_qss",
+            "transport_mode": "bulk_as_surface",
+            "response_structure": "surface_lh_qss",
+            "regularization": 0.0
+          }
+        ]
+      }
+    ],
+    "mean_envelope_width_nm_s": 0.00042930150768426864,
+    "max_envelope_width_nm_s": 0.0007713108631798304,
+    "mean_envelope_width_relative_to_test_mean": 0.002983027233014149
+  },
+  "grid_alignment": {
+    "reference_case": 1,
+    "rounding_decimals": 6,
+    "pairs": [
+      {
+        "case_1": 1,
+        "case_2": 2,
+        "same_grid_after_rounding": true,
+        "max_abs_coordinate_difference": 3.999999997894577e-09
+      },
+      {
+        "case_1": 1,
+        "case_2": 3,
+        "same_grid_after_rounding": true,
+        "max_abs_coordinate_difference": 7.000000024071085e-09
+      },
+      {
+        "case_1": 1,
+        "case_2": 4,
+        "same_grid_after_rounding": true,
+        "max_abs_coordinate_difference": 7.000000024071085e-09
+      },
+      {
+        "case_1": 1,
+        "case_2": 5,
+        "same_grid_after_rounding": true,
+        "max_abs_coordinate_difference": 7.000000024071085e-09
+      }
+    ]
+  },
+  "data_quality": [
+    {
+      "case_id": 1,
+      "condition_columns": [
+        "x",
+        "y",
+        "z",
+        "concentration_adn_2",
+        "concentration_idn_2",
+        "concentration_n2",
+        "molef_adn_2",
+        "molef_idn_2",
+        "molef_n2",
+        "density"
+      ],
+      "validation_columns": [
+        "x",
+        "y",
+        "z",
+        "dr_nm_per_sec"
+      ],
+      "row_count": 49,
+      "condition_column_count": 10,
+      "validation_column_count": 4,
+      "coordinate_alignment": {
+        "condition_row_count": 49,
+        "validation_row_count": 49,
+        "coordinate_exact_match": true,
+        "coordinate_match_decimals": 6,
+        "coordinate_tolerance_match": true,
+        "coordinate_max_abs_difference": 0.0,
+        "condition_duplicate_coordinates": 0,
+        "validation_duplicate_coordinates": 0
+      },
+      "nonfinite_value_count": 0,
+      "rate_min_nm_s": 0.107171074,
+      "rate_median_nm_s": 0.109110378,
+      "rate_mean_nm_s": 0.10921737265306122,
+      "rate_max_nm_s": 0.110518739,
+      "total_concentration_min_kmol_m3": 0.00020480710064000002,
+      "total_concentration_median_kmol_m3": 0.0002048957005,
+      "total_concentration_max_kmol_m3": 0.00020500021878000003,
+      "density_min_kg_m3": 0.00638775248,
+      "density_median_kg_m3": 0.00639191596,
+      "density_max_kg_m3": 0.00639496557,
+      "missing_mole_fraction_columns": [],
+      "mole_fraction_sum_min": 0.99999993974,
+      "mole_fraction_sum_max": 1.00000007132,
+      "mole_fraction_sum_max_abs_error_from_one": 7.131999990583893e-08,
+      "concentration_mole_fraction_max_relative_inconsistency": 1.5189464017964805e-07,
+      "derived_mixture_molar_mass_min_kg_kmol": 31.189116295474935,
+      "derived_mixture_molar_mass_max_kg_kmol": 31.203875069923058,
+      "precision": {
+        "rate_unique_count": 49,
+        "rate_min_positive_step_nm_s": 1.8999999999991246e-06,
+        "species": {
+          "adn_2": {
+            "unique_count": 49,
+            "min_positive_step_kmol_m3": 4.547999999980699e-11,
+            "relative_range_vs_median": 0.07480489170270936
+          },
+          "idn_2": {
+            "unique_count": 49,
+            "min_positive_step_kmol_m3": 1.768900000000399e-10,
+            "relative_range_vs_median": 0.11666745610340655
+          },
+          "n2": {
+            "unique_count": 48,
+            "min_positive_step_kmol_m3": 1.4999999994273067e-11,
+            "relative_range_vs_median": 0.0010019924947784443
+          }
+        }
+      },
+      "input_capabilities": [
+        "bulk_concentration"
+      ]
+    },
+    {
+      "case_id": 2,
+      "condition_columns": [
+        "x",
+        "y",
+        "z",
+        "concentration_adn_2",
+        "concentration_idn_2",
+        "concentration_n2",
+        "molef_adn_2",
+        "molef_idn_2",
+        "molef_n2",
+        "density"
+      ],
+      "validation_columns": [
+        "x",
+        "y",
+        "z",
+        "dr_nm_per_sec"
+      ],
+      "row_count": 49,
+      "condition_column_count": 10,
+      "validation_column_count": 4,
+      "coordinate_alignment": {
+        "condition_row_count": 49,
+        "validation_row_count": 49,
+        "coordinate_exact_match": true,
+        "coordinate_match_decimals": 6,
+        "coordinate_tolerance_match": true,
+        "coordinate_max_abs_difference": 0.0,
+        "condition_duplicate_coordinates": 0,
+        "validation_duplicate_coordinates": 0
+      },
+      "nonfinite_value_count": 0,
+      "rate_min_nm_s": 0.075808108,
+      "rate_median_nm_s": 0.076873817,
+      "rate_mean_nm_s": 0.07686286373469386,
+      "rate_max_nm_s": 0.077748284,
+      "total_concentration_min_kmol_m3": 0.00016400367,
+      "total_concentration_median_kmol_m3": 0.00016407169000000002,
+      "total_concentration_max_kmol_m3": 0.00016415726999999999,
+      "density_min_kg_m3": 0.00511511,
+      "density_median_kg_m3": 0.00511842,
+      "density_max_kg_m3": 0.00512086,
+      "missing_mole_fraction_columns": [],
+      "mole_fraction_sum_min": 0.99999937,
+      "mole_fraction_sum_max": 1.00000044,
+      "mole_fraction_sum_max_abs_error_from_one": 6.299999999459516e-07,
+      "concentration_mole_fraction_max_relative_inconsistency": 5.892241160373018e-06,
+      "derived_mixture_molar_mass_min_kg_kmol": 31.188997173051067,
+      "derived_mixture_molar_mass_max_kg_kmol": 31.20374385667205,
+      "precision": {
+        "rate_unique_count": 49,
+        "rate_min_positive_step_nm_s": 3.1300000000178407e-07,
+        "species": {
+          "adn_2": {
+            "unique_count": 49,
+            "min_positive_step_kmol_m3": 3.99999999998336e-11,
+            "relative_range_vs_median": 0.07480324699878788
+          },
+          "idn_2": {
+            "unique_count": 49,
+            "min_positive_step_kmol_m3": 1.4000000000005287e-10,
+            "relative_range_vs_median": 0.11665041265774868
+          },
+          "n2": {
+            "unique_count": 41,
+            "min_positive_step_kmol_m3": 9.999999999886402e-10,
+            "relative_range_vs_median": 0.0010133233252017442
+          }
+        }
+      },
+      "input_capabilities": [
+        "bulk_concentration"
+      ]
+    },
+    {
+      "case_id": 3,
+      "condition_columns": [
+        "x",
+        "y",
+        "z",
+        "concentration_adn_2",
+        "concentration_idn_2",
+        "concentration_n2",
+        "molef_adn_2",
+        "molef_idn_2",
+        "molef_n2",
+        "density"
+      ],
+      "validation_columns": [
+        "x",
+        "y",
+        "z",
+        "dr_nm_per_sec"
+      ],
+      "row_count": 49,
+      "condition_column_count": 10,
+      "validation_column_count": 4,
+      "coordinate_alignment": {
+        "condition_row_count": 49,
+        "validation_row_count": 49,
+        "coordinate_exact_match": false,
+        "coordinate_match_decimals": 6,
+        "coordinate_tolerance_match": true,
+        "coordinate_max_abs_difference": 1.0000000022492017e-08,
+        "condition_duplicate_coordinates": 0,
+        "validation_duplicate_coordinates": 0
+      },
+      "nonfinite_value_count": 0,
+      "rate_min_nm_s": 0.14056252,
+      "rate_median_nm_s": 0.14366935,
+      "rate_mean_nm_s": 0.14391471285714286,
+      "rate_max_nm_s": 0.14580005,
+      "total_concentration_min_kmol_m3": 0.00024563995,
+      "total_concentration_median_kmol_m3": 0.00024574722000000003,
+      "total_concentration_max_kmol_m3": 0.00024587281,
+      "density_min_kg_m3": 0.0076613,
+      "density_median_kg_m3": 0.00766631,
+      "density_max_kg_m3": 0.00766997,
+      "missing_mole_fraction_columns": [],
+      "mole_fraction_sum_min": 0.99999954,
+      "mole_fraction_sum_max": 1.00000048,
+      "mole_fraction_sum_max_abs_error_from_one": 4.799999999693938e-07,
+      "concentration_mole_fraction_max_relative_inconsistency": 4.228741979326602e-06,
+      "derived_mixture_molar_mass_min_kg_kmol": 31.18914492532668,
+      "derived_mixture_molar_mass_max_kg_kmol": 31.203838345807284,
+      "precision": {
+        "rate_unique_count": 49,
+        "rate_min_positive_step_nm_s": 2.1000000000048757e-06,
+        "species": {
+          "adn_2": {
+            "unique_count": 49,
+            "min_positive_step_kmol_m3": 5.0000000000109636e-11,
+            "relative_range_vs_median": 0.07481146162356471
+          },
+          "idn_2": {
+            "unique_count": 49,
+            "min_positive_step_kmol_m3": 2.0999999999986755e-10,
+            "relative_range_vs_median": 0.11665864671886908
+          },
+          "n2": {
+            "unique_count": 45,
+            "min_positive_step_kmol_m3": 9.999999999886402e-10,
+            "relative_range_vs_median": 0.0009939237017393952
+          }
+        }
+      },
+      "input_capabilities": [
+        "bulk_concentration"
+      ]
+    },
+    {
+      "case_id": 4,
+      "condition_columns": [
+        "x",
+        "y",
+        "z",
+        "concentration_adn_2",
+        "concentration_idn_2",
+        "concentration_n2",
+        "molef_adn_2",
+        "molef_idn_2",
+        "molef_n2",
+        "density"
+      ],
+      "validation_columns": [
+        "x",
+        "y",
+        "z",
+        "dr_nm_per_sec"
+      ],
+      "row_count": 49,
+      "condition_column_count": 10,
+      "validation_column_count": 4,
+      "coordinate_alignment": {
+        "condition_row_count": 49,
+        "validation_row_count": 49,
+        "coordinate_exact_match": false,
+        "coordinate_match_decimals": 6,
+        "coordinate_tolerance_match": true,
+        "coordinate_max_abs_difference": 1.0000000022492017e-08,
+        "condition_duplicate_coordinates": 0,
+        "validation_duplicate_coordinates": 0
+      },
+      "nonfinite_value_count": 0,
+      "rate_min_nm_s": 0.072923504,
+      "rate_median_nm_s": 0.074337266,
+      "rate_mean_nm_s": 0.07443086153061225,
+      "rate_max_nm_s": 0.075307854,
+      "total_concentration_min_kmol_m3": 0.00020480848,
+      "total_concentration_median_kmol_m3": 0.00020489708,
+      "total_concentration_max_kmol_m3": 0.00020500196,
+      "density_min_kg_m3": 0.00625511,
+      "density_median_kg_m3": 0.00625802,
+      "density_max_kg_m3": 0.00626402,
+      "missing_mole_fraction_columns": [],
+      "mole_fraction_sum_min": 0.9999651700000001,
+      "mole_fraction_sum_max": 1.00003689,
+      "mole_fraction_sum_max_abs_error_from_one": 3.689000000006715e-05,
+      "concentration_mole_fraction_max_relative_inconsistency": 3.758815413054844e-05,
+      "derived_mixture_molar_mass_min_kg_kmol": 30.53644661798646,
+      "derived_mixture_molar_mass_max_kg_kmol": 30.57241575153529,
+      "precision": {
+        "rate_unique_count": 49,
+        "rate_min_positive_step_nm_s": 4.500000000406956e-08,
+        "species": {
+          "adn_2": {
+            "unique_count": 49,
+            "min_positive_step_kmol_m3": 6.999999999981468e-11,
+            "relative_range_vs_median": 0.07509496074955685
+          },
+          "idn_2": {
+            "unique_count": 49,
+            "min_positive_step_kmol_m3": 7.000000000002643e-11,
+            "relative_range_vs_median": 0.1156457453228726
+          },
+          "n2": {
+            "unique_count": 46,
+            "min_positive_step_kmol_m3": 9.999999999886402e-10,
+            "relative_range_vs_median": 0.001040826286590826
+          }
+        }
+      },
+      "input_capabilities": [
+        "bulk_concentration"
+      ]
+    },
+    {
+      "case_id": 5,
+      "condition_columns": [
+        "x",
+        "y",
+        "z",
+        "concentration_adn_2",
+        "concentration_idn_2",
+        "concentration_n2",
+        "molef_adn_2",
+        "molef_idn_2",
+        "molef_n2",
+        "density"
+      ],
+      "validation_columns": [
+        "x",
+        "y",
+        "z",
+        "dr_nm_per_sec"
+      ],
+      "row_count": 49,
+      "condition_column_count": 10,
+      "validation_column_count": 4,
+      "coordinate_alignment": {
+        "condition_row_count": 49,
+        "validation_row_count": 49,
+        "coordinate_exact_match": false,
+        "coordinate_match_decimals": 6,
+        "coordinate_tolerance_match": true,
+        "coordinate_max_abs_difference": 1.0000000022492017e-08,
+        "condition_duplicate_coordinates": 0,
+        "validation_duplicate_coordinates": 0
+      },
+      "nonfinite_value_count": 0,
+      "rate_min_nm_s": 0.2014291,
+      "rate_median_nm_s": 0.20427118,
+      "rate_mean_nm_s": 0.20429415020408165,
+      "rate_max_nm_s": 0.20718384,
+      "total_concentration_min_kmol_m3": 0.00020480371999999998,
+      "total_concentration_median_kmol_m3": 0.00020489178000000001,
+      "total_concentration_max_kmol_m3": 0.00020499667,
+      "density_min_kg_m3": 0.00675724,
+      "density_median_kg_m3": 0.00678478,
+      "density_max_kg_m3": 0.00679049,
+      "missing_mole_fraction_columns": [],
+      "mole_fraction_sum_min": 0.9999994999999999,
+      "mole_fraction_sum_max": 1.0000005299999999,
+      "mole_fraction_sum_max_abs_error_from_one": 5.299999998875649e-07,
+      "concentration_mole_fraction_max_relative_inconsistency": 5.4485111260539555e-06,
+      "derived_mixture_molar_mass_min_kg_kmol": 32.993736637205615,
+      "derived_mixture_molar_mass_max_kg_kmol": 33.14761388548437,
+      "precision": {
+        "rate_unique_count": 49,
+        "rate_min_positive_step_nm_s": 3.61000000001499e-06,
+        "species": {
+          "adn_2": {
+            "unique_count": 49,
+            "min_positive_step_kmol_m3": 6.999999999981468e-11,
+            "relative_range_vs_median": 0.07397217256524363
+          },
+          "idn_2": {
+            "unique_count": 49,
+            "min_positive_step_kmol_m3": 1.9999999999980327e-10,
+            "relative_range_vs_median": 0.12002270603957005
+          },
+          "n2": {
+            "unique_count": 47,
+            "min_positive_step_kmol_m3": 9.999999999886402e-10,
+            "relative_range_vs_median": 0.001732334014378304
+          }
+        }
+      },
+      "input_capabilities": [
+        "bulk_concentration"
+      ]
+    }
+  ],
+  "missing_information": [
+    "independent between-condition variation for idn_2, n2",
+    "independent A/B perturbations including a low-B regime",
+    "independent variation of the inhibitor candidate",
+    "consistent parent-versus-reduction benefit for I",
+    "replicated, coordinate-registered film maps with pointwise uncertainty",
+    "wall or near-wall species/transport fields; spatial temperature only if the uniform-temperature assumption is invalid",
+    "independently varied candidate-species concentrations",
+    "low-coverage and saturation conditions",
+    "surface-state or outlet-species observation tied to the anonymous inputs",
+    "time-resolved uptake, thickness, or surface-state response",
+    "multiple calibrated substrate temperatures",
+    "site density and absolute wall concentration or reacting-wall molar flux",
+    "replicated dynamic observations with uncertainty"
+  ],
+  "interpretation_limits": [
+    "Roles and exact kinetic reductions are chosen by inner condition CV; only outer predictions evaluate the selected procedure.",
+    "A numerical score tie is not statistical or practical equivalence. A no-inhibitor steady AB response cannot identify A/B direction.",
+    "Observable dimensionless groups are not separate elementary rate constants or a surface relaxation time.",
+    "A species excluded by the adoption gate is not proven inert.",
+    "The optional spatial residual response is evaluated after chemical selection and cannot support a reaction-role or mechanism claim.",
+    "Uniform wafer temperature is assumed; no radial temperature field is fitted.",
+    "Negative test R2 can coexist with low relative RMSE because within-map variation is much smaller than the absolute condition-level rate.",
+    "See test_extrapolation.csv for the supplied test condition; a reduced physical form does not establish the true mechanism out of domain.",
+    "Bootstrap intervals condition on the same identification conditions. model_structure_uncertainty.csv separately shows the prediction envelope of structures selected across outer condition folds, but is not a confidence interval."
+  ],
+  "sources": [
+    {
+      "case_id": 1,
+      "condition_path": "data\\condition_1.csv",
+      "validation_path": "data\\validation_1.csv",
+      "condition_sha256": "57653880eaca1f6a690e99ac675372b0b502c13b654f13f1524647ff50586b9f",
+      "validation_sha256": "006b503c5fe38f575c8679afcb9c866591107364b7d4bc6ace418d03ad532c0a"
+    },
+    {
+      "case_id": 2,
+      "condition_path": "data\\condition_2.csv",
+      "validation_path": "data\\validation_2.csv",
+      "condition_sha256": "5e28c6169b4181442a7e941d2c21488609440e2840123fdb8e8cffc643982405",
+      "validation_sha256": "db5a7b1c2fa917eb28205fb7ec80a66b24639384d6502a876b0829d1e4fa255b"
+    },
+    {
+      "case_id": 3,
+      "condition_path": "data\\condition_3.csv",
+      "validation_path": "data\\validation_3.csv",
+      "condition_sha256": "31f76e994358c741203b2257c830f962f5e42165d5411c61b571de1f632d7c4a",
+      "validation_sha256": "3a8541b1301a3ce032804ab6376a947891c743287ed8be08080f1d87e451591b"
+    },
+    {
+      "case_id": 4,
+      "condition_path": "data\\condition_4.csv",
+      "validation_path": "data\\validation_4.csv",
+      "condition_sha256": "be61b7487e54e09267c4444262fceebd89f0a92aeb1b284cec5b1b506dbf9912",
+      "validation_sha256": "ff12fe1b4224dec1fb5eedaf38b1748e3df4f3bb8a480761a36c8e72fe7d9a00"
+    },
+    {
+      "case_id": 5,
+      "condition_path": "data\\condition_5.csv",
+      "validation_path": "data\\validation_5.csv",
+      "condition_sha256": "c07a657875f6303a4dd2772b10d04ddcb8775aab75dba8483b2bcfa19abfc31a",
+      "validation_sha256": "799011bad1106e28515c16494ac1c20bec7e7e595792a2e9b30a7fe2d99a24ec"
+    }
+  ]
+}

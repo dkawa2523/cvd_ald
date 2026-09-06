@@ -1,307 +1,152 @@
-# Requirements
+# Product and scientific requirements
 
-This document enumerates requirements extracted from the prior discussion.
+These requirements define the current reaction-role assimilation product. Numeric IDs
+provide stable references for code review and scientific discussion; the current model
+and workflow documents define their operational meaning.
 
-Each requirement has an ID and is classified as MUST/SHOULD/COULD.
+## Scientific scope
 
-Traceability is maintained in `docs/TRACEABILITY.md`.
-Model-note gap triage is maintained in `docs/MODEL_GAP.md`.
+### MUST-007: Role models are the public kinetic interface
 
-This file is the primary implementation source of truth.
-If `model.md` proposes additional items, they must be triaged in `docs/MODEL_GAP.md`
-and promoted through ADR/decision task before implementation.
+Raw Fluent species are assigned to disjoint `A`, optional `B`, optional `I`, or unused
+roles. The public dynamic models are `role_cvd_aib`, `role_cvd_mvk`, and
+`role_ald_state`. Species names do not carry chemical meaning by themselves.
 
+### MUST-008: Role assignments are validated
 
----
+`A` is required. `B` and `I` are optional and each names at most one raw species. One
+species cannot occupy more than one role. Unused species remain allowed.
 
-## MUST
+### MUST-003 and MUST-016: CVD and ALD share role inputs but retain distinct physics
 
-### MUST-001: TCRSK core (transport–reaction coupling) is implemented
+Steady and transient CVD and transient ALD use the same Fluent field and role-assignment
+semantics. Their surface-state equations, numerical updates, and model-readiness metrics
+remain process specific.
 
-The simulation MUST compute surface-adjacent concentrations C_s via transport–reaction coupling from reference-plane CFD fields C_ref; it MUST NOT treat C_ref as surface concentration.
+### MUST-021 and SHOULD-031: Equation families are registered and comparable
 
-### MUST-002: Reference plane metadata (z_ref) is configurable and preserved
+New families provide an equation, required roles, exact reductions, exchange symmetry,
+parameter bounds, and evidence requirements through the existing registry. A new family
+must enter the common fit and validation workflow rather than introduce a second ranking
+system.
 
-z_ref_mm MUST be configurable via YAML and stored in run metadata; C_ref is treated as reference-plane not bulk unless explicitly modeled.
+### MUST-010: Physical bounds and signs are explicit
 
-### MUST-003: Support CVD (continuous) and ALD (phase) modes in one platform
+Concentrations and nonnegative rates remain nonnegative; coverages and capacity fractions
+remain in `[0,1]`; deposition is positive and etch/loss subtract from net film rate.
 
-Time domain MUST support CVD steady/transient and ALD phases; ALD support may be staged but must be planned and tracked.
+## Transport and process state
 
-### MUST-004: Wafer thickness 2D map is a primary output
+### MUST-001 and MUST-002: Concentration location is explicit
 
-The platform MUST produce a 2D wafer thickness map (full wafer) as a standard output; 1D radial approximation is optional.
+Reference-plane concentration `C_ref` and surface concentration `C_s` are different
+quantities. The input records the location and reference-plane metadata. The software
+may use a declared `bulk_as_surface` approximation, but must report that approximation
+and must not describe it as a solved wall transformation.
 
-### MUST-005: Rotation is optional; omega=0 must run
+### MUST-006: Mass-transfer closure is pluggable
 
-The platform MUST run when omega_rad_s=0; rotation affects km models/averaging but must not be required for correctness.
+The active path accepts a supplied surface concentration, a scalar/field mass-transfer
+coefficient, or a documented CFD transport-capacity flux. Stagnant-film, rotating-disk,
+and Bosanquet utilities supply candidate coefficients without changing the reaction
+model.
 
-### MUST-006: Mass-transfer coefficient km model is pluggable and configurable
+### MUST-009: Flux and role diagnostics preserve meaning
 
-Mass-transfer coefficient (k_m) MUST be selected via registry and YAML, supporting at least stagnant-film and rotating-disk options with omega guards.
+Where defined, outputs include `CsA_over_CrefA`, `CsB_over_CrefB`, A/B surface and
+transport fluxes, inhibitor factor `f_I`, and B transport-demand ratio `phi_B`. Missing
+physical inputs produce unavailable diagnostics rather than fabricated zero values.
 
-### MUST-007: Role-based CVD/ALD model paths are the primary kinetics contract
+### MUST-011 and MUST-012: Dynamic state updates are bounded
 
-The primary simulation path MUST use role-based model selection with A/AI/AB/AIB role discovery and validation. `aib_ode` remains the current compatibility implementation, but future CVD/ALD work MUST NOT treat `sim.model.name = aib_ode` as the permanent public contract. Legacy `power_law/lhhw` model selection MUST NOT return as a primary execution route.
+Dynamic AIB and MvK use bounded implicit Euler with bisection and a counted fallback for
+non-bracketed steps. The ALD state uses bounded explicit substeps and reports projection
+and substep diagnostics. The configured solver name must match the executed method.
 
-### MUST-008: Role contract is fixed and validated
+### MUST-013 and MUST-014: Reaction orders and limiting regimes are tested
 
-Role assignment MUST satisfy: A required, I/B each optional single species, A/I/B disjoint, and unused species allowed.
+Configured reaction orders obey the implemented integer and total-order limits. Tests
+cover reaction-limited, transport-limited, zero-co-reactant, state-bound, and time-step
+behavior appropriate to each model.
 
-### MUST-009: Standard AIB diagnostics are produced (Cs ratios, phi_B, f_I)
+## Estimation and evidence
 
-Outputs MUST include `CsA_over_CrefA`, `CsB_over_CrefB` (NaN when B absent), `phi_B`, and `f_I`, plus residual map when measurement is provided.
+### MUST-057: Film-map comparison and role ranking are first-class
 
-### MUST-010: Physical constraints are enforced
+The workflow aligns each film observation once, records alignment distance, fits all
+applicable candidates, and writes role summary, ranking, stability, and per-condition
+scores. Mean bias and centered wafer-pattern error are separate quantities.
 
-Concentrations must be nonnegative; coverage must be in [0,1]; thickness sign convention must be consistent (deposit positive, etch negative).
+### MUST-062: Candidate selection estimates predictive error
 
-### MUST-011: Process-specific bounded state updates are declared and implemented
+Training loss, condition-refit prediction error, ordinary RMSE/MAE/max error, exact
+reduction evidence, role stability, and local parameter sensitivity are reported
+separately. Condition-refit error determines selection when available. Simpler models
+are preferred only when their paired error is statistically indistinguishable. A small
+training loss alone cannot produce `adopt`.
 
-CVD AIB compatibility models MUST use implicit Euler with bisection in `[0,1]`.
-`role_ald_state` MUST declare and use bounded explicit substeps, including state
-projection diagnostics. A config MUST NOT advertise a solver different from the
-one executed by its process model.
+### MUST-063: Multi-condition validation prevents leakage
 
-### MUST-012: Non-bracket fallback behavior is mandatory
+Conditions carry explicit train or holdout status and condition-balanced weights.
+Normalization, fitting, model selection, and reference baselines use training conditions
+only. An external holdout remains untouched until one model and parameter set are fixed.
+Outer condition folds repeat the complete selection procedure to measure selection
+stability.
 
-If implicit bracketing fails, the solver MUST fall back to a clamped explicit update and emit diagnostics (`non_bracketed_count`).
+### SHOULD-033: Transport and reference-location sensitivity are reported
 
-### MUST-013: Order constraints are enforced by validator
+When the inputs support more than one concentration location or transport closure, the
+workflow compares them under the same observation and split. The comparison is a model
+sensitivity analysis, not proof of the correct boundary condition.
 
-The validator MUST enforce integer-order constraints and total-order limit: `p_A + p_* + m_B <= 3`, with `m_B` fixed by role-B presence.
+### MUST-064: An unresolved use produces an experimental requirement
 
-### MUST-014: Regime sanity checks are testable
+The workflow assesses wafer spatial correction, anonymous-species role assignment, and
+elementary kinetic-parameter estimation independently. For each use lacking evidence it
+writes a reusable measurement requirement with the controlled variation, ambiguity
+resolved, workflow insertion point, and readiness criterion. The output must not stop at
+a generic statement that the current data cannot support the use.
 
-The code MUST include tests verifying behavior in reaction-limited and transport-limited limits.
+## Configuration, code, and outputs
 
-### MUST-015: Numerical engine is selectable (NumPy baseline)
+### MUST-019, MUST-020, and MUST-052: Configuration and package boundaries are stable
 
-NumPy CPU baseline MUST exist. JAX is optional but planned; engine selection must be YAML-controlled.
+YAML configuration separates `sim` and `opt`. Simulation code owns physical state and
+flux; optimization code owns fitting and selection; report code presents computed
+artifacts. Components are usable independently through Python and composable in the
+pipeline.
 
-### MUST-016: Time modes are `steady` and `transient` with shared role-input contract
+### MUST-056: Compatibility is checked before execution
 
-CVD steady/transient and ALD transient execution MUST share the same Fluent input and role-assignment contract. CVD and ALD MAY dispatch to different role-based process models.
+Model metadata declare required roles, excluded combinations, supported time modes, and
+governing class. Invalid model/input combinations stop before numerical execution.
 
-### MUST-017: Drivers: support time/space varying external input modification
+### MUST-004, MUST-024, MUST-026, and MUST-061: Outputs are reviewable
 
-The framework MUST support modifying scalar and spatial inputs over time/phases (drivers) and preview them for debugging.
+Configured simulation produces a wafer map, resolved configuration, metrics, plots,
+report, and a machine-readable `output.v1` manifest. The steady equation census produces
+role tables, per-condition predictions, uncertainty diagnostics, target-use data
+requirements, figures, source hashes, and its analysis manifest. Human-readable
+summaries link to, rather than recalculate, these artifacts.
 
-### MUST-018: Initial conditions support scalars and spatially varying fields
+### MUST-027: Numerical health is observable
 
-Initial conditions for state variables MUST support scalar values and spatial maps (for future ALD/state models).
+State bounds, projection counts, non-bracketed implicit steps, applicable residuals, and
+validation violations are recorded. A diagnostic that does not apply is marked
+unavailable rather than successful.
 
-### MUST-019: Simulation config is YAML-managed and split as `sim` / `opt`
+### MUST-023, MUST-028, MUST-051, and MUST-060: Operation stays compact
 
-Configs MUST use YAML composition with `configs/sim/` and `configs/opt/`, and runtime contracts MUST be centered on `sim:` and `opt:` blocks.
+Common run and verification commands remain in `scripts/commands.sh`; Python and YAML
+remain the primary programmatic interface. Generated inputs belong in
+`runs/generated_inputs/`, run outputs in `results/`, and heavy dependencies remain
+optional unless a verified requirement needs them.
 
-### MUST-020: Simulation and optimization/ML code is separated into packages
+## Adoption boundary
 
-Numerical simulation and optimization/ML MUST be separated into packages/modules with clear dependency direction.
-
-### MUST-021: Model registry supports adding process models without refactor
-
-Mass-transfer models and process models MUST be registered by name and discoverable, allowing later CVD/ALD model extensions with minimal file/directory growth.
-
-### MUST-022: Compute resources are user-selected (no forced auto policy)
-
-CPU/GPU selection and engine selection MUST be user-controlled via YAML; auto-selection may exist but must not override explicit user choice.
-
-### MUST-023: Run/test commands are centralized (Single Source of Truth)
-
-All run/verify commands MUST be centralized in scripts/commands.sh; tasks and docs must reference it.
-
-### MUST-024: Output layout has fixed entrypoint results/index.html
-
-Outputs MUST be organized per project with `results/index.html` as the fixed entrypoint; resolved config and summary must be saved per run. Root and project indexes MUST both resolve to latest run reports.
-
-### MUST-025: No directory explosion for DOE; case dimension storage
-
-DOE outputs MUST be stored without per-case deep directories; store case-dimension arrays (npz/zarr/hdf5) and summary tables.
-
-### MUST-026: Standard plots and HTML report are generated
-
-Generate thickness map, radial profile, Cs ratios, `phi_B`/`f_I` maps, and HTML report linking run artifacts from manifest records.
-
-### MUST-027: Numerical health metrics are logged
-
-Implicit solver non-bracket counts, bounded-state checks, state projections, and
-validation violations MUST be recorded and visualizable. Root-solver metrics MUST
-state whether they are applicable; non-applicable ALD root metrics MUST NOT be
-reported as successful zero counts. Solver health maps MUST be driven by runtime
-diagnostics rather than placeholder defaults.
-
-### MUST-061: Output contract must be versioned and machine-readable
-
-Each run MUST emit `outputs/manifest.json` with `schema_version=\"output.v1\"`, required artifact records, and plot metadata; missing required keys MUST fail validation.
-`output_viz.md` MUST be maintained as the implementation-aligned contract reference for output/visualization behavior.
-
-### MUST-062: Optimization objective must emit decomposed score components
-
-`deposim_opt` fitting outputs MUST include decomposed score columns (`loss_data`,
-`penalty_solver`, `penalty_phys`, `penalty_prior`, `penalty_complexity`,
-`score_total`) plus RMSE, MAE, and maximum absolute error in nanometer units.
-Role selection MUST distinguish training loss from refitted prediction error.
-When condition refits are available, they determine selection, with preference
-for simpler candidates within paired error uncertainty. The existing complexity
-penalty sweep remains a training-score diagnostic. Adoption MUST be withheld for
-failed baseline comparisons, unresolved alternative roles, unsupported spatial
-variation, or unassessed/degenerate fitted parameters. Role-stability and local
-parameter-identifiability results MUST be reported separately. Local sensitivity
-MUST use all estimated parameter directions and all training observations.
-
-### MUST-063: Optimization contract must support multi-condition and staged fidelity
-
-Optimization config MUST support weighted multi-condition fitting, explicit
-`train|holdout` condition splits, and staged train-condition-count fidelity
-(`coarse -> fine`) with pruning hooks, while preserving backward compatibility
-for single-condition YAML files. External holdout data MUST not affect parameter
-or role selection. Condition refits MUST reestimate parameters from the remaining
-training conditions; an external holdout MUST never become a refit training row.
-The no-role reference prediction MUST be estimated using training data only.
-
-### MUST-028: runs/ and results/ are gitignored and managed
-
-Automation state goes in runs/ and simulation outputs in results/ (both gitignored by default).
-
-### MUST-046: Autorun must resume from state without restarting
-
-codex_autorun must record completed tasks and resume; it must not rerun completed tasks.
-
-### MUST-047: Codex CLI flag detection prevents read-only dead-ends
-
-Autorun must detect Codex CLI flag support and always invoke write-enabled mode to avoid read-only defaults.
-
-### MUST-048: Preflight handles python vs python3 and src import issues
-
-Preflight must detect python and pip commands, avoid python/python3 mismatch, and set PYTHONPATH fallback if needed.
-
-### MUST-049: MPLCONFIGDIR=/tmp is enforced in scripts
-
-Run scripts must set MPLCONFIGDIR to /tmp by default to prevent headless permission errors.
-
-### MUST-050: Traceability is 100% (requirements -> tasks)
-
-Every requirement must map to at least one task ID in docs/TRACEABILITY.md.
-
-### MUST-051: CLI is not the primary UX; YAML + Python API must work
-
-The system MUST be operable without a heavy CLI UX; configuration via YAML/Hydra and execution via Python API/notebooks is primary. CLI entrypoints may exist for automation but must not be required for core usage.
-
-### MUST-052: Simulation components are independently runnable and composable
-
-Numerical components (domain, solvers, models, report) MUST be runnable independently for single conditions and composable for DOE/optimization workflows without tight coupling.
-
-### MUST-055: `wafer_2d_xy` must be runtime-supported, not schema-only
-
-If `domain.kind=wafer_2d_xy` is selected, the runtime MUST build a valid simulation grid, masks, and radial summary diagnostics using the same public execution path as polar/radial domains.
-
-### MUST-056: Compatibility metadata and validator must gate invalid model combinations
-
-Model registries MUST expose compatibility metadata (`requires`, `excludes`, `time_modes`, `governing_class`), and a validator MUST stop representative invalid configurations before simulation execution.
-
-### MUST-057: Measurement comparison and role ranking must be first-class in role workflows
-
-Workflow MUST include deterministic measurement alignment, nearest-match distance
-diagnostics, KPI generation, role-candidate ranking, and sim-vs-measurement
-reporting for role-based CVD/ALD runs.
-Fitting MUST score original observations once each, independently of simulation
-mesh density. Reports MUST separate mean bias from centered spatial error.
-Known measurement uncertainty MUST scale the fitting residual consistently with
-thickness or mean-rate conversion; ordinary error metrics retain physical units.
-
-### MUST-058: Verification commands for P1/P2 must be executable gates
-
-`scripts/commands.sh verify_task <task_id>` for P1/P2 MUST run concrete checks/tests; placeholder pass-through verification is not allowed.
-
-### MUST-059: ALD transient execution and ALD metrics must be YAML-selectable
-
-ALD transient execution (time-series concentration input) MUST be selectable through YAML and validated with the same role-assignment contract. ALD model-readiness metrics such as GPC plateau, cycle GPC stability, and purge growth fraction MUST be reportable separately from generic runtime success.
-
-### MUST-060: Heavy dependencies remain optional extras unless a gate requires them
-
-JAX/ClearML/Zarr and similar heavy dependencies MUST remain optional extras by default; core simulation and required gates must continue to run without them unless explicitly promoted by ADR.
-
-
-
-## SHOULD
-
-### SHOULD-029: DOE runner supports grid/random sweeps and summary metrics
-
-Provide sweep runners with grid/random sampling, producing summary metrics (uniformity, center-edge, etc.) and comparison plots.
-
-### SHOULD-030: Benchmark helper to evaluate CPU vs JAX CPU vs JAX GPU
-
-Provide a benchmark mode that reports performance; it must not force resource selection.
-
-### SHOULD-031: Additional kinetics models remain optional research tracks
-
-Alternative kinetics (competition/LHHW, ER-like) may exist as optional research tracks but must stay outside the primary AIB runtime path unless promoted by ADR.
-
-### SHOULD-032: Net model supports dep-etch-loss composition
-
-Support multiple channels (deposition, etch, loss) and consistent sign/units for net thickness.
-
-### SHOULD-033: z_ref sensitivity workflow exists as standard diagnostic
-
-Provide a built-in way to assess sensitivity to reference-plane height; optionally via DOE factor.
-
-### SHOULD-034: Structured config (dataclasses) is used for type safety
-
-Use Hydra structured configs (dataclasses) to prevent misconfiguration and to validate YAML inputs.
-
-### SHOULD-035: Output can be stored in Zarr for large DOE
-
-Support Zarr storage as an option for large DOE outputs; keep NPZ as fallback.
-
-### SHOULD-036: Measurement adapter for 2D map alignment exists
-
-Provide alignment/masking tools for measured thickness maps (center shift, rotation, edge exclusion).
-
-### SHOULD-053: Performance targets cover wafer grids (10–few hundred points) and DOE (10–1000 cases)
-
-The design SHOULD explicitly support wafer grids from ~10 to a few hundred points and DOE sweeps from ~10 to ~1000 cases with predictable memory/time behavior and without output directory explosion.
-
-
-
-## COULD
-
-### COULD-037: Data assimilation package (deposim_opt) with robust loss and regularization
-
-Implement parameter estimation against 2D thickness maps with robust losses (Huber) and regularization; stage freedom carefully.
-
-### COULD-038: JAXopt implicit differentiation for root solve
-
-Use implicit differentiation (JAXopt) to differentiate through root solves for assimilation.
-
-### COULD-039: Diffrax adjoint for state ODEs (ALD)
-
-Use adjoint methods (e.g., Diffrax) for differentiable ODE solves in ALD/state models.
-
-### COULD-040: Multi-z reference-plane input support
-
-Support multiple z planes from CFD to reduce z_ref sensitivity; include diagnostics.
-
-### COULD-041: ClearML integration as an optional leaf package
-
-Integrate ClearML for run/param/model tracking without coupling core simulation to ClearML.
-
-### COULD-042: Plugin IO for real CFD/measurement formats (CSV/HDF5/Zarr)
-
-Add IO plugins for CFD fields and measurement maps; keep schema stable and decouple from core solvers.
-
-### COULD-043: JAX engine parity with NumPy including float32/float64 switch
-
-Add JAX backend parity tests and precision controls; allow user selection of float32/float64.
-
-### COULD-044: Axisymmetric reduction workflow with diagnostics to justify 1D
-
-Provide automated diagnostics comparing theta variation to justify 1D radial approximation for speed.
-
-### COULD-045: Advanced fallback for non-monotonic multi-root cases
-
-Implement robust multi-root handling strategies and configurable root selection policy when needed.
-
-### COULD-054: JAX JIT compilation caching is leveraged for repeated sweeps when available
-
-When JAX is used, the system COULD support persistent/explicit JIT caching to reduce repeated compilation overhead in DOE runs, while remaining optional and user-controlled.
+The code is responsible for fair candidate enumeration, numerical correctness,
+leakage-free validation, transparent approximations, and conservative reporting. The
+data are responsible for independent role excitation, required physical metadata,
+measurement uncertainty, mechanism-specific observables, and a declared application
+tolerance. If either side is missing, the result remains `review` or `reject` even when
+the fitted error is small.

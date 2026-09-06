@@ -1,0 +1,4 @@
+interface:
+  display_name: "Steady CVD Role Evaluation"
+  short_description: "Run and interpret steady CVD roles and figures"
+  default_prompt: "Use $evaluate-steady-cvd-roles to run the registered steady CVD equation census, inspect its scientific figures, and state what is predictive, identified, unresolved, or data-limited."

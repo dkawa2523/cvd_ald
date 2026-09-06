@@ -1,0 +1,10 @@
+species_1,species_2,pearson_correlation,condition_count,reaction_input_quantity,reaction_input_location
+adn_2,adn_2,0.9999999999999999,5,concentration,reference_plane
+adn_2,idn_2,0.3075203254460114,5,concentration,reference_plane
+adn_2,n2,0.2991710309112011,5,concentration,reference_plane
+idn_2,adn_2,0.30752032544601143,5,concentration,reference_plane
+idn_2,idn_2,0.9999999999999998,5,concentration,reference_plane
+idn_2,n2,0.9999612802840763,5,concentration,reference_plane
+n2,adn_2,0.2991710309112011,5,concentration,reference_plane
+n2,idn_2,0.9999612802840762,5,concentration,reference_plane
+n2,n2,0.9999999999999998,5,concentration,reference_plane

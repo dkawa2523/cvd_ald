@@ -28,40 +28,37 @@ executed from a dirty worktree.
    CVD compatibility models retain `implicit_euler_bisect`.
 3. Mark CVD root metrics as applicable and ALD root metrics as not applicable.
    ALD reports bounded-state violation, projection, and substep diagnostics.
-4. Keep Huber loss for optimization, and add RMSE, MAE, and maximum absolute
-   error in nanometer units for interpretation.
+4. Select a strict named MSE, Huber, or L1 data loss independently of RMSE, MAE,
+   and maximum absolute error in nanometer units used for interpretation.
 5. Support `split: train|holdout` on conditions. Holdout conditions are excluded
    from parameter selection and evaluated only with the shared fitted parameters.
    Per-condition parameter search is rejected when holdouts are configured, to
    avoid leakage or undefined holdout offsets.
-6. Emit a complexity sensitivity table using penalty multipliers `0`, `1`, and
-   `10`. If the winning assignment changes, the nominal winner is labeled
-   `review`, not automatically adopted.
+6. Keep complexity outside the fitted loss. Predictive error ranks candidates;
+   fewer observable effects and active parameters resolve numerical ties.
 7. Run finite-difference identifiability through the common process dispatcher so
    it works for both CVD and `role_ald_state`. If the best-fit parameters are
    degenerate or strongly correlated, label the candidate `review` rather than
    automatically adopting it.
-8. Record role-stability and parameter-identifiability warnings separately while
-   retaining the former `role_identifiability_warning` field as a compatibility
-   alias for role stability.
+8. Record role-stability and parameter-identifiability warnings as separate
+   fields with no ambiguous compatibility alias.
 9. Record measurement nearest-neighbor distance diagnostics and dirty-worktree
    provenance (`code_dirty`, `code_diff_fingerprint`).
 
 ## Consequences
 
-September 2026 refinement: condition-refit prediction now takes precedence over
-the training complexity sweep for role selection. The sweep remains visible for
-training-only comparisons. Scoring uses original observations, with explicit
+September 2026 refinement: condition-refit prediction now takes precedence for
+role selection. Scoring uses original observations, with explicit
 thickness/mean-rate and uncertainty handling; local identifiability spans all
 training conditions and fitted parameters. See `ARCHITECTURE.md` for module
-responsibilities and `cvd_spatial_case_analysis.md` for the empirical analysis
+responsibilities and `CURRENT_DATA_EVALUATION.md` for the empirical analysis and
 selection rule. This supersedes the penalty sweep as an adoption gate when
 condition-refit evidence is available.
 
 - A/AI and AB/AIB now answer a real model-selection question in ALD.
 - A role assignment must be good on train conditions, interpretable in ordinary
-  error units, explicitly reported on holdout, and not overly sensitive to one
-  complexity penalty or a degenerate parameter combination before adoption.
+  error units, explicitly reported on holdout, stable across condition refits,
+  and free of unresolved parameter degeneracy before adoption.
 - The change adds no detailed chemistry, new state family, heavy dependency, or
   dataset framework.
 - Existing compatibility CVD/ALD models remain executable with their existing

@@ -24,10 +24,9 @@ Recent improvements require:
    - `from_fluent_xy` uses Fluent XY points directly.
    - structured domains (`wafer_2d_xy`, `wafer_2d_polar`, `wafer_1d_radial`) project Fluent point fields onto target grid points with nearest-neighbor mapping.
 
-3. Legacy phase-out is staged:
-   - keep legacy APIs temporarily with explicit deprecation direction,
-   - exclude legacy-only tests from default verify gates,
-   - remove legacy implementations in a dedicated follow-up ADR/task.
+3. Retired APIs, aliases, fixtures, and their tests are removed together after active
+   callers migrate to the role-based pipeline. Public registries contain only executable
+   process models.
 
 4. Refactor guardrail:
    - any logic repeated in 3+ call sites should be extracted into shared utility modules unless there is a documented, intentional divergence.
@@ -36,4 +35,4 @@ Recent improvements require:
 
 - Schema, validator, and runtime must be kept in lockstep for domain options.
 - New output/report wiring changes should happen in shared helpers first.
-- Verification gates must reflect actively supported execution paths.
+- Verification covers the actively supported execution paths.

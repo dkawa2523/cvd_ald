@@ -1,0 +1,10 @@
+equation_family,model_id,role,reaction_role,species,reaction_input_quantity,reaction_input_location,reaction_input_unit,condition_cv_rmse_nm_s
+aib_qss,"cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",A,surface reactant,idn_2,concentration,reference_plane,kmol/m^3,0.0008940841559704123
+aib_qss,"cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",I,inhibitor,n2,concentration,reference_plane,kmol/m^3,0.0008940841559704123
+aib_qss,"cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2",B,co-reactant,adn_2,concentration,reference_plane,kmol/m^3,0.0008940841559704123
+parallel_a_ab_qss,"cvd:parallel_a_ab_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",A,surface reactant,adn_2,concentration,reference_plane,kmol/m^3,0.0009033381894203596
+parallel_a_ab_qss,"cvd:parallel_a_ab_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",I,inhibitor,,concentration,reference_plane,kmol/m^3,0.0009033381894203596
+parallel_a_ab_qss,"cvd:parallel_a_ab_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",B,co-reactant,idn_2,concentration,reference_plane,kmol/m^3,0.0009033381894203596
+langmuir_hinshelwood_qss,"cvd:langmuir_hinshelwood_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",A,surface reactant,adn_2,concentration,reference_plane,kmol/m^3,0.0009259607308688309
+langmuir_hinshelwood_qss,"cvd:langmuir_hinshelwood_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",I,inhibitor,,concentration,reference_plane,kmol/m^3,0.0009259607308688309
+langmuir_hinshelwood_qss,"cvd:langmuir_hinshelwood_qss:AB:full:bulk_as_surface:A=adn_2,B=idn_2",B,co-reactant,idn_2,concentration,reference_plane,kmol/m^3,0.0009259607308688309

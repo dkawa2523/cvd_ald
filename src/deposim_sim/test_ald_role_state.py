@@ -77,6 +77,36 @@ class TestALDRoleState(unittest.TestCase):
             self.assertTrue(np.all(np.asarray(out.fields["theta_A"]) <= 1.0))
             self.assertTrue(np.all(np.asarray(out.fields["theta_I"]) >= 0.0))
             self.assertTrue(np.all(np.asarray(out.fields["theta_free"]) >= 0.0))
+            np.testing.assert_allclose(
+                out.fields["J_A_surface"], out.fields["J_A_transport"], rtol=1.0e-12
+            )
+            np.testing.assert_allclose(
+                out.fields["J_B_surface"], out.fields["J_B_transport"], rtol=1.0e-12
+            )
+            np.testing.assert_allclose(out.fields["tau_A_s"], 1.0e-4)
+            np.testing.assert_allclose(out.fields["tau_B_s"], 2.5e-2)
+
+    def test_surface_flux_closure_includes_site_capacity(self) -> None:
+        with TemporaryDirectory() as tmp:
+            fluent = Path(tmp) / "ald_capacity.npz"
+            self._write_ald_input(fluent)
+            spec = compose_sim_config(
+                "ald_state_min",
+                overrides=[
+                    f"sim.inputs.fluent.file={fluent}",
+                    "sim.model.params.transport.Gamma_s=0.25",
+                ],
+            )
+            out = run_sim_from_spec(spec)
+            np.testing.assert_allclose(
+                out.fields["J_A_surface"], out.fields["J_A_transport"], rtol=1.0e-12
+            )
+            np.testing.assert_allclose(
+                out.fields["J_B_surface"], out.fields["J_B_transport"], rtol=1.0e-12
+            )
+            self.assertEqual(
+                out.diagnostics["units"]["surface_flux"], "kmol/(m^2 s)"
+            )
 
     def test_role_ald_state_has_saturating_dose_trend(self) -> None:
         with TemporaryDirectory() as tmp:

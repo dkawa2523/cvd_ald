@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reaction Role State Simulation"
+  short_description: "Run and inspect CVD or ALD state models"
+  default_prompt: "Use $run-reaction-role-state-models to configure, run, and physically inspect a CVD or ALD reaction-role state model with explicit transport, units, states, fluxes, and figures."

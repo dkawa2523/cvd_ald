@@ -8,18 +8,18 @@ from .validation.compatibility import validate_run_spec
 
 
 class TestCompatibilityValidator(unittest.TestCase):
-    def test_smoke_config_is_valid(self) -> None:
-        spec = compose_sim_config("smoke")
+    def test_cvd_config_is_valid(self) -> None:
+        spec = compose_sim_config("cvd_steady_min")
         validate_run_spec(spec)
 
     def test_domain_kind_validation(self) -> None:
-        spec = compose_sim_config("smoke", overrides=["sim.domain.kind=wafer_2d_xy"])
+        spec = compose_sim_config("cvd_steady_min", overrides=["sim.domain.kind=wafer_2d_xy"])
         validate_run_spec(spec)
 
     def test_invalid_xy_grid_shape_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
             spec = compose_sim_config(
-                "smoke",
+                "cvd_steady_min",
                 overrides=[
                     "sim.domain.kind=wafer_2d_xy",
                     "sim.domain.nx=1",
@@ -29,7 +29,7 @@ class TestCompatibilityValidator(unittest.TestCase):
 
     def test_flux_policy_validation(self) -> None:
         spec = compose_sim_config(
-            "smoke",
+            "cvd_steady_min",
             overrides=[
                 "sim.model.params.transport.km_source=from_cfd_flux_sink",
                 "sim.model.params.transport.from_cfd_flux_sink.flux_negative_policy=invalid",
@@ -40,7 +40,7 @@ class TestCompatibilityValidator(unittest.TestCase):
 
     def test_flux_sink_key_required_for_flux_driven_transport(self) -> None:
         spec = compose_sim_config(
-            "smoke",
+            "cvd_steady_min",
             overrides=[
                 "sim.model.params.transport.km_source=from_cfd_flux_sink",
                 "sim.inputs.fluent.keys.flux_sink=",

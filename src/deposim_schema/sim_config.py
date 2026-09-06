@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-import warnings
 from typing import Any, Mapping, Sequence
 
 from omegaconf import OmegaConf
@@ -13,30 +12,22 @@ SIM_CONFIG_ROOT = Path("configs/sim")
 OPT_CONFIG_ROOT = Path("configs/opt")
 CONFIG_ROOTS: dict[str, Path] = {"sim": SIM_CONFIG_ROOT, "opt": OPT_CONFIG_ROOT}
 
-_SIM_CONFIG_ALIASES: dict[str, str] = {
-    "smoke": "cvd_steady_min",
-    "example_cvd": "cvd_steady_min",
-    "multiz": "cvd_steady_min",
-    "ald_synthetic": "ald_transient_min",
-}
-_OPT_CONFIG_ALIASES: dict[str, str] = {
-    "base": "fit_cvd_steady_min",
-    "stub": "fit_cvd_steady_min",
-}
-
-
 _ALLOWED_TIME_MODES = {"steady", "transient"}
 _ALLOWED_FLUENT_MODES = {"steady", "transient"}
 _ALLOWED_PROCESS = {"cvd", "ald"}
 _ALLOWED_ORDERS_M_ADS = {1, 2}
 _ALLOWED_ORDERS_P_A = {1, 2}
 _ALLOWED_ORDERS_P_STAR = {0, 1, 2}
-_ALLOWED_OPT_ENGINES = {"optuna", "random"}
-_ALLOWED_OPT_SAMPLERS = {"tpe", "cmaes", "random"}
+_ALLOWED_SEARCH_METHODS = {"tpe", "cmaes", "random"}
 _ALLOWED_OPT_PRUNERS = {"none", "median", "hyperband"}
+_ALLOWED_LOSSES = {"mse", "huber", "l1"}
 _ALLOWED_DOMAIN_KINDS = {"from_fluent_xy", "wafer_2d_xy", "wafer_2d_polar", "wafer_1d_radial"}
 _ALLOWED_IO_LOADERS = {"", "npz", "csv"}
-_ALLOWED_PROCESS_MODELS = {"aib_ode", "role_cvd_aib", "role_ald_compat", "role_ald_state"}
+_ALLOWED_PROCESS_MODELS = {
+    "role_cvd_aib",
+    "role_cvd_mvk",
+    "role_ald_state",
+}
 
 
 def _ensure(cond: bool, message: str) -> None:
@@ -169,9 +160,13 @@ class AIBModelParamsSpec:
             "km_B": {"mode": "constant", "value": 0.02},
             "Gamma_s": 1.0,
             "nu_A": 1.0,
+            "nu_B": 1.0,
             "gamma_km_A": 1.0,
             "gamma_km_B": 1.0,
             "from_cfd_flux_sink": {
+                "flux_semantics": "transport_capacity",
+                "boundary_concentration_A": 0.0,
+                "boundary_concentration_B": 0.0,
                 "eps_cref": 1.0e-12,
                 "km_clip": [1.0e-8, 1.0e4],
                 "flux_negative_policy": "error",
@@ -187,7 +182,7 @@ class AIBModelParamsSpec:
 
 @dataclass
 class AIBModelSpec:
-    name: str = "aib_ode"
+    name: str = "role_cvd_aib"
     orders: AIBOrdersSpec = field(default_factory=AIBOrdersSpec)
     params: AIBModelParamsSpec = field(default_factory=AIBModelParamsSpec)
 
@@ -236,6 +231,9 @@ class InitScalarSpec:
 @dataclass
 class InitialConditionsSpec:
     theta_A: InitScalarSpec = field(default_factory=InitScalarSpec)
+    redox_fraction: InitScalarSpec = field(
+        default_factory=lambda: InitScalarSpec(value=1.0)
+    )
     h_nm: InitScalarSpec = field(default_factory=InitScalarSpec)
 
 
@@ -332,29 +330,27 @@ class SimConfigV2:
 
 @dataclass
 class ParameterFitSpec:
-    engine: str = "optuna"
-    sampler: str = "tpe"
-    pruner: str = "none"
-    seed: int = 123
-    n_trials_per_candidate: int = 40
-    storage: dict[str, Any] = field(
+    search: dict[str, Any] = field(
         default_factory=lambda: {
-            "url": "",
-            "study_name": "",
-            "load_if_exists": False,
+            "method": "random",
+            "seed": 123,
+            "min_trials": 20,
+            "max_trials": 120,
+            "trials_per_dimension": 20,
+            "patience": 30,
+            "relative_improvement": 1.0e-4,
+            "repetitions": 1,
+            "pruner": "none",
+            "sampler_options": {},
+            "storage": {"url": "", "study_name": "", "load_if_exists": False},
         }
     )
     fidelity: dict[str, Any] = field(default_factory=lambda: {"levels": [1]})
     objective: dict[str, Any] = field(
         default_factory=lambda: {
-            "loss": "huber",
-            "huber_delta_nm": 10.0,
-            "phi_B_min": 0.05,
+            "loss": {"name": "mse", "standardized": "auto", "delta": 1.345},
             "penalties": {
-                "lambda_complex": 0.0,
-                "lambda_role": 0.0,
                 "lambda_solver": 0.0,
-                "lambda_phys": 0.0,
                 "lambda_prior": 0.0,
             },
             "tie": {"abs_score_epsilon": 1.0e-8},
@@ -376,13 +372,34 @@ class ParameterFitSpec:
     search_space: list[dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        engine = str(self.engine).strip().lower()
-        sampler = str(self.sampler).strip().lower()
-        pruner = str(self.pruner).strip().lower()
-        _ensure(engine in _ALLOWED_OPT_ENGINES, f"opt.parameter_fit.engine must be one of {_ALLOWED_OPT_ENGINES}")
-        _ensure(sampler in _ALLOWED_OPT_SAMPLERS, f"opt.parameter_fit.sampler must be one of {_ALLOWED_OPT_SAMPLERS}")
-        _ensure(pruner in _ALLOWED_OPT_PRUNERS, f"opt.parameter_fit.pruner must be one of {_ALLOWED_OPT_PRUNERS}")
-        _ensure(int(self.n_trials_per_candidate) >= 1, "opt.parameter_fit.n_trials_per_candidate must be >= 1")
+        search = dict(self.search or {})
+        method = str(search.get("method", "")).strip().lower()
+        pruner = str(search.get("pruner", "none")).strip().lower()
+        _ensure(method in _ALLOWED_SEARCH_METHODS, f"opt.parameter_fit.search.method must be one of {_ALLOWED_SEARCH_METHODS}")
+        _ensure(pruner in _ALLOWED_OPT_PRUNERS, f"opt.parameter_fit.search.pruner must be one of {_ALLOWED_OPT_PRUNERS}")
+        _ensure(method != "random" or pruner == "none", "random search does not support pruning")
+        min_trials = int(search.get("min_trials", 20))
+        max_trials = int(search.get("max_trials", 120))
+        _ensure(1 <= min_trials <= max_trials, "opt.parameter_fit.search requires 1 <= min_trials <= max_trials")
+        _ensure(int(search.get("trials_per_dimension", 20)) >= 1, "search.trials_per_dimension must be >= 1")
+        _ensure(int(search.get("patience", 30)) >= 1, "search.patience must be >= 1")
+        _ensure(int(search.get("repetitions", 1)) >= 1, "search.repetitions must be >= 1")
+        relative_improvement = float(search.get("relative_improvement", 1.0e-4))
+        _ensure(relative_improvement >= 0.0, "search.relative_improvement must be nonnegative")
+        loss = self.objective.get("loss", {})
+        _ensure(isinstance(loss, Mapping), "opt.parameter_fit.objective.loss must be a mapping")
+        loss_name = str(loss.get("name", "")).strip().lower()
+        _ensure(loss_name in _ALLOWED_LOSSES, f"loss.name must be one of {_ALLOWED_LOSSES}")
+        standardized = loss.get("standardized", "auto")
+        _ensure(
+            isinstance(standardized, bool)
+            or (isinstance(standardized, str) and standardized.strip().lower() in {"auto", "true", "false"}),
+            "loss.standardized must be auto or a boolean",
+        )
+        if loss_name == "huber":
+            _ensure(float(loss.get("delta", 1.345)) > 0.0, "standardized Huber delta must be positive")
+            if "delta_nm" in loss:
+                _ensure(float(loss["delta_nm"]) > 0.0, "Huber delta_nm must be positive")
 
 
 @dataclass
@@ -410,7 +427,6 @@ class OrderEnumerationSpec:
 class ClassCompareSpec:
     enabled: bool = True
     classes: list[str] = field(default_factory=lambda: ["A", "AI", "AB", "AIB"])
-    complexity_penalty: dict[str, Any] = field(default_factory=lambda: {"lambda_role": 0.1})
 
 
 @dataclass
@@ -554,25 +570,6 @@ def _apply_overrides(config: dict[str, Any], overrides: Sequence[str] | None) ->
     return out
 
 
-def _resolve_config_alias(config_name: str, *, kind: str) -> str:
-    if kind == "sim":
-        aliases = _SIM_CONFIG_ALIASES
-    elif kind == "opt":
-        aliases = _OPT_CONFIG_ALIASES
-    else:
-        return str(config_name)
-
-    name = str(config_name)
-    resolved = aliases.get(name, name)
-    if resolved != name:
-        warnings.warn(
-            f"Config name {name!r} is deprecated; using {resolved!r}.",
-            DeprecationWarning,
-            stacklevel=3,
-        )
-    return resolved
-
-
 def _build_sim_spec(data: Mapping[str, Any], *, project_root: Path) -> SimSpecV2:
     if "sim" in data and isinstance(data["sim"], Mapping):
         payload = dict(data["sim"])
@@ -605,7 +602,7 @@ def _build_sim_spec(data: Mapping[str, Any], *, project_root: Path) -> SimSpecV2
         domain=DomainSpec(**dict(payload.get("domain", {}))),
         roles=RoleSpec(**dict(payload.get("roles", {}))),
         model=AIBModelSpec(
-            name=str(payload.get("model", {}).get("name", "aib_ode")),
+            name=str(payload.get("model", {}).get("name", "role_cvd_aib")),
             orders=AIBOrdersSpec(**dict(payload.get("model", {}).get("orders", {}))),
             params=AIBModelParamsSpec(**dict(payload.get("model", {}).get("params", {}))),
         ),
@@ -616,6 +613,13 @@ def _build_sim_spec(data: Mapping[str, Any], *, project_root: Path) -> SimSpecV2
         ),
         initial_conditions=InitialConditionsSpec(
             theta_A=InitScalarSpec(**dict(payload.get("initial_conditions", {}).get("theta_A", {}))),
+            redox_fraction=InitScalarSpec(
+                **dict(
+                    payload.get("initial_conditions", {}).get(
+                        "redox_fraction", {"value": 1.0}
+                    )
+                )
+            ),
             h_nm=InitScalarSpec(**dict(payload.get("initial_conditions", {}).get("h_nm", {}))),
         ),
         measurement=MeasurementSpec(**dict(payload.get("measurement", {}))),
@@ -649,7 +653,7 @@ def compose_sim_config(
     config_dir: str | Path | None = None,
     project_root: str | Path | None = None,
 ) -> SimSpecV2:
-    selected_name = _resolve_config_alias(config_name, kind="sim")
+    selected_name = str(config_name)
     if config_dir is not None:
         root = Path(config_dir).resolve()
         data = OmegaConf.to_container(OmegaConf.load(root / f"{selected_name}.yaml"), resolve=False)
@@ -670,7 +674,7 @@ def compose_opt_config(
     config_dir: str | Path | None = None,
     project_root: str | Path | None = None,
 ) -> OptConfigV2:
-    selected_name = _resolve_config_alias(config_name, kind="opt")
+    selected_name = str(config_name)
     if config_dir is not None:
         root = Path(config_dir).resolve()
         data = OmegaConf.to_container(OmegaConf.load(root / f"{selected_name}.yaml"), resolve=False)
