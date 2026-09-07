@@ -1,32 +1,18 @@
-# Visualization guide for steady CVD role analysis
+# 定常CVD反応役割解析の可視化ガイド
 
-This guide defines how to read every scientific figure produced by the steady
-multi-condition CVD workflow. The figures shown here are the unedited outputs of the
-five-condition reference run documented in
-[CURRENT_DATA_EVALUATION.md](CURRENT_DATA_EVALUATION.md). They illustrate the reading
-method; conclusions for another dataset must be derived from that run's CSV files and
-provenance rather than copied from this example.
+本書は、複数条件の定常CVDワークフローが生成する科学図の読み方を定義する。掲載図は、[CURRENT_DATA_EVALUATION.md](CURRENT_DATA_EVALUATION.md) に記録した5条件基準解析の無編集出力である。図の読み方を示す例であり、別のデータに対する結論は、その実行のCSVと来歴から導く。ここに示す数値を転用してはならない。
 
-The current example uses reference-plane Fluent concentrations as proxies for local
-surface inputs, with conditions 1, 2, 4, and 5 for identification and condition 3 as a
-fixed no-refit evaluation condition. The selected numerical candidate is the sequential
-A + B equation with `idn_2` assigned to A, `adn_2` to B, and `n2` to I. These are
-anonymous statistical roles, not established chemical identities.
+現在の例では、Fluent参照面濃度を局所表面入力の代用とし、条件1、2、4、5を同定、条件3を再当てはめなしの固定評価に用いた。数値上の選択候補は逐次A + B式で、Aに `idn_2`、Bに `adn_2`、Iに `n2` を割り当てる。これらは匿名の統計的役割であり、確定した化学種名ではない。
 
-## Quantities and reading order
+## 表示量と読む順序
 
-For condition \(q\) and wafer position \(n\), \(v_{qn}\) is measured deposition rate,
-\(\hat v^{\mathrm{chem}}_{qn}\) is the frozen chemical-model prediction, and
-\(\hat v^{\mathrm{corr}}_{qn}\) includes the optional post-selection spatial response.
-The signed residual used in the maps is
+条件 \(q\)、ウェハー位置 \(n\) において、\(v_{qn}\) は測定成膜速度、\(\hat v^{\mathrm{chem}}_{qn}\) は固定した化学モデルの予測、\(\hat v^{\mathrm{corr}}_{qn}\) は任意の選択後空間応答を含む予測である。マップの符号付き残差は
 
 \[
-e_{qn}=\hat v_{qn}-v_{qn}.
+e_{qn}=\hat v_{qn}-v_{qn}
 \]
 
-Coordinates are divided by the wafer radius \(R\): \(x/R\), \(y/R\), and
-\(\rho=r/R=\sqrt{x^2+y^2}/R\). A centered map subtracts its own condition mean. It
-therefore tests within-wafer shape while excluding the condition mean:
+とする。座標はウェハー半径 \(R\) で割り、\(x/R\)、\(y/R\)、\(\rho=r/R=\sqrt{x^2+y^2}/R\) と表示する。中心化マップでは各条件の平均を引くため、条件平均を除いたウェハー内形状を評価する。
 
 \[
 v'_{qn}=v_{qn}-\bar v_q,
@@ -36,711 +22,531 @@ R^2_{\mathrm{centered}}
 {\sum_n(v'_{qn})^2}.
 \]
 
-A negative centered \(R^2\) means that predicting a uniform wafer at the measured mean
-would describe the measured pattern better than the evaluated model. It does not imply
-that the condition mean or absolute rate is predicted poorly.
+面内中心化 \(R^2\) が負なら、評価モデルより、測定平均で一様なウェハーを予測する方が測定分布をよく説明する。条件平均や成膜速度絶対値の予測が悪いことを直接意味しない。
 
-Read the figures in the following order. This prevents a visually attractive wafer map
-from being used to support a chemical claim that the input contrasts or model-selection
-evidence do not resolve.
+次の順序で図を読む。入力変動やモデル選択が識別していない化学的主張を、見栄えのよいウェハーマップだけから導くことを避けられる。
 
-| Evidence stage | Figures | Decision supported |
+| 根拠の段階 | 図 | 支持する判断 |
 | --- | --- | --- |
-| Input contrast | `condition_reaction_input_contrast`, `reaction_input_correlation` | Whether the supplied conditions vary candidate inputs independently enough to separate roles |
-| Numerical search | `optimization_convergence`, `parameter_loss_slices` | Whether the reported solution is numerically plausible and which fitted directions are locally weak |
-| Equation selection | `training_candidate_ranking`, `equation_family_comparison` | Which candidate transfers best across identification conditions and whether that choice is stable |
-| Reaction interpretation | `best_model_role_assignments`, `reaction_pathway_models`, `reaction_model_prediction_agreement`, `role_selection_stability`, `role_input_sensitivity`, `role_importance_and_stability`, `role_response_curves`, `reaction_state_summary`, `selected_surface_state_maps`, `kinetic_parameter_sensitivity` | Which observable roles and effects matter, and which mechanisms or parameters remain indistinguishable |
-| Prediction | `condition_mean_transfer`, `test_measured_vs_predicted`, `test_spatial_maps`, `test_radial_profile`, `model_structure_prediction_spread` | Transfer of absolute rate, wafer pattern, and the consequence of model-selection ambiguity |
-| Spatial residual response | `test_spatial_response`, `spatial_residuals`, `spatial_correction_profile`, `spatial_correction_performance` | Whether a separately fitted, mean-preserving residual shape transfers across conditions |
+| 入力変動 | `condition_reaction_input_contrast`、`reaction_input_correlation` | 反応役割を分離できるほど候補入力を独立に変えたか |
+| 数値探索 | `optimization_convergence`、`parameter_loss_slices` | 報告解が数値的に妥当か、どの当てはめ方向の局所情報が弱いか |
+| 方程式選択 | `training_candidate_ranking`、`equation_family_comparison` | 同定条件間で最もよく転移する候補と、その選択の安定性 |
+| 反応解釈 | `best_model_role_assignments`、`reaction_pathway_models`、`reaction_model_prediction_agreement`、`role_selection_stability`、`role_input_sensitivity`、`role_importance_and_stability`、`role_response_curves`、`reaction_state_summary`、`selected_surface_state_maps`、`kinetic_parameter_sensitivity` | どの観測可能な役割・効果が予測に効き、どの機構・パラメータを区別できないか |
+| 予測 | `condition_mean_transfer`、`test_measured_vs_predicted`、`test_spatial_maps`、`test_radial_profile`、`model_structure_prediction_spread` | 成膜速度絶対値、ウェハー分布、モデル選択の曖昧さが予測へ与える影響 |
+| 空間残差応答 | `test_spatial_response`、`spatial_residuals`、`spatial_correction_profile`、`spatial_correction_performance` | 独立に当てはめた平均保存型の残差形状が条件間で転移するか |
 
-## Input contrast
+## 入力変動
 
-### Condition reaction-input contrast
+### 条件別の反応入力変動
 
-![Condition reaction-input contrast](assets/current_cvd_evaluation/condition_reaction_input_contrast.png)
+![条件別の反応入力変動](assets/current_cvd_evaluation/condition_reaction_input_contrast.png)
 
-This heat map compares the condition mean of every available reaction input with its
-geometric mean over all conditions. For input \(X_j\), the plotted value is
+各反応入力の条件平均を、全条件の幾何平均と比較したヒートマップである。入力 \(X_j\) の表示値は
 
 \[
 c_{qj}=\log_{10}\!\left(
 \frac{\overline{X}_{qj}}
 {\exp\langle\ln\overline{X}_{qj}\rangle_q}
-\right).
+\right)
 \]
 
-| Element | Meaning |
+である。
+
+| 図要素 | 意味 |
 | --- | --- |
-| Horizontal axis | Raw Fluent species available for role assignment |
-| Vertical axis | Process condition identifier; it is categorical, not a continuous operating variable |
-| Colour | Base-10 logarithm of the condition mean divided by the across-condition geometric mean; red is above and blue is below the reference |
-| Zero colour | The condition mean equals the geometric mean |
+| 横軸 | 反応役割へ割当て可能なFluentの生の化学種 |
+| 縦軸 | プロセス条件ID。連続操作変数ではなくカテゴリ |
+| 色 | 条件平均を全条件幾何平均で割った値の常用対数。赤は基準より大きく、青は小さい |
+| 色0 | 条件平均と幾何平均が等しい |
 
-A colour value of +0.30 corresponds to approximately twice the geometric mean, and
-−0.30 to approximately half. Rows with similar colours for two species indicate that
-the experiment changes those inputs together. Distinct column patterns are needed to
-separate their reaction roles.
+色値+0.30は幾何平均の約2倍、−0.30は約半分に相当する。二化学種で行ごとの色が似ていれば、その実験では入力を同時に変えている。反応役割の分離には、列ごとに異なる変動分布が必要である。
 
-In the example, `adn_2` has a distinct high value in condition 5 and a low value in
-condition 4. The `idn_2` and `n2` columns move almost together, especially between
-conditions 2 and 3. This provides useful contrast for `adn_2`, but weak contrast for
-deciding whether an observed effect belongs to `idn_2` or `n2`. The plot shows
-experimental contrast; it cannot establish reaction direction or causality because an
-unplotted operating variable may drive both concentration and growth.
+この例では、`adn_2` は条件5で高く、条件4で低いという固有の変動を持つ。`idn_2` と `n2` は、特に条件2と3の間でほぼ同時に動く。`adn_2` の識別には有用だが、観測効果を `idn_2` と `n2` のどちらへ帰属するかを決める変動は弱い。この図が示すのは実験上のコントラストである。図にない操作変数が濃度と成膜の両方を変え得るため、反応方向や因果を確立しない。
 
-Source: `condition_means.csv`; detailed field ranges are in `condition_quality.csv`.
+出典: `condition_means.csv`。場の詳細範囲は `condition_quality.csv`。
 
-### Correlation of condition-mean reaction inputs
+### 条件平均反応入力の相関
 
-![Correlation of condition-mean reaction inputs](assets/current_cvd_evaluation/reaction_input_correlation.png)
+![条件平均反応入力の相関](assets/current_cvd_evaluation/reaction_input_correlation.png)
 
-This matrix quantifies whether condition means change independently. Each cell is the
-Pearson correlation between the condition-mean inputs of the row and column species.
+条件平均が独立に変化するかを数値化した行列で、各マスは行・列化学種の条件平均間Pearson相関である。
 
-| Element | Meaning |
+| 図要素 | 意味 |
 | --- | --- |
-| Horizontal and vertical axes | Raw Fluent species |
-| Cell value and colour | Pearson correlation across process conditions, from −1 to +1 |
-| Diagonal | Self-correlation and therefore one, when the input varies |
+| 横軸・縦軸 | Fluentの生の化学種 |
+| マスの数値と色 | プロセス条件間のPearson相関。−1～+1 |
+| 対角 | 入力が変動する場合は自己相関1 |
 
-Values close to +1 or −1 indicate that two roles will be difficult to distinguish from
-condition means alone. A value near zero is useful only when the individual species
-also spans a meaningful range; low correlation does not compensate for a nearly
-constant input.
++1または−1に近い二入力は、条件平均だけでは役割を分けにくい。0に近くても、各化学種の範囲が十分でなければ有用とは限らない。
 
-For the five example conditions, the correlation between `idn_2` and `n2` is 0.99996,
-whereas `adn_2` correlates with them at about 0.30. The selected A and I assignments
-therefore lie on an almost collinear input pair. This directly explains why the
-inhibitor identity is unstable and why an independent inhibitor perturbation is
-required. The estimate itself is based on only five condition means and should be read
-as a design diagnostic, not as a population correlation.
+5条件では `idn_2` と `n2` の相関が0.99996、`adn_2` と両者の相関は約0.30である。選択されたAとIは、ほぼ共線な入力対にある。これが阻害種同定の不安定性を直接説明し、独立な阻害候補摂動が必要な理由となる。ただし、5条件平均だけに基づく推定なので、母集団相関ではなく実験計画の診断値として読む。
 
-Source: `condition_mean_input_correlations.csv`.
+出典: `condition_mean_input_correlations.csv`。
 
-## Numerical search and candidate selection
+## 数値探索と候補選択
 
-### Optimization convergence
+### 最適化の収束
 
-![Optimization convergence](assets/current_cvd_evaluation/optimization_convergence.png)
+![最適化の収束](assets/current_cvd_evaluation/optimization_convergence.png)
 
-Each curve records the best fitting error found so far for the best candidate within an
-equation family. Because the value is best-so-far, it can only decrease or remain
-constant.
+各曲線は、方程式系内の最良候補について、その時点までに見つかった最小当てはめ誤差を示す。累積最良値なので、低下するか一定となる。
 
-| Element | Meaning |
+| 図要素 | 意味 |
 | --- | --- |
-| Horizontal axis | Cumulative objective evaluations for that candidate search |
-| Vertical axis | Best training RMSE in nm/s for the current MSE run; logarithmic scale |
-| Colour | Reaction-equation family |
+| 横軸 | その候補探索における累積目的関数評価回数 |
+| 縦軸 | 現在のMSE実行における最良学習RMSE [nm/s]。対数尺度 |
+| 色 | 反応方程式系 |
 
-The useful question is whether substantial improvements continue at the final budget.
-A long terminal plateau supports numerical convergence at the resolution of the chosen
-sampler. Agreement of terminal errors across repeat seeds is still required when the
-sampler is stochastic.
+最終予算付近で実質的改善が続くかを確認する。終盤の長い停滞域は、選択サンプラーの分解能における数値収束を支持する。確率的サンプラーでは、反復乱数種間の終端誤差一致も必要である。
 
-Here the sequential, parallel, and Langmuir–Hinshelwood curves finish near
-8.86–8.94 × 10⁻⁴ nm/s after their major decreases have stopped. This supports the
-adequacy of the deterministic search for the reported minima. It does not show that
-parameters are unique: a flat best-so-far trace can coexist with a broad parameter
-valley, which must be checked with sensitivity and Loss-slice figures.
+逐次、並列、Langmuir–Hinshelwood曲線は、大きな低下が止まった後、8.86～8.94 × 10⁻⁴ nm/s付近で終了する。報告最小値に対して決定論的探索は十分と判断できる。ただし、パラメータの一意性は示さない。平坦な累積最良履歴と広いパラメータ谷は共存するため、感度図と損失関数断面を併用する。
 
-Source: `optimization_history.csv`.
+出典: `optimization_history.csv`。
 
-### Training-condition candidate ranking
+### 学習条件における候補順位
 
-![Training-condition candidate ranking](assets/current_cvd_evaluation/training_candidate_ranking.png)
+![学習条件における候補順位](assets/current_cvd_evaluation/training_candidate_ranking.png)
 
-This plot shows the eight candidates with the lowest leave-one-identification-condition-
-out error. Every candidate has a fixed equation family, exact reduction, and raw-species
-assignment.
+同定条件を一つずつ除いた誤差が小さい8候補を示す。各候補には、方程式系、厳密縮約、生の化学種割当てが固定されている。
 
-| Element | Meaning |
+| 図要素 | 意味 |
 | --- | --- |
-| Horizontal axis | Leave-one-condition-out RMSE in deposition-rate units [nm/s]; smaller is better |
-| Vertical axis | Candidate equation, reduction, and assigned species |
-| Blue bar | Candidate selected by the predefined ranking rule |
-| Grey bar | Other near-leading candidates |
+| 横軸 | 一条件除外RMSE [nm/s]。小さい方がよい |
+| 縦軸 | 候補の方程式、縮約、割当て化学種 |
+| 青棒 | 事前定義した順位規則で選択した候補 |
+| 灰棒 | その他の上位候補 |
 
-The bar spacing matters more than the rank number. Nearly equal bars indicate that the
-available conditions do not strongly separate those candidates. In the example, the
-winner has 8.9408 × 10⁻⁴ nm/s, while the swapped sequential assignment has
-9.0025 × 10⁻⁴ nm/s and the no-inhibitor sequential candidate has
-9.0029 × 10⁻⁴ nm/s. These differences are below one percent of the winning score.
-Consequently, the ranking identifies a numerical winner but provides weak evidence for
-the A/B direction and the inhibitor term.
+順位番号より棒間隔を読む。ほぼ等しい棒は、与えた条件では候補を強く分離できないことを示す。最良候補は8.9408 × 10⁻⁴ nm/s、A/Bを交換した逐次候補は9.0025 × 10⁻⁴ nm/s、阻害なし逐次候補は9.0029 × 10⁻⁴ nm/sで、最良値に対する差はいずれも1%未満である。数値上の最良候補は定まるが、A/Bの向きと阻害項の根拠は弱い。
 
-This is the primary candidate-selection plot. The fixed test condition is absent from
-its score and must remain absent from model selection.
+これは主となる候補選択図である。固定テスト条件を得点に含めず、モデル選択にも使わない。
 
-Source: `role_ranking.csv`.
+出典: `role_ranking.csv`。
 
-### Equation-family comparison
+### 方程式系の比較
 
-![Equation-family comparison](assets/current_cvd_evaluation/equation_family_comparison.png)
+![方程式系の比較](assets/current_cvd_evaluation/equation_family_comparison.png)
 
-The left panel compares the best condition-CV score in each equation family. The right
-panel repeats the complete selection procedure while leaving out each condition in
-turn, then counts the selected family.
+左パネルは各方程式系の最良条件交差検証得点を比較する。右パネルは条件を一つずつ除いて選択手順全体を反復し、選択された系を数える。
 
-| Panel | Horizontal axis | Vertical axis |
+| パネル | 横軸 | 縦軸 |
 | --- | --- | --- |
-| Prediction error | Leave-one-condition-out RMSE [nm/s]; smaller is better | Reaction-equation family |
-| Outer condition refits | Fraction of outer refits selecting that family, between 0 and 1 | Reaction-equation family |
+| 予測誤差 | 一条件除外RMSE [nm/s]。小さい方がよい | 反応方程式系 |
+| 外側条件再当てはめ | その系を選択した外側再当てはめの割合。0～1 | 反応方程式系 |
 
-The sequential family is the numerical winner at 8.9408 × 10⁻⁴ nm/s, followed by the
-parallel family at 9.0334 × 10⁻⁴ nm/s and Langmuir–Hinshelwood at
-9.2596 × 10⁻⁴ nm/s. Across five outer refits, sequential is selected 60%,
-Langmuir–Hinshelwood 40%, and parallel 0%. The small error gaps and 60/40 selection split
-show that the current data support a transferable nonlinear response but do not select
-one microscopic reaction family robustly.
+最良値は逐次系8.9408 × 10⁻⁴ nm/s、次いで並列系9.0334 × 10⁻⁴ nm/s、Langmuir–Hinshelwood 9.2596 × 10⁻⁴ nm/sである。5つの外側再当てはめでは、逐次60%、Langmuir–Hinshelwood 40%、並列0%となる。小さい誤差差と60/40の分裂は、転移する非線形応答は支持するが、一つの微視的反応系を堅牢には選べないことを示す。
 
-The right panel is a stability frequency, not a posterior model probability. It also
-cannot compensate for omitted equation families or insufficient experimental contrast.
+右パネルは安定性頻度であり、事後モデル確率ではない。登録していない方程式系や不足した実験変動を補償もしない。
 
-Source: `analysis_summary.json` and `split_sensitivity.csv`.
+出典: `analysis_summary.json`、`split_sensitivity.csv`。
 
-## Reaction roles and mechanism discrimination
+## 反応役割と機構の識別
 
-### Best species assignment in each reaction model
+### 各反応モデルの最良化学種割当て
 
-![Best species assignment in each reaction model](assets/current_cvd_evaluation/best_model_role_assignments.png)
+![各反応モデルの最良化学種割当て](assets/current_cvd_evaluation/best_model_role_assignments.png)
 
-This matrix states the lowest condition-CV raw-species assignment within each equation
-family.
+各方程式系で条件交差検証誤差が最小となる生の化学種割当てを示す。
 
-| Element | Meaning |
+| 図要素 | 意味 |
 | --- | --- |
-| Horizontal axis | Model role: surface reactant A, inhibitor I, or co-reactant B |
-| Vertical axis | Reaction-equation family |
-| Cell text | Raw Fluent species assigned to that role; an em dash means the role is absent |
-| Cell colour | Repeated visual code for the raw species; colour has no quantitative scale |
+| 横軸 | モデル役割：表面反応物A、阻害種I、共反応物B |
+| 縦軸 | 反応方程式系 |
+| マス内文字 | その役割に割り当てたFluentの生の化学種。横線は役割なし |
+| マス色 | 生の化学種を識別する反復色。定量尺度ではない |
 
-The sequential winner assigns A=`idn_2`, I=`n2`, and B=`adn_2`; the parallel and
-Langmuir–Hinshelwood winners assign A=`adn_2` and B=`idn_2`, with no inhibitor. The
-change of A/B direction across families is evidence that the assignment depends on the
-assumed equation. Chemical naming should therefore wait for independent perturbations
-or surface measurements.
+逐次最良候補はA=`idn_2`、I=`n2`、B=`adn_2`、並列とLangmuir–Hinshelwoodの最良候補はA=`adn_2`、B=`idn_2` で阻害種なしとなる。方程式を変えるとA/Bの向きが変わるため、割当てが仮定方程式に依存している。独立摂動または表面測定までは化学種名を確定しない。
 
-Source: `best_model_role_assignments.csv`.
+出典: `best_model_role_assignments.csv`。
 
-### Reaction steps represented by each fitted equation
+### 当てはめ方程式が表す反応段階
 
-![Reaction steps represented by each fitted equation](assets/current_cvd_evaluation/reaction_pathway_models.png)
+![当てはめ方程式が表す反応段階](assets/current_cvd_evaluation/reaction_pathway_models.png)
 
-This is a compact equation diagram rather than a measured reaction-network graph. It
-shows which state and rate terms occur in each fitted observable equation.
+測定した反応ネットワークではなく、各観測可能式に含まれる状態と速度項を示す簡潔な方程式図である。
 
-| Element | Meaning |
+| 図要素 | 意味 |
 | --- | --- |
-| Panels | Sequential A + B, parallel A and A + B, and Langmuir–Hinshelwood families |
-| Boxes | Model states or site pools; numbers are fitted mean fractions where available |
-| Arrows | Terms in the candidate equation |
-| Arrow labels | Anonymous raw-species assignment or model-conditional pathway fraction |
+| パネル | 逐次A + B、並列AおよびA + B、Langmuir–Hinshelwood |
+| 枠 | モデル状態またはサイトプール。利用可能な場合は当てはめ平均分率を併記 |
+| 矢印 | 候補式に含まれる項 |
+| 矢印表記 | 匿名の生の化学種割当て、またはモデル条件付き経路分率 |
 
-The sequential panel represents adsorption of A, desorption, optional blocking by I,
-and B-assisted conversion. The parallel panel adds an A-only route beside the A+B
-route. The Langmuir–Hinshelwood panel represents A and B coadsorption on a shared site
-pool followed by adsorbate reaction.
+逐次パネルは、Aの吸着、脱離、Iによる任意阻害、B補助変換を表す。並列パネルはA+B経路にA単独経路を加える。Langmuir–Hinshelwood パネルは、一サイトプールへのA・B共吸着と吸着種反応を表す。
 
-The diagram is useful for verifying that the compared equations answer different
-physical questions. An arrow does not establish an elementary reaction, an
-intermediate, stoichiometry, or direction. Those claims require independent transient,
-spectroscopic, isotopic, or product evidence.
+比較式が異なる物理的問いを持つことの確認に使う。矢印だけから素反応、中間体、量論、方向は確立できない。それらには、独立な過渡、分光、同位体、生成物の根拠が必要である。
 
-Source: `best_model_role_assignments.csv` and `reaction_model_states.csv`.
+出典: `best_model_role_assignments.csv`、`reaction_model_states.csv`。
 
-### Held-out predictions from alternative reaction models
+### 代替反応モデルのホールドアウト予測
 
-![Held-out predictions from alternative reaction models](assets/current_cvd_evaluation/reaction_model_prediction_agreement.png)
+![代替反応モデルのホールドアウト予測](assets/current_cvd_evaluation/reaction_model_prediction_agreement.png)
 
-This plot separates agreement with measurement from agreement between models.
+測定との一致と、モデル間の一致を分けて示す。
 
-| Element | Meaning |
+| 図要素 | 意味 |
 | --- | --- |
-| Horizontal axis | Rate difference [nm/s] |
-| Vertical axis | Reaction-equation family |
-| Blue bar | RMSE between that family's frozen prediction and the fixed held-out measurement |
-| Orange bar | RMS difference between that prediction and the selected sequential model |
+| 横軸 | 速度差 [nm/s] |
+| 縦軸 | 反応方程式系 |
+| 青棒 | 各系の固定予測と固定ホールドアウト測定のRMSE |
+| 橙棒 | 各予測と選択した逐次モデル予測のRMS差 |
 
-Langmuir–Hinshelwood has a held-out RMSE of 9.59 × 10⁻⁴ nm/s and differs from the
-selected prediction by 4.35 × 10⁻⁴ nm/s, 0.415 times the selected model's held-out
-RMSE. The parallel family has an RMSE of 1.85 × 10⁻³ nm/s and differs from the selected
-prediction by 1.16 × 10⁻³ nm/s, 1.10 times that RMSE. The first comparison indicates
-practical prediction agreement despite different state interpretations; the second
-shows a more consequential model choice.
+Langmuir–HinshelwoodのホールドアウトRMSEは9.59 × 10⁻⁴ nm/s、選択予測との差は4.35 × 10⁻⁴ nm/sで、選択モデルのホールドアウトRMSEの0.415倍である。並列系はRMSE 1.85 × 10⁻³ nm/s、選択予測との差1.16 × 10⁻³ nm/s、同RMSEの1.10倍である。前者は状態解釈が違っても実用予測が近く、後者はモデル選択の影響がより大きい。
 
-A lower blue bar for an alternative on the fixed audit condition does not permit
-post-hoc reselection. Orange bars quantify prediction consequence and are not
-probabilities that a mechanism is correct.
+固定監査条件で代替候補の青棒が短くても、事後的に再選択してはならない。橙棒は予測への影響であり、機構が正しい確率ではない。
 
-Source: `reaction_model_predictions.csv`.
+出典: `reaction_model_predictions.csv`。
 
-### Species assignment across held-out conditions
+### ホールドアウト条件を変えた化学種割当て
 
-![Species assignment across held-out conditions](assets/current_cvd_evaluation/role_selection_stability.png)
+![ホールドアウト条件を変えた化学種割当て](assets/current_cvd_evaluation/role_selection_stability.png)
 
-The complete family-and-role selection is repeated with each condition held out. This
-matrix counts which species occupies each reaction role in those outer refits.
+各条件を外側で一つずつ除き、方程式系と役割の選択全体を反復する。この行列は各反応役割を占める化学種の頻度を示す。
 
-| Element | Meaning |
+| 図要素 | 意味 |
 | --- | --- |
-| Horizontal axis | Assigned raw species, including `none` when a role is absent |
-| Vertical axis | Reaction role |
-| Cell colour and text | Fraction of outer condition refits with that assignment |
+| 横軸 | 割当てた生の化学種。役割を持たない場合の `none` を含む |
+| 縦軸 | 反応役割 |
+| マス色と数値 | その割当てとなった外側条件再当てはめの割合 |
 
-In the example, A is `adn_2` in 60% and `idn_2` in 40% of refits; B shows the reverse.
-The inhibitor is absent in 60% and assigned to `n2` in 40%. No selected role reaches a
-high stability fraction. This confirms that A/B direction and inhibitor inclusion are
-condition-dependent under the current design.
+Aは `adn_2` が60%、`idn_2` が40%、Bはその逆である。阻害種は60%で存在せず、40%で `n2` となる。高い安定頻度に達する選択役割はない。現在の実験設計では、A/Bの向きと阻害項の有無が条件依存である。
 
-The frequency combines changes in family and assignment. It should be read with the
-importance plot: an unstable role may be harmless for prediction or may be an
-influential unresolved ambiguity.
+頻度には、方程式系と割当ての両方の変化を含む。重要度図と併読し、不安定性が予測上軽微か、影響の大きい未解決問題かを判断する。
 
-Source: `split_sensitivity.csv` and `role_stability.csv`.
+出典: `split_sensitivity.csv`、`role_stability.csv`。
 
-### Sensitivity to observed reaction-input variation
+### 観測された反応入力変動に対する感度
 
-![Sensitivity to observed reaction-input variation](assets/current_cvd_evaluation/role_input_sensitivity.png)
+![観測された反応入力変動に対する感度](assets/current_cvd_evaluation/role_input_sensitivity.png)
 
-For each selected role, the workflow compares the prediction at every supplied local
-input vector with a counterfactual in which only that species is replaced by its fitted
-reference value. The other species retain their observed local values. The bar is the
-condition-balanced RMS of that prediction difference.
+選択した各役割について、全局所入力を使う予測と、その化学種だけを当てはめ基準値へ置き換えた反実仮想予測を比較する。他化学種の局所値は保持する。棒は予測差の条件均衡RMSである。
 
-| Element | Meaning |
+| 図要素 | 意味 |
 | --- | --- |
-| Horizontal axis | RMS change in predicted deposition rate [nm/s] |
-| Vertical axis | Selected model role and assigned raw species |
-| Bar length | Magnitude of the model-conditional prediction change when that input alone is reset to its reference |
+| 横軸 | 予測成膜速度のRMS変化 [nm/s] |
+| 縦軸 | 選択モデルの役割と割当てた生の化学種 |
+| 棒長 | その入力だけを基準へ戻したときの、モデル条件付き予測変化の大きさ |
 
-The selected model gives 5.26 × 10⁻² nm/s for B=`adn_2`, 8.71 × 10⁻³ nm/s for
-A=`idn_2`, and 4.46 × 10⁻⁶ nm/s for I=`n2`. Thus B and A have substantial predictive
-effects over the supplied range, while the fitted inhibitor is effectively inactive.
+選択モデルでは、B=`adn_2` が5.26 × 10⁻² nm/s、A=`idn_2` が8.71 × 10⁻³ nm/s、I=`n2` が4.46 × 10⁻⁶ nm/sである。与えた範囲ではBとAの予測効果が大きく、当てはめ阻害項はほぼ不活性である。
 
-The bars are not additive reaction contributions and need not sum to the predicted
-rate. They also mix fitted nonlinearity with the amount of observed input variation;
-a small bar may reflect either weak kinetics or insufficient perturbation.
+棒は加算可能な反応寄与ではなく、合計して予測速度や1にはならない。当てはめ非線形性と観測入力の変動量をともに含むため、小さい棒は弱い速度論または摂動不足のどちらでも生じる。
 
-Source: `role_input_sensitivity.csv`.
+出典: `role_input_sensitivity.csv`。
 
-### Prediction importance and assignment stability
+### 予測重要度と割当て安定性
 
-![Prediction importance and assignment stability](assets/current_cvd_evaluation/role_importance_and_stability.png)
+![予測重要度と割当て安定性](assets/current_cvd_evaluation/role_importance_and_stability.png)
 
-This plot combines how often a selected assignment survives condition changes with the
-consequence of varying that input.
+選択した割当てが条件変更に耐える頻度と、その入力を変えた影響を組み合わせる。
 
-| Element | Meaning |
+| 図要素 | 意味 |
 | --- | --- |
-| Horizontal axis | Selection frequency across outer held-out-condition refits |
-| Vertical axis | RMS prediction change divided by the selected model's held-out RMSE; logarithmic scale |
-| Dashed horizontal line | Prediction change equal to held-out RMSE |
-| Point label | Selected role and raw species |
+| 横軸 | 外側ホールドアウト条件再当てはめにおける選択頻度 |
+| 縦軸 | 予測変化RMS / 選択モデルのホールドアウトRMSE。対数尺度 |
+| 横破線 | 予測変化とホールドアウトRMSEが等しい位置 |
+| 点表記 | 選択役割と生の化学種 |
 
-Points above one are influential at a scale larger than the observed holdout error.
-Points below one have less predictive consequence over the tested range. Stable and
-influential roles would appear toward the upper right; influential but unstable roles
-appear in the upper left.
+1より上は、観測されたホールドアウト誤差より大きな尺度で予測に影響する。1より下は、試験範囲での予測影響が小さい。安定かつ影響の大きい役割は右上、影響が大きいが不安定な役割は左上に現れる。
 
-All three selected assignments have frequency 0.40 in this example. A=`idn_2` and
-B=`adn_2` have ratios 8.31 and 50.2, respectively: they matter for prediction but their
-assignment is unresolved. I=`n2` has a ratio of 0.00425: its instability is harmless
-for the present prediction range and it should not be given a chemical interpretation.
-This distinction answers whether ambiguity is inconsequential or scientifically
-important.
+三つの選択割当てはいずれも頻度0.40である。A=`idn_2` とB=`adn_2` の比は8.31と50.2で、予測に重要だが割当ては未解決である。I=`n2` の比は0.00425で、現在の予測範囲では不安定性の影響が小さく、化学的解釈を与えない。この表示により、曖昧さが実用上軽微か、科学的に重要かを区別する。
 
-Source: `role_importance_and_stability.csv`.
+出典: `role_importance_and_stability.csv`。
 
-### Role response curves
+### 役割応答曲線
 
-![Role response curves](assets/current_cvd_evaluation/role_response_curves.png)
+![役割応答曲線](assets/current_cvd_evaluation/role_response_curves.png)
 
-Each panel varies one selected raw-species input through its observed range with all
-other inputs held at their reference values.
+各パネルで、一つの選択化学種入力を観測範囲内で変え、他入力を基準値に固定する。
 
-| Element | Meaning |
+| 図要素 | 意味 |
 | --- | --- |
-| Horizontal axis | Selected species concentration [kmol/m³] in the current run; a flux run would use kmol/(m² s) |
-| Vertical axis | Predicted deposition rate [nm/s] |
-| Panel | Model role being perturbed |
-| Dashed vertical line | Reference input at which the other one-at-a-time comparisons are anchored |
+| 横軸 | 選択化学種濃度 [kmol/m³]。フラックス実行ではkmol/(m² s) |
+| 縦軸 | 予測成膜速度 [nm/s] |
+| パネル | 摂動するモデル役割 |
+| 縦破線 | 他の一変数比較の基準となる入力値 |
 
-Across the example range, the A curve rises from 0.0826 to 0.112 nm/s, the B curve from
-0.0695 to 0.208 nm/s, and the I curve changes by only about 1.2 × 10⁻⁵ nm/s. The curve
-shape makes saturation, inhibition, or near-linearity visible without assigning a
-chemical name to a raw species.
+この例の範囲では、A曲線が0.0826から0.112 nm/s、B曲線が0.0695から0.208 nm/sへ上昇し、I曲線は約1.2 × 10⁻⁵ nm/sしか変わらない。生の化学種に化学名を与えず、飽和、阻害、ほぼ線形な形状を観察できる。
 
-These are conditional model response curves rather than partial dependence estimated
-from independent data. They should not be extended beyond the plotted range, and the
-effect of changing multiple correlated species simultaneously cannot be obtained by
-adding the curves.
+独立データから求めた部分依存ではなく、条件付きモデル応答である。表示範囲外へ延長せず、相関した複数化学種を同時に変えた効果を曲線の加算で求めない。
 
-Source: `role_response_curves.csv`.
+出典: `role_response_curves.csv`。
 
-### Mean surface-state and reaction-path fractions
+### 平均表面状態と反応経路分率
 
-![Mean surface-state and reaction-path fractions](assets/current_cvd_evaluation/reaction_state_summary.png)
+![平均表面状態と反応経路分率](assets/current_cvd_evaluation/reaction_state_summary.png)
 
-This figure summarizes the internal states of the selected equation over the fixed
-held-out wafer.
+固定ホールドアウトウェハー上で、選択式の内部状態を要約する。
 
-| Element | Meaning |
+| 図要素 | 意味 |
 | --- | --- |
-| Horizontal axis | Dimensionless fraction from 0 to 1 |
-| Vertical axis | Site-pool component or reaction path represented by the selected equation |
-| Point | Mean over wafer positions |
-| Horizontal error bar | Minimum-to-maximum range over wafer positions; it is not a confidence interval |
+| 横軸 | 0～1の無次元分率 |
+| 縦軸 | 選択式が表すサイトプール成分または反応経路 |
+| 点 | ウェハー位置平均 |
+| 横誤差棒 | ウェハー位置の最小～最大。信頼区間ではない |
 
-The sequential example gives mean fractions 0.557 vacant sites, 0.443 adsorbed A, and
-3.46 × 10⁻⁴ sites blocked by I. Its only represented production path is A+B, so that
-path fraction is exactly one by construction. The nearly zero blocked-site fraction is
-consistent with the negligible inhibitor sensitivity.
+逐次モデルでは、空サイト0.557、吸着A 0.443、Iによる阻害サイト3.46 × 10⁻⁴が平均値である。表現された生成経路はA+Bだけなので、経路分率は定義上1となる。ほぼゼロの阻害サイト分率は、無視できる阻害感度と整合する。
 
-The fractions are computed states conditional on the selected equation and fitted
-parameters. They are not surface-coverage measurements and cannot validate the assumed
-adsorbate or site balance by themselves.
+これらは選択式と当てはめパラメータに条件づけた計算状態であり、表面被覆率測定ではない。これだけで仮定した吸着種やサイト収支を検証できない。
 
-Source: `reaction_state_summary.csv` and `reaction_model_states.csv`.
+出典: `reaction_state_summary.csv`、`reaction_model_states.csv`。
 
-### Selected-equation surface-state maps
+### 選択式の表面状態マップ
 
-![Selected-equation surface-state maps](assets/current_cvd_evaluation/selected_surface_state_maps.png)
+![選択式の表面状態マップ](assets/current_cvd_evaluation/selected_surface_state_maps.png)
 
-These maps show where the selected equation places its internal state variations on the
-held-out wafer.
+選択式の内部状態変動を、ホールドアウトウェハー上の位置として示す。
 
-| Element | Meaning |
+| 図要素 | 意味 |
 | --- | --- |
-| Horizontal and vertical axes | Normalized wafer coordinates \(x/R\) and \(y/R\) |
-| First colour scale | Adsorbed-state fraction \(\theta_A\), fixed to 0–1 |
-| Second colour scale | Blocked-site fraction \(\theta_I\), fixed to 0–1 |
-| Third colour scale | Dimensionless equation response before multiplication by the fitted rate scale |
+| 横軸・縦軸 | 正規化ウェハー座標 \(x/R\)、\(y/R\) |
+| 第1色尺度 | 吸着状態分率 \(\theta_A\)。0～1固定 |
+| 第2色尺度 | 阻害サイト分率 \(\theta_I\)。0～1固定 |
+| 第3色尺度 | 当てはめ速度尺度を掛ける前の無次元方程式応答 |
 
-For condition 3, \(\theta_A\) ranges from 0.435 to 0.464, \(\theta_I\) from
-3.33 × 10⁻⁴ to 3.51 × 10⁻⁴, and the normalized response from 0.0566 to 0.0573.
-The small blocked fraction and narrow normalized-response range show why the chemical
-model predicts only a compressed wafer variation.
+条件3では、\(\theta_A\) は0.435～0.464、\(\theta_I\) は3.33 × 10⁻⁴～3.51 × 10⁻⁴、正規化応答は0.0566～0.0573である。小さい阻害分率と狭い応答範囲が、化学モデルのウェハー変動が圧縮される理由を示す。
 
-The spatial pattern is inherited from the selected Fluent input fields through the
-equation. It is not direct evidence of adsorbate coverage. Comparison with spectroscopy
-or another state-sensitive measurement is required before treating these maps as
-physical surface states.
+空間分布は、選択したFluent入力場を方程式へ通した結果であり、吸着被覆率の直接根拠ではない。物理的表面状態として扱うには、分光その他の状態感度測定との比較が必要である。
 
-Source: `test_predictions.csv`.
+出典: `test_predictions.csv`。
 
-### Local kinetic-parameter sensitivity
+### 運動論パラメータの局所感度
 
-![Local kinetic-parameter sensitivity](assets/current_cvd_evaluation/kinetic_parameter_sensitivity.png)
+![運動論パラメータの局所感度](assets/current_cvd_evaluation/kinetic_parameter_sensitivity.png)
 
-The left panel reports the RMS magnitude of each local logarithmic rate derivative,
+左パネルは局所対数速度微分のRMS
 
 \[
 G_j=\sqrt{\frac{1}{N}\sum_i
-\left(\frac{\partial\ln\hat v_i}{\partial\ln p_j}\right)^2}.
+\left(\frac{\partial\ln\hat v_i}{\partial\ln p_j}\right)^2}
 \]
 
-The right panel correlates the derivative vectors across wafer points.
+を示す。右パネルは、その微分ベクトルをウェハー点間で相関させる。
 
-| Panel | Horizontal axis | Vertical axis or rows | Colour |
+| パネル | 横軸 | 縦軸または行 | 色 |
 | --- | --- | --- | --- |
-| Local sensitivity | RMS \(|\partial\ln(rate)/\partial\ln(parameter)|\) | Fitted dimensionless parameter | Bar length |
-| Sensitivity correlation | Parameter | Parameter | Pearson correlation of centered local sensitivity vectors, −1 to +1 |
+| 局所感度 | RMS \(|\partial\ln(rate)/\partial\ln(parameter)|\) | 当てはめ無次元パラメータ | 棒長 |
+| 感度相関 | パラメータ | パラメータ | 中心化した局所感度ベクトルのPearson相関。−1～+1 |
 
-The conversion ratio is most active in the example (0.953), followed by the desorption
-ratio (0.567); the inhibition ratio is nearly inactive (3.01 × 10⁻⁴). The desorption
-and inhibition sensitivity patterns are strongly anticorrelated (−0.912), indicating a
-weakly separable local direction even though their magnitudes differ greatly.
+変換比の感度が0.953で最大、次いで脱離比0.567、阻害比は3.01 × 10⁻⁴でほぼ不活性である。脱離・阻害感度分布は強い負相関−0.912を示し、大きさは大きく異なるが局所的に分離しにくい方向を含む。
 
-This is a local derivative diagnosis around one fitted solution. It does not give global
-parameter uniqueness, confidence intervals, or elementary rate constants. The fitted
-parameters are normalized observable groups under the current concentration proxy.
+一つの当てはめ解まわりの局所微分診断である。大域的なパラメータ一意性、信頼区間、素反応定数は与えない。当てはめ値は、現在の濃度代用入力の下で正規化した観測可能群である。
 
-Source: `parameter_sensitivity_correlations.csv`.
+出典: `parameter_sensitivity_correlations.csv`。
 
-### Loss when one kinetic parameter is varied
+### 一つの運動論パラメータを変えた損失関数
 
-![Loss when one kinetic parameter is varied](assets/current_cvd_evaluation/parameter_loss_slices.png)
+![一つの運動論パラメータを変えたLoss](assets/current_cvd_evaluation/parameter_loss_slices.png)
 
-One shape parameter is multiplied by a factor while the other shape parameters remain
-fixed and the separable nonnegative rate scale is reprofiled.
+一つの形状パラメータを倍率で変え、他の形状パラメータを固定したまま、分離可能な非負速度尺度を再プロファイルする。
 
-| Element | Meaning |
+| 図要素 | 意味 |
 | --- | --- |
-| Horizontal axis | Parameter value divided by its fitted value, from 10⁻³ to 10³; logarithmic scale |
-| Vertical axis | Training RMSE [nm/s] after reprofiling the rate scale; logarithmic scale |
-| Dashed vertical line | Fitted value, ratio one |
-| Curve | Parameter named in the legend |
+| 横軸 | パラメータ値 / 当てはめ値。10⁻³～10³、対数尺度 |
+| 縦軸 | 速度尺度の再プロファイル後の学習RMSE [nm/s]。対数尺度 |
+| 縦破線 | 当てはめ値、比1 |
+| 曲線 | 凡例に示すパラメータ |
 
-The conversion-ratio curve rises strongly away from the fit, the desorption-ratio curve
-has a broader valley, and the inhibition-ratio curve remains nearly flat over much of
-the range. Across the plotted factors, the minimum is about 8.86 × 10⁻⁴ nm/s; the
-inhibition slice reaches only 1.60 × 10⁻³ nm/s at its largest deviation, whereas the
-conversion slice reaches 4.91 × 10⁻² nm/s. This supports the conclusion that inhibitor
-strength is weakly determined by these observations.
+変換比曲線は当てはめ値から離れると強く上昇し、脱離比は広い谷を持ち、阻害比は広い範囲でほぼ平坦である。表示倍率内の最小値は約8.86 × 10⁻⁴ nm/sで、最大偏差時に阻害断面は1.60 × 10⁻³ nm/sまでしか増えない一方、変換断面は4.91 × 10⁻² nm/sまで増える。阻害強度は現在の観測では弱くしか決まらない。
 
-The figure is a partial Loss slice, not a profile likelihood: the other shape parameters
-are not reoptimized and no measurement-noise distribution is assumed.
+他の形状パラメータを再最適化せず、測定ノイズ分布も仮定していないため、プロファイル尤度ではなく部分損失関数断面である。
 
-Source: `parameter_loss_slices.csv`.
+出典: `parameter_loss_slices.csv`。
 
-## Predictive performance
+## 予測性能
 
-### Condition-mean transfer
+### 条件平均の転移
 
-![Condition-mean transfer](assets/current_cvd_evaluation/condition_mean_transfer.png)
+![条件平均の転移](assets/current_cvd_evaluation/condition_mean_transfer.png)
 
-This figure tests transfer of the operating-condition rate scale. Each condition has a
-measured and predicted mean at the same total reaction-input mean.
+操作条件ごとの速度尺度の転移を試験する。同じ全反応入力平均に対し、測定・予測条件平均を示す。
 
-| Element | Meaning |
+| 図要素 | 意味 |
 | --- | --- |
-| Horizontal axis | Mean total reaction input; concentration [kmol/m³] in the current run |
-| Vertical axis | Mean deposition rate [nm/s] |
-| Circle | Measured condition mean |
-| Cross | Frozen model prediction mean |
-| Vertical segment | Signed mean prediction error for that condition |
-| Blue/orange | Identification/fixed held-out condition |
+| 横軸 | 全反応入力の平均。現在の実行では濃度 [kmol/m³] |
+| 縦軸 | 平均成膜速度 [nm/s] |
+| 丸 | 測定条件平均 |
+| × | 固定モデルの予測平均 |
+| 縦線 | その条件の符号付き平均予測誤差 |
+| 青・橙 | 同定条件・固定ホールドアウト条件 |
 
-For the fixed condition 3, the measured and predicted means are 0.143915 and
-0.144346 nm/s, a +4.31 × 10⁻⁴ nm/s bias. Conditions 1, 4, and 5 have almost the same
-total concentration but markedly different rates, showing why a total-concentration
-baseline alone cannot represent the data and why composition-sensitive equations are
-needed.
+固定条件3の測定平均は0.143915 nm/s、予測平均は0.144346 nm/sで、偏りは+4.31 × 10⁻⁴ nm/sである。条件1、4、5は全濃度がほぼ同じでも速度が大きく異なる。全濃度基準だけでは説明できず、組成感度を持つ方程式が必要な理由を示す。
 
-This plot tests condition means, not wafer shape. Close circle/cross agreement can occur
-while centered \(R^2\) is negative, as it does here.
+条件平均を試験する図であり、ウェハー形状は評価しない。丸と×が近くても面内中心化 \(R^2\) は負になり得て、この例が該当する。
 
-Source: `condition_means.csv`.
+出典: `condition_means.csv`。
 
-### Measured versus no-refit prediction
+### 測定値と再当てはめなし予測
 
-![Measured versus no-refit prediction](assets/current_cvd_evaluation/test_measured_vs_predicted.png)
+![測定値と再当てはめなし予測](assets/current_cvd_evaluation/test_measured_vs_predicted.png)
 
-Every point is one wafer location in the fixed held-out condition. The model and
-parameters were frozen before these predictions were made.
+各点は固定ホールドアウト条件の一ウェハー位置である。予測前にモデルとパラメータを固定した。
 
-| Element | Meaning |
+| 図要素 | 意味 |
 | --- | --- |
-| Horizontal axis | Measured deposition rate [nm/s] |
-| Vertical axis | Held-out chemical-model prediction [nm/s] |
-| Dashed line | Identity, \(\hat v=v\) |
-| Distance from line | Signed prediction error at one wafer location |
+| 横軸 | 測定成膜速度 [nm/s] |
+| 縦軸 | ホールドアウト化学モデル予測 [nm/s] |
+| 破線 | 一致線 \(\hat v=v\) |
+| 線からの距離 | 一ウェハー位置の符号付き予測誤差 |
 
-Measured rates span 0.14056–0.14580 nm/s, while predictions span only
-0.14302–0.14483 nm/s. The compressed vertical spread and nearly horizontal bands show
-that the condition mean is reproduced more accurately than the wafer variation. This is
-consistent with the fixed-holdout RMSE of 1.05 × 10⁻³ nm/s, range-capture fraction
-0.346, and centered \(R^2=-0.0148\).
+測定速度は0.14056～0.14580 nm/s、予測は0.14302～0.14483 nm/sである。縦方向範囲の圧縮とほぼ水平な帯は、ウェハー変動より条件平均を正確に再現していることを示す。固定ホールドアウトRMSE 1.05 × 10⁻³ nm/s、範囲捕捉率0.346、面内中心化 \(R^2=-0.0148\) と整合する。
 
-The plot reveals calibration, bias, and range compression. It does not show where an
-error lies on the wafer; the spatial map is needed for that judgment.
+較正、偏り、範囲圧縮を確認できるが、誤差のウェハー位置は分からない。位置判断には空間マップを用いる。
 
-Source: `test_predictions.csv` and `analysis_summary.json`.
+出典: `test_predictions.csv`、`analysis_summary.json`。
 
-### Measured, predicted, and residual wafer maps
+### 測定・予測・残差ウェハーマップ
 
-![Measured, predicted, and residual wafer maps](assets/current_cvd_evaluation/test_spatial_maps.png)
+![測定・予測・残差ウェハーマップ](assets/current_cvd_evaluation/test_spatial_maps.png)
 
-The first two panels use one common deposition-rate colour scale. The residual panel
-uses a diverging scale symmetric about zero.
+最初の二パネルは共通の成膜速度色尺度を使い、残差パネルは0を中心とする発散色尺度を使う。
 
-| Panel | Colour quantity | Interpretation |
+| パネル | 色で表す量 | 解釈 |
 | --- | --- | --- |
-| Measured rate | \(v\) [nm/s] | Observed wafer distribution |
-| Held-out prediction | \(\hat v^{\mathrm{chem}}\) [nm/s] | Distribution generated from local Fluent inputs and the frozen chemical equation |
-| Residual | \(\hat v^{\mathrm{chem}}-v\) [nm/s] | Red is overprediction; blue is underprediction |
+| 測定速度 | \(v\) [nm/s] | 観測ウェハー分布 |
+| ホールドアウト予測 | \(\hat v^{\mathrm{chem}}\) [nm/s] | 局所Fluent入力と固定化学式から生じる分布 |
+| 残差 | \(\hat v^{\mathrm{chem}}-v\) [nm/s] | 赤は過大、青は過小予測 |
 
-All panels use \(x/R\) and \(y/R\) as axes and equal aspect ratio. The shared scale
-prevents a narrow prediction range from appearing as strong as the measured variation.
+全パネルの軸は \(x/R\)、\(y/R\) で、縦横比を等しくする。共通尺度により、狭い予測範囲が測定変動と同じ強さに見えることを防ぐ。
 
-In condition 3, the chemical prediction misses the low center and the stronger
-mid-radius measured band. The residual alternates systematically with radius instead of
-forming spatially unstructured noise. This pattern motivates a separate radial residual
-test, but it does not identify temperature, diffusion, or another physical cause.
+条件3では、化学予測が低い中心部と、測定で高い中間半径帯を捉えない。残差は空間的な無構造ノイズではなく、半径に沿って系統的に符号が変わる。この分布が独立した半径残差試験の動機になるが、温度、拡散、その他の物理原因は同定しない。
 
-Source: `test_predictions.csv`.
+出典: `test_predictions.csv`。
 
-### Radial mean profile
+### 半径平均プロファイル
 
-![Radial mean profile](assets/current_cvd_evaluation/test_radial_profile.png)
+![半径平均profile](assets/current_cvd_evaluation/test_radial_profile.png)
 
-Wafer points are grouped into radial shells to expose the radial component of the
-pattern.
+ウェハー点を半径シェルへ分け、分布の半径成分を示す。
 
-| Element | Meaning |
+| 図要素 | 意味 |
 | --- | --- |
-| Horizontal axis | Normalized radius \(r/R\), from center 0 to edge 1 |
-| Vertical axis | Shell-mean deposition rate [nm/s] |
-| Filled circles | Measured shell means |
-| Open squares | Chemical-model shell means |
-| Error bars | Standard deviation of wafer points inside each shell; not measurement uncertainty or a confidence interval |
+| 横軸 | 正規化半径 \(r/R\)。中心0、エッジ 1 |
+| 縦軸 | シェル平均成膜速度 [nm/s] |
+| 塗りつぶし丸 | 測定シェル平均 |
+| 白抜き四角 | 化学モデルのシェル平均 |
+| 誤差棒 | シェル内ウェハー点の標準偏差。測定不確かさ・信頼区間ではない |
 
-The measured example rises from 0.14056 nm/s at the center to 0.14499 nm/s near
-\(r/R=0.665\), then falls to 0.14353 nm/s at the edge. The chemical prediction is
-0.14302, 0.14421, and 0.14465 nm/s at the corresponding shells and therefore misses the
-center-to-mid-radius amplitude and the edge decrease. Error bars reveal azimuthal
-variation hidden by the shell mean.
+測定例は中心0.14056 nm/sから \(r/R=0.665\) 付近の0.14499 nm/sへ上昇し、エッジで0.14353 nm/sへ低下する。対応シェルで化学予測は0.14302、0.14421、0.14465 nm/sとなり、中心から中間半径までの振幅とエッジ低下を捉えない。誤差棒はシェル平均に隠れる方位角変動を示す。
 
-This plot is appropriate for a radial discrepancy. A good radial curve does not prove
-azimuthal agreement; the two-dimensional residual map remains necessary.
+半径方向の不一致を見るのに適する。半径曲線が合っても方位角方向の一致は保証されないため、二次元残差マップも必要である。
 
-Source: `test_predictions.csv`; radial shells are constructed by the report writer.
+出典: `test_predictions.csv`。半径シェルは報告書 生成処理が作る。
 
-### Prediction spread across selected equations
+### 選択式間の予測幅
 
-![Prediction spread across selected equations](assets/current_cvd_evaluation/model_structure_prediction_spread.png)
+![選択式間の予測幅](assets/current_cvd_evaluation/model_structure_prediction_spread.png)
 
-At each held-out wafer position, the workflow collects predictions from the structures
-selected in the outer condition refits and plots their maximum minus minimum.
+各ホールドアウト位置で、外側条件再当てはめにより選択された構造の予測最大値と最小値の差を表示する。
 
-| Element | Meaning |
+| 図要素 | 意味 |
 | --- | --- |
-| Horizontal and vertical axes | Normalized wafer coordinates \(x/R\) and \(y/R\) |
-| Colour | Prediction envelope width [nm/s] across outer-selected model structures |
+| 横軸・縦軸 | 正規化ウェハー座標 \(x/R\)、\(y/R\) |
+| 色 | 外側で選択されたモデル構造間の予測包絡幅 [nm/s] |
 
-The example width ranges from 3.23 × 10⁻⁴ to 7.71 × 10⁻⁴ nm/s, with mean
-4.29 × 10⁻⁴ nm/s. Larger values near parts of the interior show where family and role
-selection has the greatest predictive consequence. Comparing this scale with the
-1.05 × 10⁻³ nm/s held-out RMSE shows that structural choice accounts for a material,
-but not complete, part of prediction uncertainty.
+幅は3.23 × 10⁻⁴～7.71 × 10⁻⁴ nm/s、平均4.29 × 10⁻⁴ nm/sである。内部の一部で値が大きく、方程式系と役割選択の予測影響が大きい場所を示す。ホールドアウトRMSE 1.05 × 10⁻³ nm/sと比べると、構造選択は予測不確かさの無視できない一部を占めるが、すべてではない。
 
-The range is a sensitivity envelope over selected discrete structures. It is not a
-calibrated posterior interval and excludes unregistered mechanisms, input uncertainty,
-measurement noise, and parameter uncertainty within each structure.
+選択された離散構造に対する感度包絡であり、較正した事後区間ではない。未登録機構、入力不確かさ、測定ノイズ、各構造内のパラメータ不確かさを含まない。
 
-Source: `model_structure_uncertainty.csv`.
+出典: `model_structure_uncertainty.csv`。
 
-## Post-selection spatial residual response
+## 選択後の空間残差応答
 
-The following figures appear only when a spatial response is enabled. The response is
-fitted after the chemical model is frozen. For the quartic option,
+次の図は空間応答を有効にした場合だけ生成する。化学モデルを固定した後で当てはめる。4次選択肢では、
 
 \[
 g_q(\rho)=\gamma_2(\rho^2-\langle\rho^2\rangle_q)
-+\gamma_4(\rho^4-\langle\rho^4\rangle_q),
++\gamma_4(\rho^4-\langle\rho^4\rangle_q)
 \]
 
-and the positive corrected prediction is renormalized to retain each chemical
-condition mean. It cannot alter equation-family or role selection.
+とし、正の補正予測を再正規化して化学モデルの各条件平均を保つ。方程式系や役割選択を変えることはできない。
 
-### Centered wafer pattern before and after spatial response
+### 空間応答前後の中心化ウェハー分布
 
-![Centered wafer pattern before and after spatial response](assets/current_cvd_evaluation/test_spatial_response.png)
+![空間応答前後の中心化ウェハー分布](assets/current_cvd_evaluation/test_spatial_response.png)
 
-Each panel subtracts its own condition mean and uses the same symmetric colour scale.
+各パネルでそれぞれの条件平均を引き、同じ対称色尺度を使う。
 
-| Panel | Colour quantity |
+| パネル | 色で表す量 |
 | --- | --- |
-| Measured | \(v-\bar v\) [nm/s] |
-| Chemical model | \(\hat v^{\mathrm{chem}}-\overline{\hat v^{\mathrm{chem}}}\) [nm/s] |
-| Chemical + spatial response | \(\hat v^{\mathrm{corr}}-\overline{\hat v^{\mathrm{corr}}}\) [nm/s] |
+| 測定 | \(v-\bar v\) [nm/s] |
+| 化学モデル | \(\hat v^{\mathrm{chem}}-\overline{\hat v^{\mathrm{chem}}}\) [nm/s] |
+| 化学 + 空間応答 | \(\hat v^{\mathrm{corr}}-\overline{\hat v^{\mathrm{corr}}}\) [nm/s] |
 
-All map axes are \(x/R\) and \(y/R\). Centering makes shape visible without allowing
-the condition mean to dominate the colour range. In condition 3, the chemical map has
-centered \(R^2=-0.0148\), whereas the corrected map reaches 0.845. The corrected panel
-reproduces the dominant low-center and mid-radius-high structure much more closely.
+全マップの軸は \(x/R\)、\(y/R\) である。中心化により、条件平均が色範囲を支配せずに形状を確認できる。条件3の化学マップは面内中心化 \(R^2=-0.0148\)、補正マップは0.845である。補正後は、低い中心部と高い中間半径という主構造を大幅によく再現する。
 
-Because each mean has been removed, this figure says nothing about mean-rate transfer.
-The spatial basis is an empirical residual shape and does not identify its physical
-cause.
+平均を除いた図なので、平均速度の転移については何も示さない。空間基底は経験的残差形状であり、物理原因を同定しない。
 
-Source: `test_predictions.csv` and `spatial_response_summary.csv`.
+出典: `test_predictions.csv`、`spatial_response_summary.csv`。
 
-### Residual maps before and after spatial correction
+### 空間補正前後の残差マップ
 
-![Residual maps before and after spatial correction](assets/current_cvd_evaluation/spatial_residuals.png)
+![空間補正前後の残差マップ](assets/current_cvd_evaluation/spatial_residuals.png)
 
-Both panels show predicted minus measured rate with a common, zero-centered colour
-scale.
+両パネルは予測値−測定値を、0を中心とする共通色尺度で示す。
 
-| Element | Meaning |
+| 図要素 | 意味 |
 | --- | --- |
-| Horizontal and vertical axes | Normalized wafer coordinates \(x/R\) and \(y/R\) |
-| Left colour | \(\hat v^{\mathrm{chem}}-v\) [nm/s] |
-| Right colour | \(\hat v^{\mathrm{corr}}-v\) [nm/s] |
-| Red/blue | Overprediction/underprediction |
+| 横軸・縦軸 | 正規化ウェハー座標 \(x/R\)、\(y/R\) |
+| 左の色 | \(\hat v^{\mathrm{chem}}-v\) [nm/s] |
+| 右の色 | \(\hat v^{\mathrm{corr}}-v\) [nm/s] |
+| 赤・青 | 過大予測・過小予測 |
 
-The strong radial residual before correction is greatly reduced afterward. The fixed-
-holdout RMSE falls from 1.049 × 10⁻³ to 5.70 × 10⁻⁴ nm/s. Remaining local or
-azimuthal structure identifies what the radial basis still does not explain.
+補正前の強い半径残差は補正後に大きく減る。固定ホールドアウトRMSEは1.049 × 10⁻³から5.70 × 10⁻⁴ nm/sへ低下する。残る局所・方位角構造は、半径基底がなお説明できない部分である。
 
-Residual reduction on one condition is insufficient by itself because a flexible
-surface could overfit. The across-condition performance plot provides the required
-transfer check.
+一条件の残差減少だけでは、柔軟な表面の過適合を排除できない。条件間性能図で転移を確認する。
 
-Source: `test_predictions.csv` and `spatial_response_summary.csv`.
+出典: `test_predictions.csv`、`spatial_response_summary.csv`。
 
-### Spatial correction versus wafer radius
+### ウェハー半径に対する空間補正量
 
-![Spatial correction versus wafer radius](assets/current_cvd_evaluation/spatial_correction_profile.png)
+![ウェハー半径に対する空間補正量](assets/current_cvd_evaluation/spatial_correction_profile.png)
 
-This plot shows the amount added to or removed from the frozen chemical prediction by
-the mean-preserving spatial response.
+平均保存型空間応答が、固定化学予測へ加えた量または除いた量を示す。
 
-| Element | Meaning |
+| 図要素 | 意味 |
 | --- | --- |
-| Horizontal axis | Normalized wafer radius \(r/R\) |
-| Vertical axis | \(\hat v^{\mathrm{corr}}-\hat v^{\mathrm{chem}}\) [nm/s] |
-| Grey points | Correction at individual wafer positions |
-| Blue points and line | Radial-shell mean correction |
-| Error bars | Within-shell standard deviation, not parameter uncertainty |
-| Horizontal zero line | No change from the chemical prediction |
+| 横軸 | 正規化ウェハー半径 \(r/R\) |
+| 縦軸 | \(\hat v^{\mathrm{corr}}-\hat v^{\mathrm{chem}}\) [nm/s] |
+| 灰点 | 個々のウェハー位置における補正 |
+| 青点・線 | 半径シェル平均補正 |
+| 誤差棒 | シェル内標準偏差。パラメータ不確かさではない |
+| 横0線 | 化学予測から変更なし |
 
-The fitted example has \(\gamma_2=0.0596\) and \(\gamma_4=-0.0570\) in centered log-
-response space. In rate units it lowers the center, raises the mid-radius region, and
-slightly lowers the edge while preserving the chemical mean. This is the radial shape
-needed to repair the systematic residual seen in condition 3.
+当てはめ例では、中心化対数応答空間で \(\gamma_2=0.0596\)、\(\gamma_4=-0.0570\) となる。速度単位では、化学平均を保ちながら、中心部を下げ、中間半径域を上げ、エッジをわずかに下げる。条件3の系統残差を修正するのに必要な半径形状である。
 
-The coefficients and curve describe discrepancy response, not temperature or mass-
-transfer coefficients. Assigning a cause requires a spatially resolved temperature,
-near-wall concentration, transport-capacity flux, or other corresponding physical
-field.
+係数と曲線が表すのは不一致応答であり、温度や物質移動係数ではない。原因帰属には、空間分解した温度、壁面近傍濃度、輸送容量フラックス、その他の対応物理場が必要である。
 
-Source: `spatial_response_coefficients.csv` and `test_predictions.csv`.
+出典: `spatial_response_coefficients.csv`、`test_predictions.csv`。
 
-### Spatial-response transfer across held-out conditions
+### ホールドアウト条件間の空間応答転移
 
-![Spatial-response transfer across held-out conditions](assets/current_cvd_evaluation/spatial_correction_performance.png)
+![ホールドアウト条件間の空間応答転移](assets/current_cvd_evaluation/spatial_correction_performance.png)
 
-For every condition, the full workflow is refitted on the other conditions and applied
-without refitting to that held-out wafer. Grey and blue points are joined so the
-direction and magnitude of the change are explicit.
+各条件について、他条件でワークフロー全体を再当てはめし、除外ウェハーへ再当てはめなしで適用する。灰点と青点を結び、変化の向きと大きさを示す。
 
-| Panel | Horizontal axis | Vertical axis |
+| パネル | 横軸 | 縦軸 |
 | --- | --- | --- |
-| Wafer-pattern prediction | Centered within-wafer \(R^2\); farther right is better | Held-out condition |
-| Rate prediction error | RMSE [nm/s]; farther left is better | Held-out condition |
-| Grey/blue points | Chemical model / chemical model plus spatial response | Same held-out fold |
+| ウェハー分布予測 | 面内中心化 \(R^2\)。右ほどよい | ホールドアウト条件 |
+| 成膜速度予測誤差 | RMSE [nm/s]。左ほどよい | ホールドアウト条件 |
+| 灰点・青点 | 化学モデル・化学モデル + 空間応答 | 同じホールドアウト分割 |
 
-Chemical centered \(R^2\) ranges from −0.199 to 0.037 across the five folds. With the
-radial quartic response it ranges from 0.695 to 0.845 and is positive for every held-out
-condition. RMSE also falls in every fold; for condition 3 it decreases from
-1.049 × 10⁻³ to 5.70 × 10⁻⁴ nm/s. This is evidence that a common radial residual shape
-transfers among the five supplied wafer conditions.
+化学モデルの面内中心化 \(R^2\) は5 分割で−0.199～0.037である。半径4次応答を加えると0.695～0.845となり、全条件で正になる。RMSEも全分割で低下し、条件3では1.049 × 10⁻³から5.70 × 10⁻⁴ nm/sへ下がる。共通の半径残差形状が、与えた5ウェハー条件間で転移する根拠である。
 
-The figure supports use of the empirical correction only for conditions and geometries
-represented by this validation. It does not make the spatial term chemical evidence,
-and it does not establish the cause of the shared radial residual.
+ただし、経験的補正を支持するのは、この検証に含まれる条件と形状に対してだけである。空間項を化学根拠には変えず、共通半径残差の原因も確立しない。
 
-Source: `spatial_response_summary.csv` and `split_sensitivity.csv`.
+出典: `spatial_response_summary.csv`、`split_sensitivity.csv`。
 
-## Reporting decisions from the complete figure set
+## 全図から導く報告上の判断
 
-The figures support separate conclusions rather than one combined verdict:
+各図から一つの総合判定を作るのではなく、主張ごとに結論を分ける。
 
-| Claim | Evidence in this example | Decision |
+| 主張 | この例の根拠 | 判断 |
 | --- | --- | --- |
-| Transfer of condition mean and absolute rate | Close condition means; fixed-holdout relative RMSE 0.729% | Useful within the observed operating envelope, subject to the documented extrapolation of `idn_2`, `n2`, and total concentration in condition 3 |
-| Chemical-model wafer-pattern prediction | Compressed measured-versus-predicted range; centered \(R^2=-0.0148\) | Chemical input fields alone do not explain the held-out wafer pattern |
-| Empirical radial wafer correction | Centered \(R^2\) positive in all five outer folds and 0.845 for condition 3 | Transferable radial residual response is supported for the supplied geometry and conditions |
-| A/B roles | Large prediction consequence but only 40% stability for the selected assignments | Influential and unresolved; perform independent A and B perturbations, including low-B and saturation regimes |
-| Inhibitor role | 40% stability, prediction-change/RMSE ratio 0.00425, nearly zero fitted blocked fraction | No useful inhibitor effect is established over the current range; vary the inhibitor candidate independently before interpreting it |
-| Microscopic family | Sequential 60% and Langmuir–Hinshelwood 40% outer selection; similar held-out predictions | No unique elementary mechanism is identified; transient switching, coadsorbate evidence, or state-sensitive measurements are needed |
-| Elementary kinetic constants | Coupled and inactive normalized parameters under a bulk-as-surface proxy | Do not report elementary constants; use wall or near-wall inputs, absolute flux and stoichiometry, multiple temperatures, uncertainty, and mechanism-specific observations |
+| 条件平均と成膜速度絶対値の転移 | 条件平均が近く、固定ホールドアウト相対RMSE 0.729% | 観測した操作領域内では利用可能。ただし条件3では `idn_2`、`n2`、全濃度が文書化した外挿に当たる |
+| 化学モデルによるウェハー分布予測 | 測定・予測範囲が圧縮し、面内中心化 \(R^2=-0.0148\) | 化学入力場だけではホールドアウトウェハー分布を説明しない |
+| 経験的な半径ウェハー補正 | 全5外側分割で面内中心化 \(R^2\) が正、条件3で0.845 | 与えた形状と条件に対して、転移する半径残差応答を支持する |
+| A/B役割 | 予測影響は大きいが、選択割当ての安定性は40% | 影響が大きい未解決問題。低B域と飽和域を含むA、B独立摂動を行う |
+| 阻害役割 | 安定性40%、予測変化/RMSE比0.00425、当てはめ阻害分率がほぼ0 | 現在の範囲では有用な阻害効果を確立しない。解釈前に阻害候補を独立に変える |
+| 微視的方程式系 | 外側選択は逐次60%、Langmuir–Hinshelwood 40%。ホールドアウト予測も近い | 一意な素反応機構は同定しない。過渡切替え、共吸着根拠、状態感度測定が必要 |
+| 素反応定数 | `bulk_as_surface` 代用入力の下で、正規化パラメータに連成・不活性方向がある | 素反応定数を報告しない。壁面・壁面近傍入力、絶対フラックスと量論、複数温度、不確かさ、機構固有観測を用いる |
 
-For a new dataset, replace the numerical statements above with values from
-`analysis_summary.json`, `role_summary.csv`, `condition_scores.csv`, and
-`data_requirements.csv`. A figure may support a claim only when its source artifact,
-input location, unit, split, model identifier, Loss, sampler, and seed are recorded in
-the run manifest.
+新しいデータでは、`analysis_summary.json`、`role_summary.csv`、`condition_scores.csv`、`data_requirements.csv` の値に置き換える。図が主張を支持するには、出典成果物、入力位置、単位、分割、モデルID、損失関数、サンプラー、乱数種が実行成果物目録に記録されていなければならない。

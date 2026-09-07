@@ -1,65 +1,59 @@
-# Evidence gaps and extension triggers
+# 残る課題と拡張条件
 
-This document separates limitations of the executable method from information that the
-experiment must supply. A missing observation is not repaired by adding another fitted
-coefficient. A new model is warranted only when the available observations can test the
-new state or pathway.
+ここでは、実行手法そのものの限界と、実験側で補うべき情報を分けて示す。観測不足を
+係数の追加で埋め合わせてはならない。新しい状態や経路を検証できる観測が得られた場合に
+限って、新しいモデルを追加する。
 
-## Present interpretation boundary
+## 現在の解釈範囲
 
-The current five-condition steady CVD dataset supports screening of condition-mean
-deposition rate. For uses that are not yet established, the analysis emits an
-experimental route forward in `data_requirements.csv`: the measurement to add, how to
-vary it, which ambiguity it resolves, and where it enters the workflow. The table below
-explains the present example; the executable rules apply to other datasets without
-depending on these species names.
+現在の定常CVD 5条件は、条件平均成膜速度のスクリーニングを支持する。まだ確立して
+いない用途について、解析は `data_requirements.csv` に、追加すべき測定、変化させる量、
+解消する曖昧さ、ワークフローへの挿入位置を出力する。次表は今回のデータを例として
+説明するが、実行規則は化学種名に依存せず他のデータにも適用できる。
 
-## Code-side limitations
+## コード側の限界
 
-| Limitation | Present effect | General extension | Evidence required before implementation |
+| 限界 | 現在の影響 | 一般的な拡張方法 | 実装前に必要な証拠 |
 | --- | --- | --- | --- |
-| Independent scalar film transport | Cross-species diffusion and convective molar flux are omitted | Maxwell-Stefan wall-film closure with Stefan flow correction | Species diffusivities, temperature, pressure, boundary-layer geometry, wall-normal flux, and a validated CFD boundary condition |
-| Steady census has no latent state | It cannot distinguish a memoryless AB response from a redox reservoir with the same steady reduction | Compare the existing dynamic AIB and MvK state models against step/pulse data | Time-resolved inlet and surface response, initial state, and preferably an oxidation-state observable |
-| One uniform site pool per reduced model | Site heterogeneity and lateral interaction can appear as fitted saturation or loss | Add a tested multisite or interaction term only after residual structure demands it | Coverage-sensitive data spanning low and high occupancy |
-| Deposition response is positive-only | Etching and parasitic loss cannot be attributed from net film data alone | Use the existing net-rate composition with independently constrained loss terms | Separate deposition/etch information or a designed condition that isolates removal |
-| Deterministic log-space multistart search | Confidence intervals reflect resampling and candidate structure, not a full posterior | Profile likelihood or Bayesian inference after the observation model is known | Replicate maps and measurement uncertainty |
-| Current random/TPE/CMA-ES/DE/PSO/Lévy state-model search is point estimation | Repeated seeds diagnose numerical variability but do not provide parameter or model probability | Add profile likelihood, bootstrap refits, or posterior sampling behind the same Loss and parameter-space interfaces | Replicate measurements, calibrated uncertainty, and an identifiable observation model |
-| Empirical radial residual has no causal label | The optional post-selection correction can transfer a wafer pattern but cannot assign it to chemistry, delivery, or metrology | Replace the radial residual with a measured local driver when evidence identifies one | Co-located wall concentration or reaction-independent supply flux, repeat maps, and metrology controls; spatial temperature only if the uniform-temperature assumption fails |
+| 化学種ごとに独立したスカラー膜輸送 | 化学種間拡散と対流モル流束を扱わない | Stefan流補正を含むMaxwell–Stefan壁面膜閉包 | 化学種拡散係数、温度、圧力、境界層形状、壁面法線流束、検証済みCFD境界条件 |
+| 定常網羅評価に潜在状態がない | 同じ定常縮約をもつ記憶なしAB応答と酸化還元リザーバーを区別できない | 既存の動的AIB・MvK状態モデルをステップ／パルスデータで比較 | 時間分解した入口・表面応答、初期状態、できれば酸化状態の観測 |
+| 縮約モデルごとに均一な単一サイトプール | サイト不均一性や横方向相互作用が、見かけの飽和・損失へ吸収される | 残差が要求した場合だけ、複数サイトまたは相互作用項を追加 | 低占有率から高占有率までを含む被覆率感度データ |
+| 成膜応答が正値のみ | 正味膜厚だけではエッチングと寄生損失を分離できない | 独立に拘束した損失項と既存の正味速度合成を使う | 成膜・除去の別測定、または除去だけを分離する設計条件 |
+| 決定論的な対数空間マルチスタート探索 | 信頼区間は再標本化と候補構造を反映するが、完全な事後分布ではない | 観測モデル確定後にプロファイル尤度またはベイズ推論を追加 | 反復測定マップと測定不確かさ |
+| 状態モデルのランダム/TPE/CMA-ES/DE/PSO/Lévy探索は点推定 | 反復シードは数値変動を診断するが、パラメータ確率・モデル確率は与えない | 同じ損失関数・パラメータ空間インターフェースの後段にプロファイル尤度、ブートストラップ、事後サンプリングを追加 | 反復測定、校正済み不確かさ、識別可能な観測モデル |
+| 経験的な半径方向残差に原因ラベルがない | 面内パターンは移送できても、化学、供給、計測のどれに由来するかは決まらない | 証拠が原因を示した段階で、半径基底を測定済み局所ドライバーへ置換 | 同位置の壁面濃度または反応非依存供給フラックス、反復マップ、計測対照。均一温度仮定が破れる場合のみ面内温度 |
 
-## Data-side limitations in `data/`
+## `data/` 側の限界
 
-| Missing or weak information | Consequence | Minimum useful addition |
+| 不足または弱い情報 | 影響 | 最小限必要な追加データ |
 | --- | --- | --- |
-| `idn_2` and `n2` vary almost together | Their A/I/B assignments are not separable | Independent factorial perturbations at fixed `adn_2` and total concentration |
-| No low-B or B-off condition | Sequential and parallel pathways are poorly separated | At least one B-free condition and several low-B levels |
-| No targeted inhibitor sweep | The fitted inhibitor term reduces without measurable loss | Near-zero, intermediate, and strongly suppressing inhibitor conditions |
-| No wall concentration or transport-capacity flux | `bulk_as_surface` cannot support an absolute surface-flux claim | Wall/near-wall concentration or a capacity-flux field with sign, units, and boundary condition |
-| No temperature, pressure, coordinate unit, or reference-plane metadata | Kinetic constants and transport conversion cannot be assigned physical units | Per-condition metadata and the Fluent sampling-plane definition |
-| No time-resolved dose, purge, or switching | Dynamic AIB, MvK, and ALD states cannot be fitted | Synchronized inlet/near-wall histories and film or surface-state response |
-| No replicate film maps or uncertainty | Statistical weight and practical acceptance cannot be calibrated | Replicates, instrument precision, spatial registration uncertainty, and a process tolerance |
-| Sparse independent condition directions | Outer-fold equation selection is unstable | Conditions selected to maximize disagreement among surviving equation families |
+| `idn_2` と `n2` がほぼ同時に変化 | A/I/B割当てを分離できない | `adn_2` と全濃度を固定した独立要因摂動 |
+| Bが低い条件、Bなし条件がない | 逐次経路と並列経路を分離しにくい | Bなし1条件と複数の低B水準 |
+| 阻害種を狙ったスイープがない | 阻害項を除いても損失がほとんど変わらない | ほぼゼロ、中間、強阻害の各条件 |
+| 壁面濃度または輸送容量フラックスがない | `bulk_as_surface` から絶対表面フラックスを主張できない | 符号、単位、境界条件を備えた壁面／壁面近傍濃度または容量フラックス場 |
+| 温度、圧力、座標単位、参照面情報がない | 速度定数と輸送変換に物理単位を割り当てられない | 条件ごとのメタデータとFluent抽出面の定義 |
+| 時間分解したドーズ、パージ、切替データがない | 動的AIB、MvK、ALD状態をフィットできない | 同期した入口／壁面近傍履歴と、膜または表面状態の応答 |
+| 膜マップの反復測定と不確かさがない | 統計重みと実務上の合否を校正できない | 反復測定、装置精度、空間位置合わせ不確かさ、工程許容差 |
+| 独立な条件方向が少ない | 外側分割で方程式選択が不安定 | 生き残った方程式族の予測差を最大化する条件 |
 
-## Decision status of older proposals
+## 過去に提案された拡張の扱い
 
-The following proposals remain deferred. Their task identifiers are retained for
-historical verification. `ADR_REQUIRED` means that changing the present policy requires
-a new decision record because it changes model meaning or an input contract.
+以下は保留中の提案である。履歴照合のためタスク識別子を残す。`ADR_REQUIRED` は、
+現行方針の変更にモデルの意味または入力契約の変更を伴うため、新たな設計判断記録が必要
+であることを示す。
 
-| Historical proposal | Task | Status and reopening trigger |
+| 過去の提案 | タスク | 状態と再開条件 |
 | --- | --- | --- |
-| Stefan flow correction | D-001 | Deferred; reopen with non-dilute mixtures and documented wall-normal total molar flux. `ADR_REQUIRED`. |
-| Smoothing PDE | D-002 | Rejected as an implicit repair of unexplained maps; reopen only with a physical lateral-transport equation and identifiable boundary conditions. `ADR_REQUIRED`. |
-| Purge residual driver | D-003 | Deferred; reopen with time-resolved purge tails that the current ALD state cannot explain. `ADR_REQUIRED`. |
-| Incubation/poisoning | D-004 | Deferred; reopen with cycle-dependent memory beyond storage/release and a discriminating observable. `ADR_REQUIRED`. |
-| Chamber seasoning | D-005 | Deferred; reopen with run-order drift, chamber-state records, and repeated reference conditions. `ADR_REQUIRED`. |
+| Stefan流補正 | D-001 | 保留。非希薄混合系と、定義済みの壁面法線全モル流束が得られた場合に再開する。`ADR_REQUIRED` |
+| 平滑化PDE | D-002 | 未説明マップを暗黙に修正する方法としては不採用。物理的な横方向輸送式と識別可能な境界条件が得られた場合のみ再検討する。`ADR_REQUIRED` |
+| パージ残留駆動量 | D-003 | 保留。現在のALD状態では説明できない時間分解パージの裾が得られた場合に再開する。`ADR_REQUIRED` |
+| 初期成長遅延・被毒 | D-004 | 保留。蓄積・放出を超えるサイクル依存記憶と、それを区別する観測が得られた場合に再開する。`ADR_REQUIRED` |
+| チャンバー履歴調整 | D-005 | 保留。運転順序ドリフト、チャンバー状態記録、反復基準条件が得られた場合に再開する。`ADR_REQUIRED` |
 
-## Highest-value next work
+## 優先度の高い次工程
 
-1. Acquire independent species perturbations and a frozen external condition.
-2. Add wall-location/flux semantics and physical metadata to the input data.
-3. Acquire transient switching data before using MvK or ALD states for mechanism
-   selection.
-4. Define a process tolerance and measurement uncertainty before changing `review` to
-   `adopt`.
-5. Extend the equations only when the residual or new observable distinguishes the
-   added state from existing reductions.
+1. 化学種を独立に変化させた条件と、完全に固定した外部評価条件を取得する。
+2. 入力に壁面位置／フラックスの意味と物理メタデータを追加する。
+3. MvKまたはALD状態を機構選択へ使う前に、過渡切替データを取得する。
+4. `review` を `adopt` へ変更する前に、工程許容差と測定不確かさを定める。
+5. 新しい観測または残差が追加状態を既存縮約から区別できる場合だけ、方程式を拡張する。

@@ -1,33 +1,31 @@
-# Reference-plane to surface transport policy
+# 参照面から表面までの輸送方針
 
-## Transport balance
+## 輸送収支
 
-For role (j\in\{A,B\}), the reduced local film balance is
+役割 \(j\in\{A,B\}\) に対する局所膜輸送収支は
 
 \[
-J_j=k_{m,j}(C_{j,\mathrm{ref}}-C_{j,s}).
+J_j=k_{m,j}(C_{j,\mathrm{ref}}-C_{j,s})
 \]
 
-The reaction/state model supplies the wall demand and solves for (C_{j,s}). The
-transport provider supplies (k_{m,j}) and records the concentration location. These
-responsibilities remain separate so a reaction equation cannot silently redefine a CFD
-field.
+である。反応・状態モデルは壁面需要を与え、\(C_{j,s}\) を解く。輸送供給方式は
+\(k_{m,j}\) を供給し、濃度位置を記録する。反応式がCFD場の意味を暗黙に書き換えないよう、
+両者の責務を分離する。
 
-## Active providers
+## 現在の供給方式
 
-These providers belong to the dynamic/state-model transport closure. The steady CSV
-census may instead choose `transport_capacity_flux` as a normalized `direct_flux`
-reaction driver. In that steady mode the code does not infer \(k_m\) or \(C_s\); it fits
-the film response to the supplied spatial delivery field. The two uses share an input
-field but answer different questions.
+以下は動的状態モデルの輸送閉包で使う。定常CSV網羅評価では、
+`transport_capacity_flux` を正規化した `direct_flux` 反応ドライバーとして選ぶことも
+できる。その場合、コードは \(k_m\) や \(C_s\) を推定せず、与えられた空間供給場に膜応答
+を当てはめる。両者は同じ入力場を利用できるが、答える問いは異なる。
 
-| `km_source` | Required input | Meaning | Main limitation |
+| `km_source` | 必須入力 | 意味 | 主な限界 |
 | --- | --- | --- | --- |
-| `direct_surface` | wall/surface concentration | Use the supplied (C_s); internally the local film resistance tends to zero | No transport drop is inferred |
-| `fit_scalar` | scalar or field `km_A`, `km_B` | Use a prescribed/fitted independent-film coefficient | (k_m) may absorb reaction or geometry error |
-| `from_cfd_flux_sink` | `flux_sink`, reference concentration, documented boundary concentration | Infer a spatial transport-capacity coefficient | Requires capacity-flux semantics and known units/sign |
+| `direct_surface` | 壁面／表面濃度 | 与えられた \(C_s\) を使い、内部の局所膜抵抗をゼロへ近づける | 輸送による濃度低下は推定しない |
+| `fit_scalar` | スカラーまたは場の `km_A`、`km_B` | 指定またはフィットした独立膜係数を使う | \(k_m\) が反応誤差や形状誤差を吸収し得る |
+| `from_cfd_flux_sink` | `flux_sink`、参照濃度、定義済み境界濃度 | 空間分布をもつ輸送容量係数を推定する | 容量フラックスとしての意味、単位、符号が必要 |
 
-For CFD capacity flux,
+CFD容量フラックスに対しては
 
 \[
 k_{m,j}^{\mathrm{CFD}}=
@@ -35,92 +33,87 @@ k_{m,j}^{\mathrm{CFD}}=
 {C_{j,\mathrm{ref}}-C_{j,\mathrm{boundary}}},
 \qquad
 k_{m,j}=\operatorname{clip}
-\left(\gamma_j k_{m,j}^{\mathrm{CFD}},k_{m,\min},k_{m,\max}\right).
+\left(\gamma_j k_{m,j}^{\mathrm{CFD}},k_{m,\min},k_{m,\max}\right)
 \]
 
-`flux_semantics` must be `transport_capacity`. `flux_negative_policy` is `error`,
-`clip_to_zero`, or `allow`; `error` is the safe production default. A positive flux with
-nonpositive concentration driving force is rejected.
+を使う。`flux_semantics` は `transport_capacity` とする。
+`flux_negative_policy` は `error`、`clip_to_zero`、`allow` のいずれかであり、
+本番の既定値は `error` とする。濃度駆動力が非正であるにもかかわらず正のフラックスが
+与えられた場合はエラーとする。
 
-## Supporting (k_m) utilities
+## \(k_m\) の補助式
 
-The mass-transfer registry includes:
+物質移動レジストリには、静止膜に対する
 
 \[
 k_m=\frac{D_{\mathrm{eff}}}{\delta_{\mathrm{eff}}}
 \]
 
-for a stagnant film and
+と、Levich型回転円板に対する
 
 \[
 k_m=C_kD_{\mathrm{eff}}^{2/3}\omega^{1/2}\nu^{-1/6}
 \]
 
-for a Levich-type rotating disk. The latter requires an explicit ω=0 policy. It either
-raises an error or uses a configured stagnant-film fallback.
+を実装している。後者では \(\omega=0\) の方針を明示し、エラーまたは設定済み静止膜への
+代替処理を選ぶ。
 
-For combined molecular and Knudsen resistance,
-
-\[
-\frac{1}{D_{\mathrm{eff}}}=\frac{1}{D_m}+\frac{1}{D_K}.
-\]
-
-These utilities calculate (k_m); the role-model pipeline still uses one of the three
-active providers above.
-
-## Diagnostics
-
-Dynamic CVD and ALD outputs may include:
-
-- `CsA_over_CrefA`, `CsB_over_CrefB`;
-- `J_A_surface`, `J_B_surface`;
-- `J_A_transport`, `J_B_transport`;
-- CFD and used (k_m) fields;
-- boundary and driving concentrations;
-- a flux-closure residual when compatible observed flux is supplied.
-
-The reported transport residence proxies use seconds explicitly:
+分子拡散抵抗とKnudsen拡散抵抗を組み合わせる場合は
 
 \[
-\tau_{j,s}=\frac{z_{\mathrm{ref}}\times10^{-3}}{k_{m,j}},
+\frac{1}{D_{\mathrm{eff}}}=\frac{1}{D_m}+\frac{1}{D_K}
 \]
 
-where \(z_{\mathrm{ref}}\) is configured in millimetres and \(k_m\) in metres per
-second. Output fields are named `tau_A_s` and `tau_B_s`; their map diagnostics use
-`tau_A_s_map` and `tau_B_s_map`.
+とする。これらの補助式は \(k_m\) を計算するだけであり、役割モデルの処理系は前節の
+3 供給方式のいずれかを使用する。
 
-For ALD, coverage storage and conversion become molar flux only after multiplication
-by site density \(\Gamma_s\). Thus
-\(J_{A,s}=\Gamma_s(r_{\mathrm{store},A}-r_{\mathrm{release},A})\) and
-\(J_{B,s}=\Gamma_s\nu_Br_{\mathrm{conv}}\). Absolute flux interpretation requires a
-physically calibrated site density.
+## 診断量
 
-For the CVD AIB model, a useful (B)-transport competition group is
+動的CVD・ALD出力には、条件がそろう場合に次を含める。
+
+- `CsA_over_CrefA`、`CsB_over_CrefB`
+- `J_A_surface`、`J_B_surface`
+- `J_A_transport`、`J_B_transport`
+- CFDから求めた \(k_m\) と実際に使用した \(k_m\) の場
+- 境界濃度と濃度駆動力
+- 互換性のある観測フラックスがある場合のフラックス閉包残差
+
+輸送滞留時間の指標は秒単位で
+
+\[
+\tau_{j,s}=\frac{z_{\mathrm{ref}}\times10^{-3}}{k_{m,j}}
+\]
+
+とする。ここで \(z_{\mathrm{ref}}\) はmm、\(k_m\) はm s\(^{-1}\) で設定する。出力名は
+`tau_A_s`、`tau_B_s`、マップ診断名は `tau_A_s_map`、`tau_B_s_map` とする。
+
+ALDの被覆蓄積と転化は、サイト密度 \(\Gamma_s\) を掛けて初めてモルフラックスになる。
+したがって
+\(J_{A,s}=\Gamma_s(r_{\mathrm{store},A}-r_{\mathrm{release},A})\)、
+\(J_{B,s}=\Gamma_s\nu_Br_{\mathrm{conv}}\) である。絶対フラックスの解釈には、物理的に
+校正したサイト密度が必要である。
+
+CVD AIBモデルにおけるB輸送競合の指標は
 
 \[
 \phi_B=
 \frac{\Gamma_s\nu_B k_{\mathrm{rxn}}
 \theta_A^{p_A}\theta_*^{p_*}}
-{C_{B,\mathrm{scale}}k_{m,B}}.
+{C_{B,\mathrm{scale}}k_{m,B}}
 \]
 
-φB much smaller than one indicates a weak local film drop in the scalar-film model;
-large φB indicates transport demand comparable to or greater than the film supply.
-This remains a reduced Damköhler-like diagnostic, not a complete reactor-scale
-transport number.
+である。\(\phi_B\ll1\) はスカラー膜モデルでの局所濃度低下が小さいことを示し、大きな
+\(\phi_B\) は輸送需要が膜供給と同程度以上であることを示す。これは縮約したDamköhler型
+診断量であり、反応器全体の輸送数ではない。
 
-## Current limitations
+## 現在の限界
 
-- The active provider treats (A) and (B) with independent scalar film laws.
-- Stefan flow, cross-diffusion, thermal diffusion, pressure diffusion, and composition-
-  dependent multicomponent coupling are not implemented.
-- The rotating-disk relation is a correlation and must be justified for the reactor
-  geometry and flow regime.
-- `bulk_as_surface` in the current steady CSV analysis performs no wall conversion and
-  computes no absolute flux.
+- 現行供給方式はAとBに独立なスカラー膜則を適用する。
+- Stefan流、交差拡散、熱拡散、圧力拡散、組成依存の多成分連成は未実装である。
+- 回転円板式は相関式であり、反応器形状と流動領域に対する妥当性確認が必要である。
+- 現行定常CSV解析の `bulk_as_surface` は壁面変換も絶対フラックス計算も行わない。
 
-Maxwell-Stefan transport becomes necessary when species are not dilute, net molar flux
-is significant, or cross-diffusion changes the wall composition. Implementing it
-requires binary diffusivities, full composition, temperature, pressure, wall boundary
-conditions, and a consistent molar-average velocity or flux convention. See
-[THEORY.md](THEORY.md) for references and [GAPS.md](GAPS.md) for the evidence trigger.
+化学種が希薄でない場合、正味モル流束が大きい場合、交差拡散が壁面組成を変える場合には
+Maxwell–Stefan輸送が必要になる。実装には二成分拡散係数、全組成、温度、圧力、壁面境界
+条件、整合したモル平均速度またはフラックス規約が必要である。参考文献は
+[THEORY.md](THEORY.md)、実装を再開する証拠条件は [GAPS.md](GAPS.md) を参照する。

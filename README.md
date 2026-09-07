@@ -1,57 +1,53 @@
-# CVD/ALD reaction-role assimilation
+# CVD/ALD反応役割同化
 
-This repository maps anonymous Fluent species fields to interpretable reaction roles,
-fits role-based surface models to measured film maps, and reports when a numerical fit
-does not justify a chemical interpretation.
+本リポジトリは、匿名化されたFluent化学種場を解釈可能な反応役割へ写像し、反応役割に基づく表面モデルを実測膜分布へ当てはめる。数値当てはめだけでは化学的解釈を裏づけられない場合も明示する。
 
-The production path is:
+主経路は次のとおりである。
 
 ```text
-Fluent raw species
--> candidate A / B / I assignments
--> CVD or ALD role model
--> measured thickness or deposition-rate fit
--> condition transfer and spatial validation
--> adopt / review / reject with evidence gaps
+Fluentの生の化学種
+-> A / B / I 割当て候補
+-> CVDまたはALD反応役割モデル
+-> 実測膜厚または成膜速度への当てはめ
+-> 条件間転移と空間分布の検証
+-> 根拠不足を添えた採用・要検討・棄却
 ```
 
-Raw names such as `s0`, `adn_2`, or `n2` are input labels. The software does not treat
-them as known precursors, co-reactants, or inhibitors until the data distinguish those
-roles.
+`s0`、`adn_2`、`n2` などの生の名称は入力表記である。データが役割を識別するまでは、既知の前駆体、共反応物、阻害種として扱わない。
 
-## Current scope
+## 現在の対象範囲
 
-- Steady CVD equation census
-  - sequential AIB quasi-steady response
-  - parallel A and A+B quasi-steady response
-  - two-adsorbate Langmuir-Hinshelwood response
-  - exact reductions such as no-inhibitor and no-finite-loss forms
-- Dynamic process models
-  - continuous CVD AIB surface coverage
-  - Mars-van Krevelen redox reservoir
-  - observation-time MvK state, pathway-rate, surface-concentration, and flux histories
-  - ALD storage, conversion, and inhibitor states
-- Transport closures
-  - supplied wall concentration
-  - fitted scalar or field mass-transfer coefficient
-  - CFD transport-capacity flux converted to a mass-transfer coefficient
-- Validation
-  - condition-balanced fitting
-  - leave-one-condition-out model selection
-  - fixed-condition prediction without refitting inside the run
-  - angular and radial blocked diagnostics
-  - role, reduction, and equation-family stability
-  - target-use readiness and the additional measurements needed to establish it
+- 定常CVD方程式の網羅比較
+  - 逐次AIB準定常応答
+  - 並列AおよびA+B準定常応答
+  - 二吸着種Langmuir–Hinshelwood応答
+  - 阻害なし、有限損失なしなどの厳密縮約
+- 動的プロセスモデル
+  - 連続CVD AIB表面被覆率
+  - Mars–van Krevelen酸化還元リザーバー
+  - 観測時刻におけるMvK状態、経路速度、表面濃度、フラックス履歴
+  - ALDの貯蔵、変換、阻害状態
+- 輸送閉包
+  - 与えた壁面濃度
+  - 当てはめたスカラーまたは場の物質移動係数
+  - CFD輸送容量フラックスから変換した物質移動係数
+- 検証
+  - 条件均衡を保った当てはめ
+  - 一条件除外モデル選択
+  - 同一実行内で再当てはめしない固定条件予測
+  - 角度・半径ブロック診断
+  - 役割、縮約、方程式系の安定性
+  - 対象用途の準備状況と、それを確立するために必要な追加測定
 
-## Main commands
+## 主なコマンド
 
-List the implemented model inventory:
+実装モデル一覧を表示する。
 
 ```powershell
 uv run python scripts/analyze_cvd_multicond_case.py --list-models
 ```
 
-Run the current steady CVD evaluation:
+現在の定常CVD評価を実行する。
 
 ```powershell
 uv run python scripts/analyze_cvd_multicond_case.py `
@@ -69,8 +65,7 @@ uv run python scripts/analyze_cvd_multicond_case.py `
   --output results/current_cvd_separated
 ```
 
-Choose the local reaction input and an optional post-selection spatial response
-explicitly:
+局所反応入力と、任意の選択後空間応答を明示的に選ぶ。
 
 ```powershell
 uv run python scripts/analyze_cvd_multicond_case.py `
@@ -83,16 +78,11 @@ uv run python scripts/analyze_cvd_multicond_case.py `
   --output results/cvd_separated_response
 ```
 
-`surface_concentration` and `transport_capacity_flux` are accepted when every condition
-contains their documented per-species columns. Input location is fixed before chemical
-candidate enumeration. The spatial response is fitted afterward and is reported
-separately, so it cannot change the selected roles or reaction equation.
-Each run also writes compact figures for equation-family convergence, species-to-role
-assignment, assignment stability, input correlation, fitted role sensitivity, reaction
-state/path fractions, reaction-step diagrams, alternative-model prediction differences,
-kinetic-parameter sensitivity, and spatial residuals before and after optional correction.
+全条件に文書化された化学種別列があれば、`surface_concentration` と `transport_capacity_flux` も利用できる。化学候補を列挙する前に入力位置を固定する。空間応答はその後に当てはめ、別に報告するため、選択された役割や反応式を変更できない。
 
-Select a whole-wafer Loss and one surface sampler explicitly:
+各実行は、方程式系ごとの収束、化学種から役割への割当て、割当て安定性、入力相関、当てはめ役割感度、反応状態・経路分率、反応段階図、代替モデル予測差、運動論パラメータ感度、任意補正前後の空間残差を示す簡潔な図も出力する。
+
+ウェハー全体の損失関数と表面サンプラーを明示的に選ぶ。
 
 ```powershell
 uv run python scripts/analyze_cvd_multicond_case.py `
@@ -105,7 +95,7 @@ uv run python scripts/analyze_cvd_multicond_case.py `
   --output results/cvd_wnmse
 ```
 
-Compare Loss and sampler choices on one frozen role equation:
+一つの固定した反応役割方程式で、損失関数とサンプラーを比較する。
 
 ```powershell
 uv sync --extra optuna
@@ -117,14 +107,9 @@ uv run python scripts/benchmark_surface_optimization.py `
   --output results/surface_optimization_benchmark_4096
 ```
 
-The benchmark writes `benchmark_report.md`, the complete run and condition-fold CSVs,
-and two compact Loss-by-sampler heatmaps. Ranking uses training-condition transfer;
-the fixed test condition appears only as a post-selection audit. Long runs write partial
-CSV checkpoints; rerun the same command with `--resume` to skip completed combinations.
-`mse` is squared error in the linear deposition-rate unit. Positive kinetic shape
-parameters are sampled in log coordinates because their declared ranges span decades.
+比較試験は、`benchmark_report.md`、全実行・条件分割のCSV、損失関数とサンプラーを比較する二つのヒートマップを出力する。順位は学習条件間の転移で決め、固定テスト条件は選択後の監査にだけ使う。長時間実行では部分CSVをチェックポイントとして保存する。同じコマンドへ `--resume` を加えると、完了済み組合せを飛ばして再開する。`mse` は線形成膜速度単位の二乗誤差である。正の運動論形状パラメータは宣言範囲が複数桁に及ぶため、対数座標で標本化する。
 
-Run the repository verification entry points from a Bash environment:
+Bash環境からリポジトリ検証を実行する。
 
 ```bash
 ./scripts/commands.sh smoke cvd
@@ -132,8 +117,7 @@ Run the repository verification entry points from a Bash environment:
 ./scripts/commands.sh verify
 ```
 
-The production fit configurations use Optuna TPE. Install the optional optimizer
-backend before `fit`:
+運用用の当てはめ設定はOptuna TPEを使う。`fit` の前に任意の最適化実装方式を導入する。
 
 ```bash
 uv sync --extra optuna
@@ -143,38 +127,19 @@ bash scripts/preflight.sh
 ./scripts/commands.sh fit ald
 ```
 
-`random`, `tpe`, `cmaes`, differential evolution (`de`), particle swarm (`pso`),
-Lévy flight (`levy`), and CMA-MAE (`cma_mae`) use the same sampler boundary. The four
-OptunaHub methods are optional and pinned to a reviewed registry revision. Missing
-backends fail with an installation instruction; a requested sampler is never silently
-replaced. CMA-MAE explores diverse response regimes and should be benchmarked before it
-is used as a minimum-Loss optimizer.
+`random`、`tpe`、`cmaes`、差分進化（`de`）、粒子群（`pso`）、Lévy飛行（`levy`）、CMA-MAE（`cma_mae`）は同じサンプラー境界を使う。4種類のOptunaHub手法は任意依存で、レビュー済みの登録表の版へ固定している。実装方式がなければ導入手順を示して失敗し、指定サンプラーを暗黙に別手法へ置き換えない。CMA-MAEは多様な応答領域を探索するため、最小損失関数探索へ使う前に比較試験で評価する。
 
-Generated simulator inputs belong under `runs/generated_inputs/`; run outputs belong
-under `results/`. Neither directory is a source-data store.
+生成したシミュレーター入力は `runs/generated_inputs/`、実行出力は `results/` に置く。どちらも出典 データ保管場所ではない。
 
-## Documentation
+## 文書
 
-- [Technical report](docs/TECHNICAL_REPORT.md): integrated scientific account of the
-  model basis, numerical method, software design, and current-data conclusions.
-- [Theory and equations](docs/THEORY.md): derivations, approximations, units, model
-  comparison, and literature.
-- [Evaluation workflow](docs/EVALUATION_WORKFLOW.md): input-dependent execution and
-  decision flow, metrics, and numerical procedures.
-- [Visualization guide](docs/VISUALIZATION_GUIDE.md): examples of every steady CVD
-  figure with axis definitions, source artifacts, and interpretation rules.
-- [Architecture](docs/ARCHITECTURE.md): package boundaries, registries, responsibilities,
-  and extension rules.
-- [Current-data evaluation](docs/CURRENT_DATA_EVALUATION.md): reproducible results for
-  the five supplied CVD conditions.
-- [Fluent inputs](docs/inputs_fluent.md) and [transport policy](docs/transport_km.md):
-  field semantics and transport assumptions.
-- [Known gaps](docs/GAPS.md): current code limits and measurements needed to resolve
-  them.
+- [技術報告書](docs/TECHNICAL_REPORT.md): モデルの基礎、数値手法、ソフトウェア設計、現行データの結論を統合した科学報告。
+- [理論と方程式](docs/THEORY.md): 導出、近似、単位、モデル比較、参考文献。
+- [評価ワークフロー](docs/EVALUATION_WORKFLOW.md): 入力に応じた実行・判定フロー、指標、数値処理。
+- [可視化ガイド](docs/VISUALIZATION_GUIDE.md): 定常CVDの全図について、軸定義、出典成果物、解釈規則を示す例。
+- [architecture](docs/ARCHITECTURE.md): パッケージ境界、登録表、責務、拡張規則。
+- [現行データ評価](docs/CURRENT_DATA_EVALUATION.md): 与えた5条件CVDの再現可能な結果。
+- [Fluent入力](docs/inputs_fluent.md) と [輸送方針](docs/transport_km.md): 場の意味と輸送仮定。
+- [既知の課題](docs/GAPS.md): 現在のコード限界と、それを解消するために必要な測定。
 
-For every evaluated dataset, the analysis writes `data_requirements.csv`. When the
-evidence is insufficient for wafer spatial correction, anonymous-species role
-assignment, or elementary-rate inference, this file states the measurements and
-experimental contrasts that would make each use assessable. The supplied five-condition
-dataset is one worked example; these requirements are derived from evidence status and
-are not tied to its species names.
+各データ集合の解析で `data_requirements.csv` を出力する。ウェハー面内分布補正、匿名化学種の役割割当て、素反応速度推定の根拠が不足する場合、このファイルは各用途を評価可能にする測定と実験変動を示す。与えた5条件データは一つの実例であり、要件は化学種名ではなく根拠状態から導く。

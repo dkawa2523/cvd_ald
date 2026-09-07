@@ -1,30 +1,30 @@
-# Architecture and model responsibilities
+# アーキテクチャとモデル責務
 
-## Design objective
+## 設計目的
 
-The architecture serves one product decision: determine which anonymous Fluent fields
-can act as transferable reaction roles when predicting measured film maps, while keeping
-numerically similar but physically different explanations visible.
+本構成が支える判断は一つである。測定膜マップを予測するとき、匿名のFluent場のどれを
+条件間で転用可能な反応役割として扱えるかを調べ、数値的には似ていても物理的に異なる
+説明を比較可能なまま残す。
 
-The main path is
+主要な処理経路を示す。
 
 ```text
-raw Fluent fields
--> aligned role fields
--> explicit reaction-input selection
--> registered equation or process model
--> parameter fit to measured film response
--> optional post-selection spatial residual response
--> condition and spatial validation
--> role/equation stability
--> concise evidence statement
+Fluentの生の場
+-> 位置合わせした役割場
+-> 反応入力の明示的な選択
+-> 登録済み方程式またはプロセスモデル
+-> 測定膜応答へのパラメータフィット
+-> 任意の選択後空間残差応答
+-> 条件間および面内の検証
+-> 役割・方程式の安定性評価
+-> 簡潔な証拠の記述
 ```
 
-CVD and ALD use the same role vocabulary and evidence rules but retain separate process
-models. A steady response equation, a dynamic state model, a transport closure, and a
-net-film composition model solve different subproblems and are not interchangeable.
+CVDとALDは同じ役割語彙と証拠規則を使うが、プロセスモデルは分離する。定常応答式、
+動的状態モデル、輸送閉包、正味膜合成モデルはそれぞれ異なる部分問題を解くものであり、
+相互に置き換えられない。
 
-## Package boundaries
+## パッケージ境界
 
 ```mermaid
 flowchart LR
@@ -35,142 +35,130 @@ flowchart LR
     OPT --> REP
 ```
 
-| Package | Responsibility | Must not own |
+| パッケージ | 責務 | 所有してはならない処理 |
 | --- | --- | --- |
-| `deposim_schema` | YAML structure, public model names, defaults, and compatibility validation | Numerical integration, fitting, reporting |
-| `deposim_sim` | Forward simulation, process-state kernels, transport providers, mass-transfer utilities, net-film composition, run artifacts | Candidate ranking or chemical-role adoption |
-| `deposim_opt` | Observation adaptation, role enumeration, fitting, cross-validation, reduction comparison, stability, and decision evidence | Process equations hidden inside optimizer branches |
-| `deposim_report` | Generic plots and run presentation from computed outputs | Fitting, role selection, or changes to model meaning |
+| `deposim_schema` | YAML構造、公開モデル名、既定値、互換性検査 | 数値積分、フィッティング、レポート作成 |
+| `deposim_sim` | 順方向計算、プロセス状態計算核、輸送供給方式、物質移動補助式、正味膜合成、実行成果物 | 候補順位または化学役割の採用判断 |
+| `deposim_opt` | 観測変換、役割列挙、フィッティング、交差検証、縮約比較、安定性、判断証拠 | 最適化器分岐内に隠したプロセス方程式 |
+| `deposim_report` | 計算済み出力からの汎用図と実行結果の表示 | フィッティング、役割選択、モデル意味の変更 |
 
-The dependency direction keeps the simulator usable without optimization libraries.
-Heavy packages remain optional.
+この依存方向により、最適化ライブラリがなくてもシミュレーターを利用できる。重いパッケージは
+任意依存に留める。
 
-## Model layers
+## モデル層
 
-| Layer | Registry or implementation | Inputs | Output meaning |
+| 層 | レジストリまたは実装 | 入力 | 出力の意味 |
 | --- | --- | --- | --- |
-| Reaction input | `deposim_opt.role_fields` | reference concentration, wall concentration, or independently calculated transport-capacity flux | one explicitly selected local driver and its location/unit metadata |
-| Steady observable response | `deposim_sim.models.aib_reductions` | normalized selected driver and role assignment | dimensionless response shape and interpretable surface-state proxies |
-| Spatial residual response | `deposim_opt.spatial_response` | frozen chemical prediction and identification-condition residual maps | positive condition-shape factor that preserves the chemical mean and makes no chemical claim |
-| Dynamic process state | `deposim_sim.models.process_models` plus `aib_ode.py`, `mvk_state.py`, `ald_role_state.py` | time-resolved role concentrations and transport provider | state trajectory, surface concentrations, fluxes, and thickness |
-| Transport source | `deposim_sim.transport_provider` | wall concentration, (k_m), or CFD transport-capacity flux | role-specific (k_m) and concentration-location metadata |
-| Mass-transfer utility | `deposim_sim.models.mass_transfer` | diffusivity, film thickness, rotation, viscosity | candidate (k_m) field |
-| Net film | `deposim_sim.models.net_models` | deposition, etch, and loss rates | signed net thickness rate |
+| 反応入力 | `deposim_opt.role_fields` | 参照濃度、壁面濃度、または独立計算した輸送容量フラックス | 明示的に一つ選んだ局所ドライバーと、その位置・単位メタデータ |
+| 定常観測応答 | `deposim_sim.models.aib_reductions` | 正規化した選択ドライバーと役割割当て | 無次元応答形状と解釈可能な表面状態指標 |
+| 空間残差応答 | `deposim_opt.spatial_response` | 固定した化学予測と同定条件の残差マップ | 化学条件平均を保ち、化学的主張を行わない正の条件内形状因子 |
+| 動的プロセス状態 | `deposim_sim.models.process_models` と `aib_ode.py`、`mvk_state.py`、`ald_role_state.py` | 時間分解した役割濃度と輸送供給方式 | 状態履歴、表面濃度、フラックス、膜厚 |
+| 輸送供給源 | `deposim_sim.transport_provider` | 壁面濃度、\(k_m\)、またはCFD輸送容量フラックス | 役割別 \(k_m\) と濃度位置メタデータ |
+| 物質移動補助式 | `deposim_sim.models.mass_transfer` | 拡散係数、膜厚さ、回転数、動粘度 | 候補 \(k_m\) 場 |
+| 正味膜 | `deposim_sim.models.net_models` | 成膜、エッチング、損失速度 | 符号付き正味膜厚速度 |
 
-The steady census reports the MvK steady equivalent once rather than giving an
-algebraically duplicate mechanism an additional selection vote. Dynamic MvK remains a
-separate process model because its redox memory can only be tested with time-resolved
-data.
+定常網羅評価では、代数的に重複する機構へ追加の選択票を与えないため、MvK定常等価式を
+一度だけ報告する。動的MvKは酸化還元記憶を時間分解データでのみ検証できるため、独立した
+プロセスモデルとして残す。
 
-## File responsibilities
+## ファイル責務
 
-| File or module | Single responsibility |
+| ファイルまたはモジュール | 単一責務 |
 | --- | --- |
-| `scripts/analyze_cvd_multicond_case.py` | Small CLI for model inventory and steady multi-condition execution |
-| `deposim_opt/cvd_analysis_io.py` | Format-level numeric CSV reading, coordinate matching, source hashing, and artifact serialization |
-| `deposim_opt/cvd_conditions.py` | CVD condition-file discovery, column semantics, data-quality facts, and assembly of aligned role fields |
-| `deposim_opt/spatial_validation.py` | Shared spatial blocks and ordinary rate metrics |
-| `deposim_opt/empirical_response.py` | Legacy-compatible empirical role candidates and constrained linear fitting |
-| `deposim_opt/role_fields.py` | Aligned arrays and explicit selection of reference concentration, wall concentration, or transport-capacity flux |
-| `deposim_opt/spatial_response.py` | Post-selection radial residual models; condition-mean preservation and transfer application |
-| `deposim_sim/models/aib_reductions.py` | Registered steady equations, exact reductions, symmetries, required evidence, and formula metadata |
-| `deposim_opt/surface_fit.py` | Whole-wafer weighting, positive shape-parameter orchestration, and separable rate-scale profiling |
-| `deposim_opt/losses.py` | Pure dimensional, wafer-normalized, symmetric, Huber, L1, and uncertainty-standardized losses |
-| `deposim_opt/metrics.py` | Prediction, bias, spatial-shape, and thickness-unit reporting metrics; never changes the fitted objective |
-| `deposim_opt/parameter_space.py` | Model-aware filtering and validation of shared or per-condition search variables |
-| `deposim_opt/samplers.py` | Random, TPE, CMA-ES, DE, PSO, Lévy-flight, and CMA-MAE backends; budgets, seeds, stopping, and traces |
-| `deposim_opt/surface_optimization_benchmark.py` | Fixed-equation Loss-by-sampler comparison using training-condition CV and an untouched test audit |
-| `deposim_opt/parameter_fit.py` | One candidate fit: condition simulation, cache, sampler call, holdout prediction, and identifiability diagnostics |
-| `deposim_opt/fit_conditions.py` | Condition parsing and the sole simulator-to-observation adapter used by train and holdout evaluation |
-| `deposim_opt/evidence_requirements.py` | Translate failed capability criteria into reusable measurement and experimental-design requirements |
-| `deposim_opt/cvd_multicond_analysis.py` | Candidate census orchestration, nested condition evaluation, evidence assembly, and artifact production |
-| `deposim_opt/class_compare.py` | Generic candidate ranking, reduction comparisons, role evidence, stability, and adoption decision |
-| `deposim_opt/cvd_multicond_report.py` | Rendering of already computed steady results; no fitting or selection |
-| `deposim_sim/models/aib_ode.py` | Continuous adsorbed-(A) state and local A/B transport-reaction closure |
-| `deposim_sim/models/mvk_state.py` | Bounded redox-reservoir integration and reduction/regeneration fluxes |
-| `deposim_sim/models/ald_role_state.py` | ALD storage, release, conversion, and inhibitor state integration |
-| `deposim_sim/transport_provider.py` | `direct_surface`, `fit_scalar`, and `from_cfd_flux_sink` semantics |
-| `deposim_sim/pipeline.py` | One process dispatcher connecting config, Fluent input, transport, model, measurement, and outputs |
-| `deposim_schema/sim_config.py` | Public configuration shape and allowed process-model names |
+| `scripts/analyze_cvd_multicond_case.py` | モデル一覧と定常多条件実行の小さなCLI |
+| `deposim_opt/cvd_analysis_io.py` | 数値CSV読込み、座標対応、入力ハッシュ、成果物直列化 |
+| `deposim_opt/cvd_conditions.py` | CVD条件ファイル探索、列の意味、データ品質、位置合わせ済み役割場の組立て |
+| `deposim_opt/spatial_validation.py` | 共通空間ブロックと通常の速度指標 |
+| `deposim_opt/empirical_response.py` | 旧仕様互換の経験的役割候補と制約付き線形フィット |
+| `deposim_opt/role_fields.py` | 位置合わせ済み配列と、参照濃度・壁面濃度・輸送容量フラックスの明示選択 |
+| `deposim_opt/spatial_response.py` | 選択後の半径残差モデル、条件平均保存、別条件への適用 |
+| `deposim_sim/models/aib_reductions.py` | 登録済み定常式、厳密縮約、対称性、必要証拠、式メタデータ |
+| `deposim_opt/surface_fit.py` | ウェハー全体の重み、正の形状パラメータ探索、分離可能な速度尺度のプロファイル |
+| `deposim_opt/losses.py` | 純粋な有次元・ウェハー正規化・対称・Huber・L1・不確かさ標準化損失関数 |
+| `deposim_opt/metrics.py` | 予測、偏り、面内形状、膜厚単位の報告指標。フィット目的関数は変更しない |
+| `deposim_opt/parameter_space.py` | モデルに応じた共有・条件別探索変数の除外と検証 |
+| `deposim_opt/samplers.py` | ランダム、TPE、CMA-ES、DE、PSO、Lévy飛行、CMA-MAE。計算予算、乱数種、停止、履歴 |
+| `deposim_opt/surface_optimization_benchmark.py` | 固定方程式に対する損失関数×サンプラー比較。訓練条件CVと未使用テスト監査を用いる |
+| `deposim_opt/parameter_fit.py` | 一候補のフィット。条件計算、キャッシュ、サンプラー呼出し、ホールドアウト予測、識別性診断 |
+| `deposim_opt/fit_conditions.py` | 条件解析と、訓練・ホールドアウト双方で使う唯一のシミュレーション・観測 変換部 |
+| `deposim_opt/evidence_requirements.py` | 不成立の能力基準を、再利用可能な測定・実験計画要件へ変換 |
+| `deposim_opt/cvd_multicond_analysis.py` | 候補網羅評価、入れ子条件評価、証拠組立て、成果物生成 |
+| `deposim_opt/class_compare.py` | 汎用候補順位、縮約比較、役割証拠、安定性、採用判断 |
+| `deposim_opt/cvd_multicond_report.py` | 計算済み定常結果の描画。フィット・選択は行わない |
+| `deposim_sim/models/aib_ode.py` | 連続な吸着A状態と局所A/B輸送反応閉包 |
+| `deposim_sim/models/mvk_state.py` | 有界な酸化還元リザーバー積分と還元・再生フラックス |
+| `deposim_sim/models/ald_role_state.py` | ALDの蓄積、放出、転化、阻害状態の積分 |
+| `deposim_sim/transport_provider.py` | `direct_surface`、`fit_scalar`、`from_cfd_flux_sink` の意味 |
+| `deposim_sim/pipeline.py` | 設定、Fluent入力、輸送、プロセス、測定、出力を接続する単一振分け部 |
+| `deposim_schema/sim_config.py` | 公開設定構造と許可するプロセスモデル名 |
 
-This separation makes a new equation family a local model change: register its metadata,
-response, reductions, and evidence requirements; then exercise the existing enumeration,
-fit, comparison, and reporting path. Model-name conditionals should not be added to the
-analysis unless the model supplies a genuinely different observation type.
+この分離により、新しい定常方程式族は局所的なモデル変更で追加できる。メタデータ、応答、
+縮約、必要証拠を登録し、既存の列挙、フィット、比較、報告経路を使う。モデルが実際に異なる
+観測型を供給する場合を除き、解析にモデル名による条件分岐を追加しない。
 
-## Configuration contract
+## 設定契約
 
-Simulation and fitting configurations are kept separate:
+シミュレーション設定とフィッティング設定を分ける。
 
 ```text
-configs/sim/    forward process and state execution
-configs/opt/    parameter estimation and role comparison
+configs/sim/    順方向プロセス・状態計算
+configs/opt/    パラメータ推定・役割比較
 ```
 
-Public process models are:
+公開プロセスモデルは次の3つである。
 
 - `role_cvd_aib`
 - `role_cvd_mvk`
 - `role_ald_state`
 
-Implementation module names such as `aib_ode.py` are internal numerical details. The
-steady equation-family registry is selected by the analysis CLI rather than by a dynamic
-process-model name.
+`aib_ode.py` などのモジュール名は内部の数値実装である。定常方程式族レジストリは動的
+プロセスモデル名ではなく解析CLIから選ぶ。
 
-Every concentration-bearing configuration must state the Fluent file, field keys,
-species ordering, coordinate unit, reference-plane metadata, and time mode. Every
-transport closure must state the concentration location or the source of (k_m). See
-[inputs_fluent.md](inputs_fluent.md) and [transport_km.md](transport_km.md).
+濃度を含む設定では、Fluentファイル、項目キー、化学種順序、座標単位、参照面メタデータ、
+時間モードを必須とする。輸送閉包では濃度位置または \(k_m\) の出所を明示する。詳細は
+[inputs_fluent.md](inputs_fluent.md) と [transport_km.md](transport_km.md) に示す。
 
-State-model fitting declares `parameter_fit.search` independently of the search space.
-`method` selects `random`, `tpe`, `cmaes`, `de`, `pso`, or `levy`; the trial budget is bounded by
-`min_trials`, `max_trials`, and `trials_per_dimension`; `repetitions` supplies independent
-seeds. CMA-MAE additionally requires two behavior measures and is connected by the
-steady surface fitter, which supplies mean wafer CV and the log condition-rate span.
-Optuna and OptunaHub backends fail explicitly when the optional dependency is missing.
-A requested method is never replaced silently.
+状態モデルのフィッティングでは、`parameter_fit.search` を探索空間と独立に指定する。
+`method` は `random`、`tpe`、`cmaes`、`de`、`pso`、`levy` を選ぶ。
+試行数は `min_trials`、`max_trials`、`trials_per_dimension` で制限し、
+`repetitions` で独立乱数種数を指定する。CMA-MAEはさらに2つの振る舞い指標を必要とし、
+定常表面当てはめ処理が平均ウェハーCVと条件速度の対数幅を与える。OptunaまたはOptunaHubの
+任意依存がなければ明示的に失敗し、指定方法を別手法へ暗黙置換しない。
 
-Steady surface fitting independently selects one of `mse`, `wafer_normalized_mse`,
-`wafer_normalized_mae`, or `symmetric_normalized_mse` and one sampler. Every fit still
-uses one parameter set across all identification wafers. Optional radial uncertainty
-changes point weights within each wafer and then renormalizes that wafer to the same
-total mass as every other condition.
+定常表面フィットでは独立に、`mse`、`wafer_normalized_mse`、
+`wafer_normalized_mae`、`symmetric_normalized_mse` の一つとサンプラーを選ぶ。
+どの場合も全同定ウェハーへ一組の共有パラメータを使う。任意の半径方向不確かさは
+ウェハー内の点重みを変えた後、各条件の総重みが等しくなるよう再正規化する。
 
-`--reaction-input` is fixed before candidate enumeration. Reaction-family ranking cannot
-choose between sampling locations or between concentration and flux. The supported
-steady choices are `bulk_concentration`, `surface_concentration`, and
-`transport_capacity_flux`. They all enter a steady equation as
-\(u_j=X_j/X_{j,\mathrm{ref}}\), while the stored quantity, location, unit, and physical
-interpretation remain different. A realized reactive wall flux is retained as a closure
-observation and is never used as its own reaction driver.
+`--reaction-input` は候補列挙前に固定する。反応族の順位付けでサンプリング位置や濃度・
+フラックスを選ばせない。定常入力は `bulk_concentration`、
+`surface_concentration`、`transport_capacity_flux` に対応する。いずれも
+\(u_j=X_j/X_{j,\mathrm{ref}}\) として式へ入るが、保存する量、位置、単位、物理解釈は
+異なる。実反応壁面フラックスは閉包観測として保持し、自分自身の反応ドライバーには使わない。
 
-`--spatial-response` runs after chemical-family and role selection. `none`,
-`radial_quadratic`, and `radial_quartic` are available. The spatial coefficients do not
-enter `role_ranking.csv`, reduction evidence, or chemical parameter fitting. Every outer
-condition fold refits the spatial response using only the remaining conditions, then
-applies it to the held-out chemical prediction. Wafer temperature is uniform by design;
-an optional scalar value is provenance, not a fitted radial field.
+`--spatial-response` は化学族と役割の選択後に実行する。`none`、
+`radial_quadratic`、`radial_quartic` を使用できる。空間係数は
+`role_ranking.csv`、縮約証拠、化学パラメータ当てはめへ入らない。外側条件分割ごとに、
+残りの条件だけで空間応答を再フィットし、ホールドアウトの化学予測へ適用する。ウェハー温度は
+設計上一定であり、任意のスカラー値は来歴情報であって半径場の当てはめ値ではない。
 
-`parameter_fit.objective.loss` selects `mse`, `huber`, or `l1`. With
-`standardized: auto`, supplied measurement uncertainty changes all active conditions to
-a dimensionless residual. Mixing standardized and unstandardized conditions in one fit
-is rejected because their losses are not commensurate. Spatial, purge, plateau, role,
-and pathway quantities enter the objective only when supplied as measured observations
-with uncertainty. Unmeasured heuristic role and complexity penalties are not part of
-selection; simpler structures break numerical ties only after predictive scoring.
+`parameter_fit.objective.loss` は `mse`、`huber`、`l1` を選ぶ。
+`standardized: auto` では、測定不確かさが与えられた全条件を無次元残差へ変換する。
+尺度がそろわないため、標準化条件と非標準化条件を同一当てはめに混在させない。空間、パージ、
+停滞域、役割、経路の量は、不確かさ付き測定として与えた場合だけ目的関数へ入る。未測定の
+経験的な役割・複雑度罰則項は選択に用いず、単純構造は予測スコアが数値的同点の場合
+だけ優先する。
 
-## Results and provenance
+## 結果と来歴
 
-Generated inputs are written under `runs/generated_inputs/`; run outputs are written
-under `results/`. They are excluded from version control because they are reproducible
-artifacts rather than source fixtures.
+生成入力は `runs/generated_inputs/`、実行出力は `results/` に置く。これらは再現可能な
+成果物であり原データではないため、通常はバージョン管理から除外する。
 
-A steady role-evaluation run writes machine-readable CSV/JSON evidence, plots, a compact
-generated report, a notebook, and a manifest. Source file paths and SHA-256 values are
-stored in `analysis_summary.json`. The general scientific specification remains in
-`docs/`; a generated run report cannot redefine the equations or decision thresholds.
+定常役割評価は、機械可読なCSV/JSON証拠、図、簡潔な生成レポート、ノートブック、成果物目録を
+出力する。入力ファイルパスとSHA-256は `analysis_summary.json` に保存する。一般の科学
+仕様は `docs/` にあり、個別実行レポートが式や判断閾値を再定義することはない。
 
-The five leading chemical-decision artifacts are:
+化学的判断の主要成果物は次の5つである。
 
 1. `role_summary.csv`
 2. `role_ranking.csv`
@@ -178,99 +166,87 @@ The five leading chemical-decision artifacts are:
 4. `condition_scores.csv`
 5. `data_requirements.csv`
 
-State-model fits additionally write `optimization_summary.csv`,
-`optimization_trace.csv`, `loss_components.csv`, `optimization_convergence.png`, and
-`loss_components.png`. Main fits and condition-refit folds use the same rows. They
-separate optimizer behavior from model error and show the exact data-loss scale used in
-ranking. A single seed is marked as repeatability not assessed rather than assigned a
-zero repeatability range.
+状態モデル当てはめでは、さらに `optimization_summary.csv`、`optimization_trace.csv`、
+`loss_components.csv`、`optimization_convergence.png`、`loss_components.png` を
+出力する。本当てはめと条件再当てはめの分割は同じ列構造を使う。最適化器の挙動とモデル誤差を分離し、
+順位に使った正確なデータ損失関数尺度を示す。乱数種が一つの場合、再現性幅をゼロとせず
+「未評価」とする。
 
-Additional files diagnose extrapolation, structure sensitivity, coefficients, and input
-quality. `data_requirements.csv` connects each unresolved target use to the measurement,
-experimental variation, ambiguity resolved, and workflow stage needed to establish it.
-This keeps the user-facing path short without discarding evidence needed for audit.
+追加成果物は、外挿、構造感度、係数、入力品質を診断する。`data_requirements.csv` は
+未解決用途を、その成立に必要な測定、実験変化、解消される曖昧さ、処理段階へ結び付ける。
+監査に必要な証拠を失わず、利用者向けの主要経路を短く保つ。
 
-Steady-role interpretation also writes `optimization_history.csv`,
-`best_model_role_assignments.csv`, `condition_mean_input_correlations.csv`,
-`role_input_sensitivity.csv`, `role_importance_and_stability.csv`,
-`role_response_curves.csv`, `reaction_state_summary.csv`,
-`reaction_model_predictions.csv`, `reaction_model_states.csv`,
-`parameter_sensitivity_correlations.csv`, and `parameter_loss_slices.csv`. The fitting
-layer computes these quantities; the report layer only renders them. Input sensitivity
-is a one-at-a-time reference replacement for a nonlinear equation and is not presented
-as an additive or causal rate decomposition. Reaction diagrams render registered model
-steps, while held-out prediction differences and role-selection frequencies determine
-whether ambiguity matters to prediction. Parameter loss slices vary one kinetic ratio,
-reprofile the rate scale, and leave the other ratios fixed.
+定常役割解釈では、`optimization_history.csv`、
+`best_model_role_assignments.csv`、`condition_mean_input_correlations.csv`、
+`role_input_sensitivity.csv`、`role_importance_and_stability.csv`、
+`role_response_curves.csv`、`reaction_state_summary.csv`、
+`reaction_model_predictions.csv`、`reaction_model_states.csv`、
+`parameter_sensitivity_correlations.csv`、`parameter_loss_slices.csv` も出力する。
+これらは当てはめ層で計算し、報告書層は描画だけを行う。入力感度は非線形式の一入力を参照値へ
+置き換える計算であり、加算可能または因果的な速度分解として表示しない。反応図は登録済み
+モデル項を描き、曖昧さが予測へ影響するかはホールドアウト予測差と役割選択頻度で判断する。
+パラメータ損失関数断面では一つの速度論比を変え、速度尺度だけを再プロファイルし、他の比は固定する。
 
-`spatial_response_summary.csv` and `spatial_response_coefficients.csv` form a separate
-prediction artifact pair. They report chemical and corrected spatial scores side by side
-and explicitly record that the correction did not participate in chemical selection.
+`spatial_response_summary.csv` と `spatial_response_coefficients.csv` は独立した
+予測成果物の組である。化学のみと補正後の空間スコアを並べ、補正が化学選択に参加して
+いないことを明記する。
 
-Visualization follows the same ownership rule as tabular evidence:
+可視化も表形式証拠と同じ所有規則に従う。
 
-| Computed evidence | Owner | Rendered views |
+| 計算済み証拠 | 所有モジュール | 表示する図 |
 | --- | --- | --- |
-| Objective-evaluation history | `surface_fit.py`, `cvd_multicond_analysis.py` | `optimization_convergence.png` |
-| Equation ranking, registered paths, and family holdout predictions | equation registry and analysis orchestration | equation comparison, reaction-path, and model-prediction-agreement figures |
-| Role selection and reference-substitution sensitivity | `cvd_multicond_analysis.py` | assignment, response-curve, and importance-versus-stability figures |
-| Model-defined site/pathway fractions | equation registry plus prediction adapter | state summary and heldout state maps |
-| Local derivative design and parameter slices | `surface_fit.py` | kinetic-parameter sensitivity and Loss-slice figures |
-| Heldout predictions and spatial-response rows | prediction and `spatial_response.py` | measured/predicted/residual maps, radial profiles, and correction-performance figures |
+| 目的関数評価履歴 | `surface_fit.py`、`cvd_multicond_analysis.py` | `optimization_convergence.png` |
+| 方程式順位、登録経路、族ごとのホールドアウト予測 | 方程式登録表と解析制御 | 方程式比較、反応経路、モデル予測一致図 |
+| 役割選択と参照値置換感度 | `cvd_multicond_analysis.py` | 割当て、応答曲線、重要度対安定性図 |
+| モデル定義のサイト・経路割合 | 方程式登録表と予測変換部 | 状態要約、ホールドアウト状態マップ |
+| 局所微分設計とパラメータ断面 | `surface_fit.py` | 速度論パラメータ感度、損失関数断面 |
+| ホールドアウト予測と空間応答行 | 予測処理と `spatial_response.py` | 測定・予測・残差マップ、半径プロファイル、補正性能 |
 
-`cvd_multicond_report.py` receives these stored rows and only formats tables, notebook
-content, Markdown, and plots. A new figure must have a machine-readable source artifact
-and manifest entry before it is cited as evidence. This prevents plotting code from
-becoming a second selection or fitting path.
+`cvd_multicond_report.py` は保存済み行を受け取り、表、ノートブック本文、Markdown、図だけを
+整形する。新しい図は、機械可読な元成果物と成果物目録項目を備えるまで証拠として引用しない。
+これにより描画コードが第二の選択・当てはめ経路になることを防ぐ。
 
-## Extension rules
+## 拡張規則
 
-### Add a steady equation family
+### 定常方程式族の追加
 
-1. Implement a pure normalized response and optional state summary in
-   `aib_reductions.py`.
-2. Register required roles, inputs, reductions, symmetry, physical question, and minimum
-   evidence.
-3. Add equation tests for limiting cases and exact reductions.
-4. Confirm that enumeration and reports work without a family-name branch.
-5. Update [THEORY.md](THEORY.md) when the model meaning changes.
+1. `aib_reductions.py` に純粋な正規化応答と任意の状態要約を実装する。
+2. 必須役割、入力、縮約、対称性、物理的問い、最小証拠を登録する。
+3. 律速極限と厳密縮約の式試験を追加する。
+4. 族名による分岐なしで列挙・報告書が動作することを確認する。
+5. モデル意味が変わる場合は [THEORY.md](THEORY.md) を更新する。
 
-### Add a dynamic process model
+### 動的プロセスモデルの追加
 
-1. Define the bounded state, rates, units, and required observations.
-2. Implement the state kernel without optimization dependencies.
-3. Register its supported process and time mode in `process_models.py`.
-4. Connect it once in `pipeline.py` and add a minimal YAML example.
-5. Test conservation/bounds, zero-input limits, transport limits, and time-step behavior.
+1. 有界状態、速度、単位、必要観測を定義する。
+2. 最適化依存のない状態計算核を実装する。
+3. `process_models.py` に対応プロセスと時間モードを登録する。
+4. `pipeline.py` へ一度だけ接続し、最小YAML例を追加する。
+5. 保存・範囲、ゼロ入力極限、輸送極限、時間刻み挙動を試験する。
 
-### Add transport physics
+### 輸送物理の追加
 
-Transport changes belong in a provider or mass-transfer utility. The reaction model
-receives (C_{\mathrm{ref}}), (C_s), or (k_m) under explicit semantics. A CFD realized
-reactive flux cannot be reinterpreted as transport capacity, because that would feed the
-modeled reaction result back into its own boundary condition.
+輸送変更は供給方式または物質移動補助式へ置く。反応モデルは、意味を明示した
+\(C_{\mathrm{ref}}\)、\(C_s\)、\(k_m\) を受け取る。CFD実反応フラックスを輸送容量と
+読み替えてはならない。モデル化する反応結果を自分自身の境界条件へ戻すことになる。
 
-### Add an adoption rule
+### 採用規則の追加
 
-Adoption rules belong in `class_compare.py` and must apply to empirical and physical
-paths consistently. A new diagnostic should only gate adoption when it corresponds to a
-clear scientific failure mode and can be evaluated from the available data. Application
-tolerances remain user-supplied because the code cannot infer acceptable process error.
+採用規則は `class_compare.py` に置き、経験的経路と物理的経路へ一貫して適用する。
+新しい診断が採用を制限できるのは、明確な科学的失敗に対応し、利用可能データから評価できる
+場合に限る。コードは許容可能な工程誤差を推定できないため、用途許容差は利用者が与える。
 
-## Why this design is useful
+## 本設計の利点
 
-- Equations remain inspectable and testable independently of optimization.
-- All raw-species assignments receive the same fit and validation procedure.
-- Exact reductions distinguish “a coefficient was fitted” from “the associated effect
-  improved transfer.”
-- Nested condition evaluation separates model selection from performance estimation.
-- Transport and state models can evolve without changing role-ranking semantics.
-- Scientific limits are expressed as missing evidence rather than hidden defaults or
-  excessive validation scaffolding.
+- 方程式を最適化から独立して点検・試験できる。
+- 生の化学種割当てすべてに同じ当てはめ・検証手順を適用する。
+- 厳密縮約により「係数を当てはめできた」と「その効果が条件間予測を改善した」を区別する。
+- 入れ子条件評価により、モデル選択と性能推定を分離する。
+- 役割順位の意味を変えずに、輸送・状態モデルを発展させられる。
+- 科学的限界を、隠れた既定値や過剰な検査機構ではなく不足証拠として示す。
 
-The remaining architectural boundary is that the steady CSV census and dynamic NPZ
-fitting paths are separate. MvK now emits observation-time state, pathway,
-surface-concentration, and flux histories; configured NPZ measurement keys can pass
-aligned histories and their uncertainties to the existing multi-observation objective.
-The adapter intentionally requires the measured timestamps to match the Fluent time
-grid. General time resampling and correlated-error models are not implemented.
+残る構造上の境界は、定常CSV網羅評価と動的NPZ当てはめが別経路である点である。MvKは現在、
+観測時刻の状態、経路、表面濃度、フラックス履歴を出力する。設定したNPZ測定キーにより、
+時刻を合わせた履歴と不確かさを既存の多観測目的関数へ渡せる。変換部は意図的に、
+測定時刻とFluent時間格子の一致を要求する。一般的な時間再標本化と相関誤差モデルは
+未実装である。

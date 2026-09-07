@@ -1,152 +1,136 @@
-# Product and scientific requirements
+# 製品要件および科学要件
 
-These requirements define the current reaction-role assimilation product. Numeric IDs
-provide stable references for code review and scientific discussion; the current model
-and workflow documents define their operational meaning.
+本要件は、現在の反応役割同化機能を定義する。番号はコードレビューと科学的議論で安定した
+参照先として用い、操作上の意味は現行のモデル文書と評価手順に従う。
 
-## Scientific scope
+## 科学的な対象範囲
 
-### MUST-007: Role models are the public kinetic interface
+### MUST-007: 公開速度論インターフェースは反応役割モデルとする
 
-Raw Fluent species are assigned to disjoint `A`, optional `B`, optional `I`, or unused
-roles. The public dynamic models are `role_cvd_aib`, `role_cvd_mvk`, and
-`role_ald_state`. Species names do not carry chemical meaning by themselves.
+Fluentの生の化学種を、互いに重ならないA、任意のB、任意のI、または未使用へ割り当てる。
+公開動的モデルは `role_cvd_aib`、`role_cvd_mvk`、`role_ald_state` とする。化学種名
+だけに化学的意味を持たせない。
 
-### MUST-008: Role assignments are validated
+### MUST-008: 反応役割の割当てを検証する
 
-`A` is required. `B` and `I` are optional and each names at most one raw species. One
-species cannot occupy more than one role. Unused species remain allowed.
+Aは必須とする。BとIは任意で、それぞれ最大1種を指定できる。同じ化学種を複数の役割へ
+割り当ててはならない。未使用の化学種は許容する。
 
-### MUST-003 and MUST-016: CVD and ALD share role inputs but retain distinct physics
+### MUST-003、MUST-016: CVDとALDは入力役割を共有し、物理モデルは分離する
 
-Steady and transient CVD and transient ALD use the same Fluent field and role-assignment
-semantics. Their surface-state equations, numerical updates, and model-readiness metrics
-remain process specific.
+定常・過渡CVDと過渡ALDは、Fluent場および役割割当ての意味を共有する。表面状態式、
+数値更新、モデル適用性の指標は各プロセス固有とする。
 
-### MUST-021 and SHOULD-031: Equation families are registered and comparable
+### MUST-021、SHOULD-031: 方程式族を登録し、共通手順で比較できること
 
-New families provide an equation, required roles, exact reductions, exchange symmetry,
-parameter bounds, and evidence requirements through the existing registry. A new family
-must enter the common fit and validation workflow rather than introduce a second ranking
-system.
+新しい方程式族は、式、必須役割、厳密縮約、交換対称性、パラメータ範囲、必要証拠を既存
+レジストリへ登録する。別の順位付け機構を追加せず、共通のフィッティング・検証手順へ
+参加させる。
 
-### MUST-010: Physical bounds and signs are explicit
+### MUST-010: 物理的な範囲と符号を明示する
 
-Concentrations and nonnegative rates remain nonnegative; coverages and capacity fractions
-remain in `[0,1]`; deposition is positive and etch/loss subtract from net film rate.
+濃度と非負の速度は非負、被覆率と容量割合は `[0,1]` に保つ。成膜を正、エッチング・
+損失を負として正味膜速度を構成する。
 
-## Transport and process state
+## 輸送およびプロセス状態
 
-### MUST-001 and MUST-002: Concentration location is explicit
+### MUST-001、MUST-002: 濃度位置を明示する
 
-Reference-plane concentration `C_ref` and surface concentration `C_s` are different
-quantities. The input records the location and reference-plane metadata. The software
-may use a declared `bulk_as_surface` approximation, but must report that approximation
-and must not describe it as a solved wall transformation.
+参照面濃度 `C_ref` と表面濃度 `C_s` は異なる物理量である。入力には位置と参照面情報を
+記録する。`bulk_as_surface` 近似は明示すれば利用できるが、壁面変換を解いた結果として
+記述してはならない。
 
-### MUST-006: Mass-transfer closure is pluggable
+### MUST-006: 物質移動閉包を交換可能にする
 
-The active path accepts a supplied surface concentration, a scalar/field mass-transfer
-coefficient, or a documented CFD transport-capacity flux. Stagnant-film, rotating-disk,
-and Bosanquet utilities supply candidate coefficients without changing the reaction
-model.
+現在の経路は、与えられた表面濃度、スカラーまたは場の物質移動係数、あるいは定義済みの
+CFD輸送容量フラックスを受け取れる。静止膜、回転円板、Bosanquetの補助式は、反応モデルを
+変更せず候補係数を与える。
 
-### MUST-009: Flux and role diagnostics preserve meaning
+### MUST-009: フラックスと役割診断の物理的意味を保つ
 
-Where defined, outputs include `CsA_over_CrefA`, `CsB_over_CrefB`, A/B surface and
-transport fluxes, inhibitor factor `f_I`, and B transport-demand ratio `phi_B`. Missing
-physical inputs produce unavailable diagnostics rather than fabricated zero values.
+定義可能な場合、出力には `CsA_over_CrefA`、`CsB_over_CrefB`、A/Bの表面・輸送
+フラックス、阻害因子 `f_I`、B輸送需要比 `phi_B` を含める。物理入力が不足する診断は、
+ゼロを捏造せず利用不可とする。
 
-### MUST-011 and MUST-012: Dynamic state updates are bounded
+### MUST-011、MUST-012: 動的状態の更新を有界に保つ
 
-Dynamic AIB and MvK use bounded implicit Euler with bisection and a counted fallback for
-non-bracketed steps. The ALD state uses bounded explicit substeps and reports projection
-and substep diagnostics. The configured solver name must match the executed method.
+動的AIBとMvKは、二分法を用いた有界陰的Euler法を使用し、根を挟めないステップの
+代替処理回数を記録する。ALD状態は有界な陽的サブステップを用い、射影回数とサブステップ
+診断を出力する。設定したソルバー名と実際の計算法を一致させる。
 
-### MUST-013 and MUST-014: Reaction orders and limiting regimes are tested
+### MUST-013、MUST-014: 反応次数と律速極限を試験する
 
-Configured reaction orders obey the implemented integer and total-order limits. Tests
-cover reaction-limited, transport-limited, zero-co-reactant, state-bound, and time-step
-behavior appropriate to each model.
+反応次数は、実装済みの整数制約と総次数制約を満たす。各モデルに応じて、反応律速、
+輸送律速、共反応物ゼロ、状態境界、時間刻みの試験を備える。
 
-## Estimation and evidence
+## 推定および証拠
 
-### MUST-057: Film-map comparison and role ranking are first-class
+### MUST-057: 膜マップ比較と反応役割順位を主要成果物とする
 
-The workflow aligns each film observation once, records alignment distance, fits all
-applicable candidates, and writes role summary, ranking, stability, and per-condition
-scores. Mean bias and centered wafer-pattern error are separate quantities.
+各膜厚観測は一度だけ位置合わせし、その距離を記録する。適用可能な全候補をフィットし、
+役割要約、順位、安定性、条件別スコアを出力する。平均バイアスと中心化した面内誤差は
+別の量として扱う。
 
-### MUST-062: Candidate selection estimates predictive error
+### MUST-062: 候補選択では予測誤差を推定する
 
-Training loss, condition-refit prediction error, ordinary RMSE/MAE/max error, exact
-reduction evidence, role stability, and local parameter sensitivity are reported
-separately. Condition-refit error determines selection when available. Simpler models
-are preferred only when their paired error is statistically indistinguishable. A small
-training loss alone cannot produce `adopt`.
+訓練損失関数、条件再フィット予測誤差、通常のRMSE・MAE・最大誤差、厳密縮約の証拠、役割
+安定性、局所パラメータ感度を分けて報告する。利用可能な場合は条件再フィット誤差で選択
+する。単純なモデルを優先するのは、対応する誤差が数値的に区別できない場合に限る。
+訓練損失関数が小さいだけでは `adopt` としない。
 
-### MUST-063: Multi-condition validation prevents leakage
+### MUST-063: 多条件検証で情報漏洩を防ぐ
 
-Conditions carry explicit train or holdout status and condition-balanced weights.
-Normalization, fitting, model selection, and reference baselines use training conditions
-only. An external holdout remains untouched until one model and parameter set are fixed.
-Outer condition folds repeat the complete selection procedure to measure selection
-stability.
+条件ごとに訓練またはホールドアウトを明示し、条件均等重みを使う。正規化、フィッティング、
+モデル選択、基準モデルは訓練条件だけで求める。ひとつのモデルとパラメータ集合が固定
+されるまで、外部ホールドアウトには触れない。外側の条件分割では選択手順全体を繰り返し、
+選択安定性を測る。
 
-### SHOULD-033: Transport and reference-location sensitivity are reported
+### SHOULD-033: 輸送および参照位置に対する感度を報告する
 
-When the inputs support more than one concentration location or transport closure, the
-workflow compares them under the same observation and split. The comparison is a model
-sensitivity analysis, not proof of the correct boundary condition.
+複数の濃度位置または輸送閉包を入力が支持する場合、同じ観測と分割で比較する。この比較は
+モデル感度解析であり、正しい境界条件を証明するものではない。
 
-### MUST-064: An unresolved use produces an experimental requirement
+### MUST-064: 未解決用途には実験要件を出力する
 
-The workflow assesses wafer spatial correction, anonymous-species role assignment, and
-elementary kinetic-parameter estimation independently. For each use lacking evidence it
-writes a reusable measurement requirement with the controlled variation, ambiguity
-resolved, workflow insertion point, and readiness criterion. The output must not stop at
-a generic statement that the current data cannot support the use.
+ウェハー面内補正、匿名化学種の役割割当て、素反応パラメータ推定を独立に評価する。証拠が
+不足する用途ごとに、必要測定、制御すべき変化、解消する曖昧さ、ワークフローへの挿入点、
+評価可能となる基準を再利用可能な形で出力する。「現在のデータでは使えない」という一般論
+だけで終えてはならない。
 
-## Configuration, code, and outputs
+## 設定、コード、出力
 
-### MUST-019, MUST-020, and MUST-052: Configuration and package boundaries are stable
+### MUST-019、MUST-020、MUST-052: 設定とパッケージ境界を安定させる
 
-YAML configuration separates `sim` and `opt`. Simulation code owns physical state and
-flux; optimization code owns fitting and selection; report code presents computed
-artifacts. Components are usable independently through Python and composable in the
-pipeline.
+YAMLでは `sim` と `opt` を分離する。シミュレーションコードは物理状態とフラックス、
+最適化コードはフィッティングと選択、レポートコードは計算済み成果物の表示を所有する。
+各部品はPythonから単独利用でき、処理系で合成できること。
 
-### MUST-056: Compatibility is checked before execution
+### MUST-056: 実行前に互換性を検査する
 
-Model metadata declare required roles, excluded combinations, supported time modes, and
-governing class. Invalid model/input combinations stop before numerical execution.
+モデルのメタデータに、必須役割、禁止組合せ、対応時間モード、支配クラスを宣言する。
+無効なモデル・入力の組合せは数値計算前に停止する。
 
-### MUST-004, MUST-024, MUST-026, and MUST-061: Outputs are reviewable
+### MUST-004、MUST-024、MUST-026、MUST-061: 出力をレビュー可能にする
 
-Configured simulation produces a wafer map, resolved configuration, metrics, plots,
-report, and a machine-readable `output.v1` manifest. The steady equation census produces
-role tables, per-condition predictions, uncertainty diagnostics, target-use data
-requirements, figures, source hashes, and its analysis manifest. Human-readable
-summaries link to, rather than recalculate, these artifacts.
+設定駆動シミュレーションは、ウェハーマップ、解決済み設定、指標、図、レポート、機械可読な
+`output.v1` 成果物目録を生成する。定常方程式の網羅評価は、役割表、条件別予測、不確かさ
+診断、用途別データ要件、図、入力ハッシュ、解析成果物目録を生成する。人が読む要約はこれら
+へリンクし、内部で再計算しない。
 
-### MUST-027: Numerical health is observable
+### MUST-027: 数値健全性を観測可能にする
 
-State bounds, projection counts, non-bracketed implicit steps, applicable residuals, and
-validation violations are recorded. A diagnostic that does not apply is marked
-unavailable rather than successful.
+状態範囲、射影回数、根を挟めなかった陰的ステップ、適用可能な残差、検証違反を記録する。
+適用外の診断を成功扱いせず、利用不可と明示する。
 
-### MUST-023, MUST-028, MUST-051, and MUST-060: Operation stays compact
+### MUST-023、MUST-028、MUST-051、MUST-060: 運用経路を簡潔に保つ
 
-Common run and verification commands remain in `scripts/commands.sh`; Python and YAML
-remain the primary programmatic interface. Generated inputs belong in
-`runs/generated_inputs/`, run outputs in `results/`, and heavy dependencies remain
-optional unless a verified requirement needs them.
+共通の実行・検証コマンドは `scripts/commands.sh` に置き、PythonとYAMLを主要な
+プログラムインターフェースとする。生成入力は `runs/generated_inputs/`、実行出力は
+`results/` に置く。検証済み要件が必要としない重い依存は任意機能に留める。
 
-## Adoption boundary
+## 採用判断の境界
 
-The code is responsible for fair candidate enumeration, numerical correctness,
-leakage-free validation, transparent approximations, and conservative reporting. The
-data are responsible for independent role excitation, required physical metadata,
-measurement uncertainty, mechanism-specific observables, and a declared application
-tolerance. If either side is missing, the result remains `review` or `reject` even when
-the fitted error is small.
+コードは、公平な候補列挙、数値計算の正しさ、情報漏洩のない検証、近似の明示、保守的な
+報告に責任を持つ。データは、役割を独立に励起する条件、必要な物理メタデータ、測定不確かさ、
+機構固有の観測、用途上の許容差に責任を持つ。どちらかが不足すれば、適合誤差が小さくても
+判定は `review` または `reject` に留める。

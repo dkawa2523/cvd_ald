@@ -1,53 +1,40 @@
-# ADR 0019: CVD/ALD Role Discovery Operation
+# ADR 0019: CVD/ALD反応役割探索の運用
 
-- Date: 2026-04-15
-- Status: Accepted
-- Scope: Future CVD/ALD execution and role-discovery implementation
+- 日付: 2026-04-15
+- 状態: 採択
+- 範囲: 今後のCVD/ALD実行と反応役割探索実装
 
-## Context
+## 背景
 
-ADR 0008 retired the legacy `power_law/lhhw/root_solve` route and made AIB-ODE the
-single primary implementation path. That was useful for removing old competing
-physics paths, but it now creates a misleading implementation signal: future
-work should not force CVD and ALD into one `aib_ode` contract.
+ADR 0008は旧 `power_law/lhhw/root_solve` 経路を廃止し、AIB-ODEを唯一の主実装経路とした。競合する旧物理経路の削除には有効だったが、今後の開発でもCVDとALDを一つの `aib_ode` 仕様へ押し込むように見える点は適切でない。
 
-The product goal is still role-based data assimilation. Fluent provides raw
-species concentration and flux-like fields. The code must help find a reasonable
-mapping from raw species to reaction roles (`A`, optional `I`, optional `B`) and
-fit those role-based models to measured wafer thickness maps under matching
-tool/recipe/Fluent conditions.
+製品目的は引き続き反応役割に基づくデータ同化である。Fluentは生の化学種濃度とフラックス様の場を与える。コードは、生の化学種から反応役割（A、任意のI、任意のB）への妥当な写像を見つけ、装置・レシピ・Fluent条件が対応する実測ウェハー膜厚マップへ役割モデルを当てはめる。
 
-## Decision
+## 判断
 
-1. The primary concept is **role-based modeling**, not `aib_ode` as a permanent
-   public model name.
-2. CVD and ALD must be executable as separate process modes:
-   - CVD uses a continuous role-based model path.
-   - ALD uses a transient role-state model path.
-3. Existing `aib_ode` behavior remains a compatibility implementation for the
-   current CVD-like role model and existing tests.
-4. Implementations should use the small process-model registry and common
-   dispatcher rather than adding more `aib_ode` special cases.
-5. Role discovery remains first-class:
-   - users may fix roles when known;
-   - users may enumerate candidate raw-species assignments when roles are unknown;
-   - rankings must be based first on measured thickness maps, role stability,
-     next-best gaps, and complexity.
-6. Keep the first implementation simple:
-   - preserve discrete A/I/B role enumeration before adding weighted role exposure;
-   - support optional multi-case train/holdout configs with minimal YAML;
-   - avoid a large dataset framework unless later justified.
+1. 主概念は**反応役割に基づくモデリング**であり、`aib_ode` を恒久的な公開モデル名とはしない。
+2. CVDとALDを別のプロセス modeとして実行可能にする。
+   - CVDは連続的な反応役割モデル経路を使う。
+   - ALDは過渡的な役割状態モデル経路を使う。
+3. 現在のCVD様役割モデルと既存試験のため、従来の `aib_ode` 挙動を互換実装として残す。
+4. `aib_ode` の特殊分岐を増やさず、小さなプロセス-モデル 登録表と共通振分け部を使う。
+5. 反応役割探索を主要機能として維持する。
+   - 既知なら利用者が役割を固定できる。
+   - 未知なら生の化学種割当て候補を列挙できる。
+   - 順位は、まず測定膜厚マップ、役割安定性、次点との差、複雑さに基づく。
+6. 最初の実装を小さく保つ。
+   - 重み付き役割曝露を追加する前に、離散的A/I/B列挙を維持する。
+   - 最小限のYAMLで任意の複数case学習・ホールドアウト設定に対応する。
+   - 将来必要性が示されるまで大規模データセットの枠組みを導入しない。
 
-## Consequences
+## 影響
 
-- ADR 0008 remains valid only for the retirement of legacy `power_law/lhhw/root_solve`.
-- Requirements and docs must not describe `sim.model.name = aib_ode` as the final
-  public runtime contract.
-- Existing configs may continue to use `aib_ode` or compatibility aliases, but
-  new user-facing CVD/ALD work should prefer process-specific names.
-- New Codex tasks should prefer:
-  1. `fixed|enumerate` role mode cleanup,
-  2. CVD/ALD command separation,
-  3. role-summary and role-ranking outputs,
-  4. multi-condition role stability,
-  5. ALD state-model changes following ADR 0020.
+- ADR 0008は、旧 `power_law/lhhw/root_solve` 廃止についてだけ有効である。
+- 要件と文書で、`sim.model.name = aib_ode` を最終公開実行系仕様と記述しない。
+- 既存設定は `aib_ode` または互換別名を使い続けられるが、新しいCVD/ALD利用ではプロセス固有名を優先する。
+- 新しいCodex 課題は次を優先する。
+  1. `fixed|enumerate` 役割modeの整理
+  2. CVD/ALD commandの分離
+  3. 役割要約・順位出力
+  4. 複数条件の役割安定性
+  5. ADR 0020に従うALD状態モデル変更

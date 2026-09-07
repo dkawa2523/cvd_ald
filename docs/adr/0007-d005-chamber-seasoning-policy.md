@@ -1,42 +1,39 @@
-# ADR 0007: D-005 Chamber Seasoning Inclusion Policy
+# ADR 0007: D-005 チャンバーの履歴調整の導入方針
 
-- Date: 2026-02-19
-- Status: Accepted
-- Decision task: `D-005`
+- 日付: 2026-02-19
+- 状態: 採択
+- 判断課題: `D-005`
 
-## Context
+## 背景
 
-`model_explain.md` mentions chamber seasoning/drift as an advanced extension candidate.
-Current platform focuses on wafer-level forward/DOE/assimilation baseline and does not define
-a chamber-history state contract, lifecycle policy, or data interface for seasoning effects.
+`model_explain.md` は、チャンバーの履歴調整・ドリフトを高度な拡張候補として挙げている。現在の基盤はウェハー単位の順方向計算、実験計画、同化を対象とし、履歴調整効果に必要なチャンバー履歴状態、ライフサイクル方針、データインターフェースを定義していない。
 
-Per AGENTS and POLICY_LOCK, introducing this model family requires explicit requirement and
-validation design before implementation.
+AGENTSおよびPOLICY_LOCKに従い、このモデル群の導入には実装前の明示的な要件と検証設計が必要である。
 
-## Decision
+## 判断
 
-For `D-005`, chamber seasoning inclusion is classified as:
+`D-005` におけるチャンバーの履歴調整導入を次の状態とする。
 
 - `DEFERRED`
 
-No promotion to requirement-level implementation is made in this phase.
+現段階では要件水準の実装へ昇格させない。
 
-## Rationale
+## 理由
 
-1. Chamber-level historical state is outside current validated data contract.
-2. Adding it now would introduce cross-run state coupling complexity and operational risk.
-3. No current milestone gate requires seasoning support to preserve platform readiness.
+1. チャンバー履歴状態は、現在検証済みのデータ仕様外にある。
+2. 現時点で加えると、実行間の状態結合が複雑になり、運用リスクが増える。
+3. 基盤の準備状況を保つために履歴調整対応を求める節目の判定条件がない。
 
-## Consequences
+## 影響
 
-1. No chamber-history state module is added by this decision.
-2. `docs/GAPS.md` tracks this as deferred and blocked for silent implementation.
-3. Future adoption must include schema, persistence, reproducibility, and rollback policy.
+1. この判断ではチャンバー履歴状態モジュールを追加しない。
+2. `docs/GAPS.md` で保留として追跡し、暗黙の実装を禁止する。
+3. 将来採用する場合は、スキーマ、永続化、再現性、巻戻し方針を含める。
 
-## Trigger To Reopen
+## 再検討条件
 
-Reopen when at least one is true:
+次のいずれかを満たしたときに再検討する。
 
-1. Product requirement mandates chamber drift compensation in production workflows.
-2. Stable chamber-history data inputs become available and quality-controlled.
-3. A decision/ADR defines state persistence, reset policy, and acceptance tests.
+1. 製品要件が運用ワークフローでのチャンバードリフト補償を求める。
+2. 品質管理された安定なチャンバー履歴データが利用可能になる。
+3. 判断またはADRが、状態永続化、初期化方針、受入れ試験を定義する。

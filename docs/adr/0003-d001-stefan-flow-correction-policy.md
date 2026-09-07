@@ -1,43 +1,39 @@
-# ADR 0003: D-001 Stefan Flow Correction Policy
+# ADR 0003: D-001 Stefan流補正方針
 
-- Date: 2026-02-19
-- Status: Accepted
-- Decision task: `D-001`
+- 日付: 2026-02-19
+- 状態: 採択
+- 判断課題: `D-001`
 
-## Context
+## 背景
 
-`model_explain.md` includes MS-14 (Stefan flow correction) as an optional physics extension.
-Current runtime requirements and task gates are satisfied without Stefan correction, and no
-validated input contract exists yet for robust multi-component total-flux correction in this repo.
+`model_explain.md` は、任意の物理拡張としてMS-14（Stefan流補正）を挙げている。現在の実行要件と課題の判定条件はStefan補正なしで満たされており、本リポジトリには堅牢な多成分全フラックス補正に必要な検証済み入力仕様がない。
 
-Per AGENTS and POLICY_LOCK, new physics must not be silently promoted into implementation scope.
+AGENTSおよびPOLICY_LOCKに従い、新しい物理モデルを暗黙に実装範囲へ昇格させない。
 
-## Decision
+## 判断
 
-For `D-001`, Stefan flow correction is classified as:
+`D-001` におけるStefan流補正を次の状態とする。
 
 - `DEFERRED`
 
-It is not promoted to `docs/REQUIREMENTS.md` in the current phase.
+現段階では `docs/REQUIREMENTS.md` へ要件として追加しない。
 
-## Rationale
+## 理由
 
-1. No immediate gate requires Stefan correction to keep P0/P1/P2 operational integrity.
-2. Premature insertion would add model-combination and identifiability complexity without
-   fixed acceptance tests.
-3. A dedicated requirement/validation contract is needed before implementation.
+1. P0/P1/P2の運用上の完全性を保つために、Stefan補正を必要とする直近の判定条件がない。
+2. 固定した受入れ試験なしに導入すると、モデル組合せと識別性の複雑さだけが増える。
+3. 実装前に専用の要件・検証仕様が必要である。
 
-## Consequences
+## 影響
 
-1. No code changes to mass-transfer solver stack are introduced in this decision.
-2. `docs/GAPS.md` keeps Stefan as deferred with trigger conditions.
-3. Any future implementation must first add requirement IDs + traceability + acceptance tests.
+1. この判断では物質移動解法群を変更しない。
+2. `docs/GAPS.md` では、再検討条件とともにStefan流を保留として残す。
+3. 将来実装する場合は、先に要件ID、追跡関係、受入れ試験を追加する。
 
-## Trigger To Reopen
+## 再検討条件
 
-Reopen this decision when at least one is true:
+次のいずれかを満たしたときに再検討する。
 
-1. A target use-case shows systematic error in strong-consumption regimes that cannot be
-   explained by existing Bosanquet/pattern/state options.
-2. A measurement/calibration study requires explicit Stefan-term sensitivity.
-3. An ADR/decision task promotes Stefan into MUST/SHOULD with concrete verification cases.
+1. 強消費領域で、既存のBosanquet、空間分布、状態選択肢では説明できない系統誤差が対象用途に現れる。
+2. 測定・較正試験でStefan項の明示的感度が必要になる。
+3. ADRまたは判断課題が、具体的な検証例を伴ってStefan流をMUSTまたはSHOULDへ昇格させる。

@@ -1,89 +1,75 @@
-# Evaluation of the current five-condition CVD dataset
+# 現行CVD 5条件データの評価
 
-## Technical conclusion
+## 技術的結論
 
-The current data support a reduced model for transferring the **condition-mean
-deposition rate** across the five supplied conditions. The chemical equation alone does
-not predict the measured wafer-scale variation. A separate mean-preserving radial
-residual response improves centered spatial prediction on all five outer heldout folds;
-this establishes internal transfer over the supplied geometry, but does not identify
-the physical cause or validate a new operating domain. The data do not support a unique
-raw-species-to-role assignment or a unique surface mechanism.
+現在のデータは、5条件間の**条件平均成膜速度**を移送する縮約モデルを支持する。一方、
+化学式だけでは測定されたウェハー面内変動を予測できない。化学選択後に独立して求めた
+条件平均保存型の半径残差応答は、5つの外側ホールドアウト 分割すべてで中心化面内予測を改善する。
+これは同じ形状・条件群内での移送性を示すが、残差の物理原因や新しい運転領域での妥当性は
+確定しない。また、生の化学種から反応役割への割当てと表面機構は一意に決まらない。
 
-The numerical AIB quasi-steady winner predicts the fixed no-refit condition-3 mean with a
-relative bias of +0.300% and the full map with 0.729% relative RMSE. Its centered
-spatial \(R^2=-0.0148\), spatial correlation is 0.172, and it reproduces 34.6% of the
-observed rate range. With the post-selection radial response, condition-3 centered
-\(R^2\) becomes 0.845 and RMSE becomes 0.000570306 nm s\(^{-1}\). The overall status
-remains `review`: condition-level screening is provisionally useful, while spatial use
-requires a declared tolerance and a new frozen wafer outside this development set. The
-generated `data_requirements.csv` states the measurements and designed variations
-needed to establish each requested capability.
+数値上のAIB準定常最良候補は、再当てはめしない固定条件3の平均を相対偏り +0.300%、全マップを
+相対RMSE 0.729%で予測する。中心化面内 \(R^2=-0.0148\)、面内相関0.172、測定分布幅の
+再現率34.6%である。選択後の半径応答を加えると、条件3の中心化 \(R^2\) は0.845、
+RMSEは0.000570306 nm s\(^{-1}\) となる。総合状態は `review` のままである。条件水準の
+スクリーニングは暫定利用できるが、面内補正の実運用には許容差と、本開発データから独立した
+固定ウェハーが必要である。`data_requirements.csv` には、各能力を確立するために必要な
+測定と実験変化を記録している。
 
-## Loss and sampler benchmark
+## 損失関数およびサンプラーの比較
 
-A separate optimization benchmark froze the primary AIB equation and crossed four
-whole-wafer losses with pattern search, TPE, CMA-ES, differential evolution, PSO, Lévy
-flight, and CMA-MAE. `mse` is explicitly the squared residual in the linear nm s\(^{-1}\)
-rate unit; none of the four candidates uses a logarithmic rate residual. Each stochastic
-fit used 4,096 shape evaluations, four times the earlier benchmark, and three independent
-seeds. Pattern search retained its deterministic 1,010-evaluation design. The combination
-was selected by median leave-one-training-condition-out RMSE; condition 3 remained a
-fixed audit.
+別の最適化比較では、主要AIB式を固定し、ウェハー全体を扱う4つの損失関数を分布 探索、
+TPE、CMA-ES、差分進化（DE）、PSO、Lévy飛行、CMA-MAEと組み合わせた。
+`mse` は線形の nm s\(^{-1}\) 単位における二乗残差であり、4つの損失関数はいずれも速度の
+対数残差を使わない。確率的当てはめは、以前の4倍に当たる4,096回の形状評価と3つの独立乱数種を
+使用した。分布 探索は決定論的な1,010回評価を維持した。組合せの選択には、訓練条件を
+一つずつ除外したRMSEの中央値を使い、条件3は最終監査専用とした。
 
-| Loss | Sampler | Condition-CV RMSE (nm s\(^{-1}\)) | Fixed condition-3 RMSE (nm s\(^{-1}\)) | Result |
+| 損失関数 | サンプラー | 条件CV RMSE (nm s\(^{-1}\)) | 固定条件3 RMSE (nm s\(^{-1}\)) | 評価 |
 | --- | --- | ---: | ---: | --- |
-| Wafer-normalized MSE | Pattern | 0.000888134 | 0.000993829 | Best training-CV result |
-| Symmetric normalized MSE | Pattern | 0.000889261 | 0.000994608 | Similar accuracy; slower because scale needs one-dimensional profiling |
-| Linear-rate MSE | Pattern | 0.000894084 | 0.00104863 | Current reference |
-| Wafer-normalized MAE | Pattern | 0.000945823 | 0.000995128 | More robust point loss, but worse condition transfer |
-| Wafer-normalized MSE | CMA-ES | 0.000892628 | 0.00100971 | Best stochastic median; converged across seeds |
-| Wafer-normalized MSE | DE | 0.000892792 | 0.00100985 | Nearly converged; small remaining seed spread |
+| ウェハー正規化MSE | Pattern | 0.000888134 | 0.000993829 | 訓練条件CVで最良 |
+| 対称正規化MSE | Pattern | 0.000889261 | 0.000994608 | 精度は同等。尺度に一次元プロファイルが必要なため遅い |
+| 線形成膜速度MSE | Pattern | 0.000894084 | 0.00104863 | 現行基準 |
+| ウェハー正規化MAE | Pattern | 0.000945823 | 0.000995128 | 点外れに強いが、条件間移送は悪化 |
+| ウェハー正規化MSE | CMA-ES | 0.000892628 | 0.00100971 | 確率手法の中央値で最良。乱数種間で収束 |
+| ウェハー正規化MSE | DE | 0.000892792 | 0.00100985 | ほぼ収束。乱数種差がわずかに残る |
 
-Wafer-normalized MSE improved the fixed-equation training CV by 0.665% and the fixed
-test RMSE by 5.226%. The fixed-test centered spatial \(R^2\) remained negative
-(-0.0153), so this is an improvement in absolute-rate transfer, not wafer-pattern
-prediction. A complete normalized-MSE census retained the same primary AIB candidate,
-but its five outer folds selected AIB once and Langmuir-Hinshelwood four times. The raw
-MSE census selected AIB three times and Langmuir-Hinshelwood twice. The normalized Loss
-therefore exposes useful scale sensitivity while increasing model-selection
-instability on these five conditions.
+ウェハー正規化MSEは、固定式の訓練CVを0.665%、固定テスト RMSEを5.226%改善した。一方、
+固定テストの中心化 \(R^2\) は−0.0153のままであり、これは絶対速度の移送改善であって
+面内分布予測の改善ではない。正規化MSEで全候補を評価しても主要AIB候補は同じだったが、
+5つの外側分割はAIBを1回、Langmuir–Hinshelwoodを4回選択した。生MSEではAIB 3回、
+Langmuir–Hinshelwood 2回である。正規化損失関数は有用な尺度感度を示す一方、この5条件では
+モデル選択をより不安定にした。
 
-Increasing the budget from 1,024 to 4,096 evaluations changed the sampler conclusion.
-Across the four Losses, DE reduced median condition-CV RMSE by 71-81% and reached the
-same basin as CMA-ES. CMA-ES produced essentially identical parameters across all three
-seeds. PSO was almost unchanged; Lévy flight improved by 27-72% but remained unstable;
-CMA-MAE remained unsuitable as a minimum-Loss optimizer. TPE showed a good best seed but
-large median and worst-seed errors and required the most time.
+評価回数を1,024から4,096へ増やすと、サンプラーの評価が変わった。4つの損失関数全体でDEは
+条件CV RMSE中央値を71–81%低下させ、CMA-ESと同じ解領域へ到達した。CMA-ESは3乱数種で
+ほぼ同じパラメータを得た。PSOはほぼ変化せず、Lévy飛行は27–72%改善したものの不安定、
+CMA-MAEは最小損失関数探索に適さなかった。TPEは最良乱数種では良好だが、中央値と最悪乱数種の
+誤差が大きく、実行時間も最長だった。
 
-For linear-rate MSE, pattern search gave condition-CV RMSE 0.000894084 nm s\(^{-1}\).
-DE and CMA-ES minimized the full-training MSE slightly better but gave condition-CV RMSE
-0.000896204 and 0.000896275 nm s\(^{-1}\), respectively. Their fitted inhibitor ratio was
-about 0.017, whereas pattern search stopped near the zero-inhibition boundary. Pattern's
-small CV advantage is consistent with implicit underfitting, but the fold parameters
-were not retained and do not establish that as the sole cause. It is not evidence that
-pattern search located the Loss minimum more accurately. Optimization convergence and
-model simplification must be separate decisions: use an exact reduced equation when
-inhibition is unsupported.
+線形成膜速度MSEでは、分布 探索の条件CV RMSEは0.000894084 nm s\(^{-1}\) だった。
+DEとCMA-ESは全訓練MSEをわずかに小さくしたが、条件CV RMSEはそれぞれ0.000896204、
+0.000896275 nm s\(^{-1}\) であった。両者の阻害比は約0.017、分布 探索は阻害ゼロ
+近傍で停止した。分布の小さなCV優位は暗黙の表現不足と整合するが、分割別パラメータを
+保存していないため、それだけを原因とは断定できない。分布 探索が損失関数最小点をより
+正確に求めた証拠でもない。最適化収束とモデル簡略化は別判断であり、阻害が支持されない
+場合は厳密縮約式を用いる。
 
-The generated `benchmark_report.md` records all 28 combinations. Pattern remains the
-fast screening default for the present two-to-four-dimensional reductions. CMA-ES is the
-preferred convergence audit and DE is the faster global alternative at a sufficient
-budget. Neither the sampler nor the Loss establishes the microscopic mechanism.
+生成済み `benchmark_report.md` は28組すべてを記録する。現在の2～4次元縮約では、
+分布 探索を高速スクリーニングの既定値、CMA-ESを収束監査、十分な計算予算を与えたDEを
+高速な大域代替とする。サンプラーも損失関数も微視的機構を確定しない。
 
-An explicit sensitivity run that assumed twice the standard uncertainty at the wafer
-edge changed normalized-MSE condition CV from 0.000888134 to 0.00109547 nm s\(^{-1}\).
-Because the supplied maps contain no replicate-derived uncertainty, this profile is not
-used in the primary result. Radial weighting should be activated only from measured or
-declared uncertainty information.
+ウェハーエッジの標準不確かさを中心の2倍と仮定した感度計算では、正規化MSEの条件CVが
+0.000888134から0.00109547 nm s\(^{-1}\) へ変わった。入力マップに反復測定由来の不確かさ
+がないため、この重みは主要結果へ使わない。半径方向重みは、測定済みまたは明示的に仮定
+した不確かさがある場合だけ有効にする。
 
-## Data and fixed evaluation design
+## データと固定評価設計
 
-The source consists of five `condition_<id>.csv` Fluent tables and five aligned
-`validation_<id>.csv` deposition-rate maps. Each condition contains 49 locations, for
-245 paired observations.
+入力は5つの `condition_<id>.csv` Fluent表と、それぞれに位置合わせした5つの
+`validation_<id>.csv` 成膜速度マップである。各条件49点、計245組の観測を含む。
 
-| Condition | Points | Mean measured rate (nm s\(^{-1}\)) | Mean `adn_2` (kmol m\(^{-3}\)) | Mean `idn_2` (kmol m\(^{-3}\)) | Mean `n2` (kmol m\(^{-3}\)) |
+| 条件 | 点数 | 平均測定速度 (nm s\(^{-1}\)) | 平均 `adn_2` (kmol m\(^{-3}\)) | 平均 `idn_2` (kmol m\(^{-3}\)) | 平均 `n2` (kmol m\(^{-3}\)) |
 | ---: | ---: | ---: | ---: | ---: | ---: |
 | 1 | 49 | 0.109217 | 3.51446×10\(^{-6}\) | 1.72846×10\(^{-6}\) | 1.99651×10\(^{-4}\) |
 | 2 | 49 | 0.0768629 | 2.81368×10\(^{-6}\) | 1.38452×10\(^{-6}\) | 1.59873×10\(^{-4}\) |
@@ -91,92 +77,87 @@ The source consists of five `condition_<id>.csv` Fluent tables and five aligned
 | 4 | 49 | 0.0744309 | 2.35597×10\(^{-6}\) | 1.73671×10\(^{-6}\) | 2.00803×10\(^{-4}\) |
 | 5 | 49 | 0.204294 | 6.90294×10\(^{-6}\) | 1.70349×10\(^{-6}\) | 1.96284×10\(^{-4}\) |
 
-Conditions 1, 2, 4, and 5 identify and select the model. Condition 3 is predicted
-without refitting. An outer leave-one-condition-out procedure separately reruns the
-complete selection process five times.
+条件1、2、4、5でモデルを同定・選択し、条件3は再当てはめせず予測する。これとは別に、全選択
+処理を条件ごとに5回やり直す外側一条件除外評価を行う。
 
-All 245 rows are finite. Coordinate sets match within (10^{-8}) in their supplied
-numeric unit, no duplicate coordinate is present, and the largest mole-fraction sum
-error is (3.689\times10^{-5}). These checks do not limit the current conclusion. The
-coordinate unit itself is not supplied, which prevents dimensional interpretation of
-the spatial pattern.
+245行はすべて有限値である。座標集合は入力上の数値単位で \(10^{-8}\) 以内に一致し、
+重複座標はなく、モル分率和の最大誤差は \(3.689\times10^{-5}\) である。これらの品質
+検査は現在の結論を制限しない。ただし座標単位が与えられていないため、面内パターンを
+有次元で解釈できない。
 
-## Numerical prediction winner and observable parameters
+## 数値上の最良候補と観測可能パラメータ
 
-The 59-candidate census selected
+59候補の網羅評価で次を選択した。
 
 ```text
 cvd:aib_qss:AIB:full:bulk_as_surface:A=idn_2,I=n2,B=adn_2
 ```
 
-with
+式は
 
 \[
 \hat v=R\frac{u_A b u_B}
-{u_A+(\delta+b u_B)(1+\kappa u_I)}.
+{u_A+(\delta+b u_B)(1+\kappa u_I)}
 \]
 
-| Observable parameter | Estimate | Conditional spatial-bootstrap 5–95% | Interpretation limit |
+である。
+
+| 観測可能パラメータ | 推定値 | 条件付き空間ブートストラップ 5–95% | 解釈上の限界 |
 | --- | ---: | ---: | --- |
-| (R) (nm s\(^{-1}\)) | 2.52722 | 2.52761–2.57796 | Lumped film-rate scale |
-| δ | 1.40746 | 1.33352–1.48551 | Finite nonproductive-loss group; does not identify physical desorption |
-| (b) | 0.0947464 | 0.0897687–0.0982172 | Dimensionless (B)-assisted conversion group |
-| κ | 0.000513970 | 5.23×10\(^{-8}\)–0.0159634 | Weak and unstable inhibitor group |
+| \(R\) (nm s\(^{-1}\)) | 2.52722 | 2.52761–2.57796 | 複数効果を含む膜速度尺度 |
+| \(\delta\) | 1.40746 | 1.33352–1.48551 | 有限の非生成損失群。物理的脱離だけを意味しない |
+| \(b\) | 0.0947464 | 0.0897687–0.0982172 | 無次元B補助転化群 |
+| \(\kappa\) | 0.000513970 | 5.23×10\(^{-8}\)–0.0159634 | 弱く不安定な阻害群 |
 
-The bootstrap intervals condition on this chosen structure. They exclude uncertainty in
-the equation family and role assignment. The shape search uses deterministic log-space
-multistart refinement, so repeated values at refinement locations must not be read as
-high parameter precision.
+ブートストラップ区間は選択済み構造を条件としており、方程式族と役割割当ての不確かさを含まない。
+形状探索は決定論的な対数空間多始点 細分化を用いるため、細分化位置で値が
+反復しても高いパラメータ精度を意味しない。
 
-![Inferred surface-state fractions and normalized response](assets/current_cvd_evaluation/selected_surface_state_maps.png)
+![推定した表面状態割合と正規化応答](assets/current_cvd_evaluation/selected_surface_state_maps.png)
 
-![Optimization history for the best assignment in each equation family](assets/current_cvd_evaluation/optimization_convergence.png)
+![方程式族ごとの最良割当てに対する最適化履歴](assets/current_cvd_evaluation/optimization_convergence.png)
 
-The optimization curves show numerical progress for one best assignment in each family.
-They do not establish that a flat fitted parameter direction is identifiable; parameter
-information is assessed separately below.
+最適化曲線は各族の最良割当てについて数値探索の進行を示す。曲線が平坦でも、当てはめした
+パラメータ方向が識別可能とは限らない。パラメータ情報は後述の感度で別に評価する。
 
-## Predictive performance
+## 予測性能
 
-| Metric | Fixed condition 3 | Interpretation |
+| 指標 | 固定条件3 | 解釈 |
 | --- | ---: | --- |
-| RMSE | 0.00104863 nm s\(^{-1}\) | 0.729% of the observed mean |
-| MAE | 0.000941297 nm s\(^{-1}\) | Small absolute mean-level error |
-| Mean bias | +0.000431064 nm s\(^{-1}\) | +0.300% of the observed mean |
-| Constant-training-mean RMSE | 0.0277296 nm s\(^{-1}\) | Numerical winner reduces RMSE by 96.2% |
-| Centered spatial RMSE | 0.000955934 nm s\(^{-1}\) | Most remaining error is spatial |
-| Centered spatial (R^2) | −0.0148 | Worse than predicting no within-map variation |
-| Spatial correlation | 0.172 | Weak pattern agreement |
-| Predicted/observed range | 34.6% | Spatial amplitude is strongly compressed |
+| RMSE | 0.00104863 nm s\(^{-1}\) | 測定平均の0.729% |
+| MAE | 0.000941297 nm s\(^{-1}\) | 絶対値として小さな平均水準誤差 |
+| 平均偏り | +0.000431064 nm s\(^{-1}\) | 測定平均の+0.300% |
+| 訓練平均定数モデルRMSE | 0.0277296 nm s\(^{-1}\) | 数値最良候補はRMSEを96.2%低減 |
+| 中心化面内RMSE | 0.000955934 nm s\(^{-1}\) | 残る誤差の大半が空間成分 |
+| 中心化面内 \(R^2\) | −0.0148 | 面内変動を予測しない場合より悪い |
+| 面内相関 | 0.172 | 分布一致が弱い |
+| 予測／測定分布幅 | 34.6% | 面内振幅を大きく過小評価 |
 
-![Measured, predicted, and residual condition-3 maps](assets/current_cvd_evaluation/test_spatial_maps.png)
+![条件3の測定・予測・残差map](assets/current_cvd_evaluation/test_spatial_maps.png)
 
-![Radial-shell means and azimuthal standard deviation](assets/current_cvd_evaluation/test_radial_profile.png)
+![半径シェル平均と方位方向標準偏差](assets/current_cvd_evaluation/test_radial_profile.png)
 
-The map comparison should be read after the mean-level metrics: the chemical model
-reaches the correct condition scale but leaves a coherent spatial residual and
-underestimates the within-wafer variation. Chemical roles are therefore not credited
-for the shared radial pattern.
+マップ比較は平均水準の指標を確認した後に読む。化学モデルは条件水準を再現するが、系統的な
+面内残差を残し、ウェハー内変動を過小評価する。この共通半径分布を化学役割の成果として
+扱わない。
 
-The training-condition leave-one-out RMSE is 0.000894084 nm s\(^{-1}\). The more
-conservative maximum of angular and radial blocked-CV RMSE is 0.00178286 nm s\(^{-1}\),
-showing that local spatial interpolation is a harder task than condition transfer.
+訓練条件一つ抜き RMSEは0.000894084 nm s\(^{-1}\) である。角度ブロックと半径ブロックの
+CV RMSEのうち大きい値は0.00178286 nm s\(^{-1}\) であり、局所空間補間が条件間移送より
+難しいことを示す。
 
-![Condition means for training and fixed holdout](assets/current_cvd_evaluation/condition_mean_transfer.png)
+![訓練条件と固定holdoutの条件平均](assets/current_cvd_evaluation/condition_mean_transfer.png)
 
-The condition means follow the observed scale closely. This is the evidence supporting
-screening use, subject to the concentration-domain and application-tolerance limits
-below.
+条件平均は測定水準によく追従する。これがスクリーニング利用を支持する証拠であるが、後述する
+濃度領域と用途許容差の制限を受ける。
 
-### Post-selection radial response
+### 選択後の半径応答
 
-The optional spatial stage fits centered logarithmic residuals using the two radial
-terms \(\rho^2\) and \(\rho^4\) after the chemical model has been selected. It then
-rescales the multiplicative correction to preserve the chemical mean on every wafer.
-The exact definition is given in [THEORY.md](THEORY.md). No chemical parameter, role,
-family, or reduction is refitted from this residual stage.
+任意の空間段階では、化学モデル選択後に \(\rho^2\) と \(\rho^4\) の2項を用いて
+中心化対数残差を当てはめする。乗算補正後は、各ウェハーの化学予測平均を保存するよう再尺度
+する。厳密な定義は [THEORY.md](THEORY.md) に示す。この残差段階で化学パラメータ、役割、
+方程式族、縮約を再当てはめしない。
 
-| Outer heldout condition | Chemical RMSE (nm s\(^{-1}\)) | Corrected RMSE (nm s\(^{-1}\)) | Chemical centered \(R^2\) | Corrected centered \(R^2\) |
+| 外側ホールドアウト条件 | 化学RMSE (nm s\(^{-1}\)) | 補正RMSE (nm s\(^{-1}\)) | 化学中心化 \(R^2\) | 補正中心化 \(R^2\) |
 | ---: | ---: | ---: | ---: | ---: |
 | 1 | 0.000677316 | 0.000310208 | −0.0846 | 0.7960 |
 | 2 | 0.000466018 | 0.000282523 | −0.1063 | 0.6950 |
@@ -184,218 +165,190 @@ family, or reduction is refitted from this residual stage.
 | 4 | 0.000422813 | 0.000213098 | 0.0371 | 0.7660 |
 | 5 | 0.00210931 | 0.00157624 | −0.1990 | 0.7889 |
 
-![Chemical and corrected spatial performance across outer holdouts](assets/current_cvd_evaluation/spatial_correction_performance.png)
+![外側holdout全条件の化学・補正面内性能](assets/current_cvd_evaluation/spatial_correction_performance.png)
 
-![Centered chemical and corrected condition-3 maps](assets/current_cvd_evaluation/test_spatial_response.png)
+![条件3の中心化化学mapと補正map](assets/current_cvd_evaluation/test_spatial_response.png)
 
-![Condition-3 residuals before and after spatial response](assets/current_cvd_evaluation/spatial_residuals.png)
+![空間応答前後の条件3残差](assets/current_cvd_evaluation/spatial_residuals.png)
 
-![Fitted radial correction on condition 3](assets/current_cvd_evaluation/spatial_correction_profile.png)
+![条件3に適用した半径補正](assets/current_cvd_evaluation/spatial_correction_profile.png)
 
-The positive centered \(R^2\) on every outer fold shows that a common radial residual
-shape transfers within these five conditions. This is evidence for the empirical
-spatial response, not for a shared chemical concentration distribution. The basis uses
-each wafer's coordinates and corrects its own chemical prediction. Because all five
-maps use the same small coordinate grid and no independent reactor campaign is held
-outside code development, production correction still requires a new frozen wafer and
-a declared spatial tolerance.
+全外側分割で中心化 \(R^2\) が正であることから、5条件内では共通の半径残差形状が移送
+できる。これは経験的空間応答の証拠であり、条件間で共通する化学濃度分布の証拠ではない。
+各ウェハー固有の座標を使い、そのウェハーの化学予測を補正する。ただし5 マップは同じ小規模
+座標格子を使い、コード開発から完全に独立した反応器試験群はない。実運用には、新しい
+固定ウェハーと空間許容差が必要である。
 
-## Competing equation families remain unresolved
+## 競合方程式族は未確定
 
-| Family | Best inner condition-CV RMSE (nm s\(^{-1}\)) | Gap from best | Outer selections | Interpretation |
+| 方程式族 | 最良内側条件CV RMSE (nm s\(^{-1}\)) | 最良との差 | 外側選択 | 解釈 |
 | --- | ---: | ---: | ---: | --- |
-| Sequential AIB QSS | 0.000894084 | 0% | 3/5 | Primary fixed-split winner; contrast limited |
-| Parallel A and A+B QSS | 0.000903338 | +1.04% | 0/5 | Numerically close; (A)-only contribution not stable |
-| Langmuir-Hinshelwood QSS | 0.000925961 | +3.57% | 2/5 | Outer alternative; remains exploratory and symmetric |
+| 逐次AIB QSS | 0.000894084 | 0% | 3/5 | 固定分割の最良候補。入力変動は限定的 |
+| 並列A・A+B QSS | 0.000903338 | +1.04% | 0/5 | 数値的に近い。A単独寄与は不安定 |
+| Langmuir–Hinshelwood QSS | 0.000925961 | +3.57% | 2/5 | 外側分割の代替。探索的でA/B対称性をもつ |
 
-![Equation-family error and outer-fold selection](assets/current_cvd_evaluation/equation_family_comparison.png)
+![方程式族の誤差と外側fold選択](assets/current_cvd_evaluation/equation_family_comparison.png)
 
-![Leading candidates ranked by training-condition CV](assets/current_cvd_evaluation/training_candidate_ranking.png)
+![訓練条件CVによる上位候補順位](assets/current_cvd_evaluation/training_candidate_ranking.png)
 
-![Reaction stages represented by each fitted equation](assets/current_cvd_evaluation/reaction_pathway_models.png)
+![各fit式が表す反応段階](assets/current_cvd_evaluation/reaction_pathway_models.png)
 
-The fixed split and outer folds select two families and three distinct role/reduction
-structures. The mean holdout prediction envelope is 0.000429302 nm s\(^{-1}\), or
-0.298% of the condition-3 mean; its maximum width is 0.000771311 nm s\(^{-1}\). This
-is model-selection sensitivity, not a confidence interval.
+固定分割と外側分割は、2方程式族、3種類の役割・縮約構造を選んだ。ホールドアウト予測包絡の
+平均幅は0.000429302 nm s\(^{-1}\)、条件3平均の0.298%、最大幅は
+0.000771311 nm s\(^{-1}\) である。これはモデル選択感度であり信頼区間ではない。
 
-![Spatial prediction spread across selected equations](assets/current_cvd_evaluation/model_structure_prediction_spread.png)
+![選択方程式間の空間予測幅](assets/current_cvd_evaluation/model_structure_prediction_spread.png)
 
-The best fit from each family was also evaluated on the same heldout coordinates:
+各族の最良当てはめを同じホールドアウト座標で比較した。
 
-| Family | Assigned roles | Heldout RMSE (nm s\(^{-1}\)) | RMS difference from selected (nm s\(^{-1}\)) | Difference / selected RMSE |
+| 方程式族 | 割当て役割 | ホールドアウトRMSE (nm s\(^{-1}\)) | 選択モデルとの差のRMS (nm s\(^{-1}\)) | 差／選択RMSE |
 | --- | --- | ---: | ---: | ---: |
-| Sequential AIB | A=`idn_2`, B=`adn_2`, I=`n2` | 0.00104863 | 0 | 0 |
-| Parallel A + AB | A=`adn_2`, B=`idn_2` | 0.00184890 | 0.00115630 | 1.103 |
-| Langmuir-Hinshelwood | A=`adn_2`, B=`idn_2` | 0.000958571 | 0.000434995 | 0.415 |
+| 逐次AIB | A=`idn_2`、B=`adn_2`、I=`n2` | 0.00104863 | 0 | 0 |
+| 並列A + AB | A=`adn_2`、B=`idn_2` | 0.00184890 | 0.00115630 | 1.103 |
+| Langmuir–Hinshelwood | A=`adn_2`、B=`idn_2` | 0.000958571 | 0.000434995 | 0.415 |
 
-![Heldout predictions from alternative fitted equation families](assets/current_cvd_evaluation/reaction_model_prediction_agreement.png)
+![代替方程式族によるholdout予測](assets/current_cvd_evaluation/reaction_model_prediction_agreement.png)
 
-The Langmuir-Hinshelwood prediction differs from the selected AIB prediction by less
-than half the selected heldout RMSE, so changing between those two interpretations has a
-modest prediction consequence on condition 3. The parallel family differs by slightly
-more than one selected-model RMSE and is a material prediction alternative. These are
-model-conditional differences; they are not mechanism probabilities.
+Langmuir–Hinshelwood予測と選択AIB予測の差は、選択モデルホールドアウトRMSEの半分未満である。
+条件3では両解釈の変更が予測へ与える影響は小さい。並列族との差は選択モデルRMSEをわずかに
+上回り、予測上無視できない代替である。これらはモデル条件付き差であって、機構確率ではない。
 
-| Outer held-out condition | Selected family | Relative RMSE | Centered spatial (R^2) |
+| 外側ホールドアウト条件 | 選択族 | 相対RMSE | 中心化面内 \(R^2\) |
 | ---: | --- | ---: | ---: |
-| 1 | Sequential AB | 0.620% | −0.0846 |
-| 2 | Sequential AIB | 0.606% | −0.1063 |
-| 3 | Sequential AIB | 0.729% | −0.0148 |
-| 4 | Langmuir-Hinshelwood | 0.568% | 0.0371 |
-| 5 | Langmuir-Hinshelwood | 1.032% | −0.1990 |
+| 1 | 逐次AB | 0.620% | −0.0846 |
+| 2 | 逐次AIB | 0.606% | −0.1063 |
+| 3 | 逐次AIB | 0.729% | −0.0148 |
+| 4 | Langmuir–Hinshelwood | 0.568% | 0.0371 |
+| 5 | Langmuir–Hinshelwood | 1.032% | −0.1990 |
 
-The pooled outer RMSE is 0.00113168 nm s\(^{-1}\), and the macro-average relative RMSE
-is 0.711%. Condition 5 is the worst transfer case. Only condition 4 has a slightly
-positive centered spatial (R^2). Thus the complete selection procedure transfers
-condition means but does not repeatedly recover the spatial map.
+外側全条件統合 RMSEは0.00113168 nm s\(^{-1}\)、マクロ平均相対RMSEは0.711%である。条件5が
+最も悪い移送条件であり、中心化 \(R^2\) がわずかに正なのは条件4だけである。したがって
+選択手順全体は条件平均を移送するが、面内マップを繰り返し回復しない。
 
-## What the reductions establish
+## 厳密縮約から分かること
 
-Removing (I) from the numerical AIB winner changes inner CV RMSE from
-0.000894084 to 0.000900285 nm s\(^{-1}\), about 0.69%, and the foldwise sign is mixed.
-The inhibitor term therefore has no consistent demonstrated benefit, and `n2` cannot be
-adopted as an inhibitor from these data.
+数値AIB 最良候補からIを除くと、内側CV RMSEは0.000894084から
+0.000900285 nm s\(^{-1}\) へ約0.69%増えるが、分割別差の符号は混在する。阻害項に一貫した
+利点はなく、`n2` を阻害種として採用できない。
 
-Removing the finite-loss group increases RMSE to approximately 0.0184 nm s\(^{-1}\),
-about 20.6 times the selected error. A finite nonproductive-loss contribution is needed
-by this response family. The observation cannot separate desorption, irreversible loss,
-deactivation, or an omitted pathway.
+有限損失群を除くとRMSEは約0.0184 nm s\(^{-1}\)、選択誤差の約20.6倍になる。この応答族
+では有限の非生成損失寄与が必要である。ただし観測だけでは、脱離、不可逆損失、失活、欠落
+経路を分離できない。
 
-The steady MvK representative is algebraically the sequential AB no-loss reduction and
-has RMSE 0.0181360 nm s\(^{-1}\). This rejects that **steady projection** for the present
-data. It does not reject a dynamic redox reservoir, because no A/B switching or surface
-oxidation-state time series is present.
+定常MvK代表式は逐次ABの損失なし縮約と代数的に同一で、RMSEは
+0.0181360 nm s\(^{-1}\) である。現在のデータはこの**定常射影**を棄却する。A/B切替や
+表面酸化状態の時間系列がないため、動的酸化還元リザーバーまで棄却するものではない。
 
-### Kinetic-ratio information in the selected equation
+### 選択式の速度論比に含まれる情報
 
-| Parameter | RMS \(\partial\ln\hat v/\partial\ln p\) | Mean sensitivity | Principal reading |
+| パラメータ | RMS \(\partial\ln\hat v/\partial\ln p\) | 平均感度 | 主な読み方 |
 | --- | ---: | ---: | --- |
-| Finite-loss ratio δ | 0.5669 | −0.5662 | Active direction; increasing δ lowers the rate |
-| B-conversion ratio \(b\) | 0.9529 | +0.9527 | Strong active scale/shape direction |
-| Inhibition ratio κ | 0.0003008 | −0.0003002 | Locally inactive over the supplied inhibitor range |
+| 有限損失比 \(\delta\) | 0.5669 | −0.5662 | 活性方向。\(\delta\) 増加で速度低下 |
+| B転化比 \(b\) | 0.9529 | +0.9527 | 強く効く尺度・形状方向 |
+| 阻害比 \(\kappa\) | 0.0003008 | −0.0003002 | 入力阻害範囲では局所的に不活性 |
 
-The sensitivity correlation between δ and κ is −0.912, while δ and \(b\) correlate at
-−0.586. The near-zero κ sensitivity and its broad partial Loss slice agree with the
-exact-reduction result: the supplied data do not require or determine inhibition. The
-δ and \(b\) slices change appreciably around the fitted values, although their
-correlation prevents interpreting either as an independently calibrated elementary
-constant.
+\(\delta\) と \(\kappa\) の感度相関は−0.912、\(\delta\) と \(b\) は−0.586である。
+\(\kappa\) のほぼゼロの感度と広い部分損失関数断面は厳密縮約結果と一致し、入力データが
+阻害を必要とも決定もしていないことを示す。\(\delta\) と \(b\) の断面は当てはめ値付近で
+明瞭に変化するが、相関があるため独立校正した素反応定数とは解釈できない。
 
-![Local kinetic-ratio sensitivity and sensitivity correlation](assets/current_cvd_evaluation/kinetic_parameter_sensitivity.png)
+![局所速度論比感度と感度相関](assets/current_cvd_evaluation/kinetic_parameter_sensitivity.png)
 
-![Training error when one kinetic ratio is varied](assets/current_cvd_evaluation/parameter_loss_slices.png)
+![一つの速度論比を変えた訓練誤差](assets/current_cvd_evaluation/parameter_loss_slices.png)
 
-## Why role identity is unresolved
+## 役割同定が未解決である理由
 
-The pooled concentration correlations are
+全点をまとめた濃度相関は次のとおりである。
 
-| Pair | Pearson correlation |
+| 組合せ | Pearson相関 |
 | --- | ---: |
 | `adn_2` / `idn_2` | 0.2134 |
 | `adn_2` / `n2` | 0.2178 |
 | `idn_2` / `n2` | 0.9798 |
 
-`idn_2` and `n2` are nearly collinear. Across conditions, `adn_2` changes strongly,
-whereas `idn_2` and `n2` mostly move together with total concentration. The data can
-associate the large condition-level rate change with a response involving `adn_2`, but
-they cannot independently assign `idn_2` and `n2` to (A) and (I).
+`idn_2` と `n2` はほぼ共線である。`adn_2` は条件間で大きく変化するが、
+`idn_2` と `n2` は全濃度とともに動くことが多い。データは条件水準の大きな速度変化を
+`adn_2` を含む応答と関連付けられるが、`idn_2` と `n2` をAとIへ独立に割り当てられない。
 
-The raw name `n2` must not be interpreted chemically in this analysis. It is merely the
-source column selected by one candidate. Chemical identity, feed/byproduct status,
-stoichiometry, and surface activity are absent from the dataset.
+生の名称 `n2` を本解析で化学的に解釈してはならない。一候補が選んだ入力列にすぎず、
+化学種同定、原料・副生成物、化学量論、表面活性はデータに含まれていない。
 
-![Between-condition reaction-input contrast](assets/current_cvd_evaluation/condition_reaction_input_contrast.png)
+![条件間の反応入力contrast](assets/current_cvd_evaluation/condition_reaction_input_contrast.png)
 
-![Role selection across condition refits](assets/current_cvd_evaluation/role_selection_stability.png)
+![条件再fitにおける役割選択](assets/current_cvd_evaluation/role_selection_stability.png)
 
-The assignment instability has two different consequences:
+割当て不安定性には異なる2種類の影響がある。
 
-| Role in the fixed winner | Raw species | Outer selection frequency | RMS prediction change (nm s\(^{-1}\)) | Change / heldout RMSE | Consequence |
+| 固定最良候補の役割 | 生の化学種 | 外側選択頻度 | 予測変化RMS (nm s\(^{-1}\)) | 変化／ホールドアウトRMSE | 影響 |
 | --- | --- | ---: | ---: | ---: | --- |
-| A | `idn_2` | 40% | 0.0087144 | 8.31 | Influential assignment, unresolved |
-| B | `adn_2` | 40% | 0.0526467 | 50.2 | Influential assignment, unresolved |
-| I | `n2` | 40% | 0.0000044616 | 0.00425 | Unstable but predictively negligible over this range |
+| A | `idn_2` | 40% | 0.0087144 | 8.31 | 予測に重要だが割当て未解決 |
+| B | `adn_2` | 40% | 0.0526467 | 50.2 | 予測に重要だが割当て未解決 |
+| I | `n2` | 40% | 0.0000044616 | 0.00425 | 不安定だが、この範囲の予測影響は無視できる |
 
-![Prediction importance and outer assignment stability](assets/current_cvd_evaluation/role_importance_and_stability.png)
+![予測重要度と外側割当て安定性](assets/current_cvd_evaluation/role_importance_and_stability.png)
 
-Replacing A or B by its identification reference changes prediction by many times the
-heldout error, so their raw-species assignment matters and remains unresolved. Replacing
-I has a change far below the heldout error. The latter is a harmless ambiguity for the
-current prediction range, although it remains unsuitable for an inhibitor-mechanism
-claim. Because the equation is nonlinear, these one-at-a-time changes are not additive
-species contributions.
+AまたはBを同定基準値へ置換すると、予測はホールドアウト誤差の何倍も変化する。この2役割の生の
+化学種割当ては予測上重要であり、なお未解決である。Iの置換変化はホールドアウト誤差よりはるかに
+小さい。現在の予測範囲では影響の小さい曖昧さだが、阻害機構の主張には利用できない。式が
+非線形であるため、一入力ずつの変化を加算可能な化学種寄与と解釈しない。
 
-## Extrapolation and practical scope
+## 外挿と実務適用範囲
 
-For the fixed condition-3 prediction, every point lies outside the training range for
-total concentration, `idn_2`, and `n2`; `adn_2` remains inside its training range. The
-accurate mean prediction is encouraging, but it is one out-of-range condition and cannot
-establish general extrapolation performance.
+固定条件3では、全点が全濃度、`idn_2`、`n2` の訓練範囲外にあり、`adn_2` だけが
+訓練範囲内にある。平均予測が正確である点は有望だが、範囲外の1条件だけで一般的な外挿性能
+を確立できない。
 
-No application conditions, maximum acceptable relative error, or spatial requirement
-were declared. The code therefore cannot emit `adopt_candidate` even for condition-mean
-screening. A practical use statement requires those tolerances to be set before the
-next frozen external evaluation.
+用途条件、最大許容相対誤差、空間要件は定義されていない。このため条件平均スクリーニングでも
+コードは `adopt_candidate` を出せない。次の固定外部評価より前に、実務用途の許容差を
+定める必要がある。
 
-| Target use | Current evidence | Data that would establish it |
+| 対象用途 | 現在の証拠 | 成立させるためのデータ |
 | --- | --- | --- |
-| Rank or screen condition-mean growth within similar operating physics | Provisionally useful; retain `review` status | Declare an error tolerance and pass a new frozen condition over the intended operating window |
-| Correct wafer-scale nonuniformity | The separate radial response has positive centered \(R^2\) on all five internal outer holdouts; physical cause and external transfer remain untested | Add a new coordinate-registered wafer campaign with replicate uncertainty and, to attribute cause, co-located temperature and wall/near-wall transport fields; require the declared spatial tolerance on every frozen holdout and residuals without material remaining structure |
-| Assign anonymous species to A/B/I roles | Role and family choices change with the training conditions | Independently vary each candidate species, include off/low and saturation regimes, and add a role-linked surface-state or outlet observation; require full-rank contrasts, consistent reduction benefit, and stable assignment across refits |
-| Estimate elementary rate constants | Only normalized observable groups are fitted | Add absolute wall concentration or reacting-wall flux, calibrated site density, synchronized transient response, several temperatures, replicates, and uncertainty; require resolved sensitivity directions, finite intervals, Arrhenius consistency, and external dynamic prediction |
-| Select dynamic MvK chemistry | Its steady projection is algebraically shared with sequential AB | Add A/B pulse or switch histories plus oxidation-state or reservoir-sensitive observations and hold out a complete transient sequence |
+| 同じ物理領域内での条件平均成長の順位付け・スクリーニング | 暫定利用可能。`review` を維持 | 誤差許容差を定義し、想定運転領域の新しい固定条件で合格する |
+| ウェハー面内不均一の補正 | 独立した半径応答は内部5 ホールドアウトすべてで中心化 \(R^2>0\)。物理原因と外部移送は未検証 | 位置登録した新しいウェハー試験群、反復不確かさ、原因同定用の同位置温度・壁面／壁面近傍輸送場を追加する。全固定ホールドアウトで空間許容差を満たし、顕著な残差構造がないこと |
+| 匿名化学種のA/B/I割当て | 役割と族の選択が訓練条件で変化 | 各候補を独立に変え、停止・低濃度・飽和領域を含め、役割に結び付く表面状態または出口観測を追加する。フルランク コントラスト、一貫した縮約利点、再当てはめ間の安定割当てを満たすこと |
+| 素反応定数推定 | 正規化した観測可能群だけを当てはめ | 絶対壁面濃度または反応壁面フラックス、校正済みサイト密度、同期過渡応答、複数温度、反復、不確かさを追加する。感度方向の分離、有限区間、Arrhenius整合、外部動的予測を満たすこと |
+| 動的MvK化学の選択 | 定常射影は逐次ABと代数的に共通 | A/B パルスまたは切替え履歴、酸化状態またはリザーバー感度観測を追加し、完全な過渡系列をホールドアウトする |
 
-The same evidence-to-measurement mapping is emitted for any dataset in
-`data_requirements.csv`; it does not depend on the example names above.
+同じ証拠から測定への対応は、任意データについて `data_requirements.csv` へ出力される。
+上記の化学種名に依存しない。
 
-## Code limitations and data responsibilities
+## コード上の限界とデータ側の責務
 
-### Code-side limits
+### コード側の限界
 
-- The reference census uses deterministic pattern refinement. TPE, CMA-ES, DE, PSO,
-  Lévy, and CMA-MAE backends are available for frozen-candidate audits, but numerical
-  convergence does not quantify model or parameter uncertainty.
-- Conditional bootstrap intervals do not integrate equation-family or role-selection
-  uncertainty.
-- The steady CSV census and dynamic state-model fit paths remain separate. The dynamic
-  MvK result now retains observation-time state, pathway-rate, concentration, and flux
-  histories. Configured NPZ keys can supply aligned measured histories and uncertainties
-  to the multi-observation loss. The present `data/` contains no such observations, and
-  the adapter does not resample mismatched time grids or model correlated errors.
-- Full Maxwell-Stefan/Stefan-flow wall transport is absent. The active closures are
-  independent scalar-film approximations or CFD-derived (k_m).
-- The radial residual response is limited to an axisymmetric \(\rho^2+\rho^4\) basis.
-  It cannot represent azimuthal structure and contains no physical temperature or
-  transport field. Its five-fold result is internal validation on one supplied campaign.
+- 基準網羅評価は決定論的分布 細分化を使う。TPE、CMA-ES、DE、PSO、Lévy、
+  CMA-MAEは固定候補の監査に使えるが、数値収束からモデル・パラメータ不確かさは得られない。
+- 条件付きブートストラップ区間は方程式族・役割選択の不確かさを統合しない。
+- 定常CSV網羅評価と動的状態モデル当てはめは別経路である。動的MvKは観測時刻の状態、経路速度、
+  濃度、フラックス履歴を保持する。設定したNPZキーから、位置・時刻を合わせた測定履歴と不確かさを
+  多観測損失関数へ渡せる。現在の `data/` に該当観測はなく、変換部は不一致時間格子の
+  再標本化や相関誤差を扱わない。
+- 完全なMaxwell–Stefan／Stefan流壁面輸送はない。現行閉包は独立なスカラー膜近似または
+  CFD由来 \(k_m\) である。
+- 半径残差応答は軸対称な \(\rho^2+\rho^4\) 基底に限られる。方位構造を表現できず、
+  物理温度場・輸送場も含まない。5 分割結果は一つの試験群内の内部検証である。
 
-These limits do not explain the current role ambiguity by themselves. Refining the
-optimizer cannot create independent concentration contrast or state information.
+これらのコード限界だけで、現在の役割曖昧さが生じたわけではない。最適化器を精密化しても、
+独立な濃度コントラストや状態情報は生成できない。
 
-### Data-side requirements
+### データ側で必要な事項
 
-1. Vary `idn_2` and `n2` independently while holding total concentration and `adn_2`
-   as controlled as feasible.
-2. Add a low-(B) or (B=0) regime and independent (A/B) sweeps spanning low coverage
-   and saturation.
-3. Add an inhibitor perturbation that spans negligible to strong suppression.
-4. Supply wall or near-wall concentration, or a CFD transport-capacity flux with known
-   sign, boundary concentration, and units.
-5. Record wafer coordinate units, temperature and pressure for every condition.
-6. Add replicate film maps and measurement uncertainty so effect sizes can be compared
-   with experimental noise.
-7. For MvK, use A/B pulse or switch experiments and, where possible, a surface/lattice
-   oxidation-state measurement.
-8. Reserve a new external condition that has not influenced equation or code design.
+1. 全濃度と `adn_2` を可能な限り制御しながら、`idn_2` と `n2` を独立に変える。
+2. 低BまたはB=0条件と、低被覆から飽和までの独立A/B 掃引を追加する。
+3. 無視できる阻害から強阻害までを含む阻害種摂動を追加する。
+4. 壁面／壁面近傍濃度、または符号・境界濃度・単位が既知のCFD輸送容量フラックスを与える。
+5. 各条件のウェハー座標単位、温度、圧力を記録する。
+6. 反復膜マップと測定不確かさを追加し、効果量を実験ノイズと比較できるようにする。
+7. MvKではA/B パルスまたは切替え実験を行い、可能なら表面／格子酸化状態を測定する。
+8. 方程式・コード設計へ影響していない新しい外部条件を留保する。
 
-Model-based experimental design should maximize the prediction difference between the
-remaining families while reducing the correlation of the sensitive parameter directions.
-Independent (A/B/I) perturbations are therefore more useful than adding many spatial
-points under the same five compositions.
+モデルに基づく実験計画では、感度パラメータ方向の相関を下げながら、生き残った方程式族間の
+予測差を最大化する。同じ5組成で面内点を増やすより、独立なA/B/I摂動の方が有用である。
 
-## Reproduction and evidence files
+## 再現方法と証拠ファイル
 
-Run:
+次を実行する。
 
 ```powershell
 uv run python scripts/analyze_cvd_multicond_case.py `
@@ -413,7 +366,7 @@ uv run python scripts/analyze_cvd_multicond_case.py `
   --output results/current_cvd_separated
 ```
 
-The fixed-equation optimization benchmark is reproduced with:
+固定式の最適化比較は次で再現する。
 
 ```powershell
 uv sync --extra optuna
@@ -426,9 +379,7 @@ uv run python scripts/benchmark_surface_optimization.py `
   --output results/surface_optimization_benchmark_4096
 ```
 
-The exact source hashes, candidate table, fold metrics, coefficient percentiles,
-prediction rows, capability assessments, and experimental requirements are stored in
-that result directory. The interpretation rules are given
-in [EVALUATION_WORKFLOW.md](EVALUATION_WORKFLOW.md); the equations are given in
-[THEORY.md](THEORY.md). Every generated figure and its current-data reading are given in
-[VISUALIZATION_GUIDE.md](VISUALIZATION_GUIDE.md).
+正確な入力ハッシュ、候補表、分割指標、係数百分位点、予測行、能力評価、実験要件は結果
+ディレクトリに保存する。解釈規則は [EVALUATION_WORKFLOW.md](EVALUATION_WORKFLOW.md)、方程式は
+[THEORY.md](THEORY.md)、全図と今回データの読み方は
+[VISUALIZATION_GUIDE.md](VISUALIZATION_GUIDE.md) を参照する。

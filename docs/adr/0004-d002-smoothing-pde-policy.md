@@ -1,43 +1,39 @@
-# ADR 0004: D-002 Smoothing PDE Policy
+# ADR 0004: D-002 平滑化PDE方針
 
-- Date: 2026-02-19
-- Status: Accepted
-- Decision task: `D-002`
+- 日付: 2026-02-19
+- 状態: 採択
+- 判断課題: `D-002`
 
-## Context
+## 背景
 
-`model_explain.md` includes MS-15 (morphology smoothing PDE) as an optional extension.
-Current platform gates (P0/P1/P2) are satisfied without PDE-based postprocessing, and there is
-no validated numerical/physical contract yet for introducing a smoothing term without changing
-interpretability of core deposition-rate outputs.
+`model_explain.md` は、任意拡張としてMS-15（形態平滑化PDE）を挙げている。現在の基盤 判定条件（P0/P1/P2）はPDEによる後処理なしで満たされている。中心となる成膜速度出力の解釈可能性を変えずに平滑化項を導入するための、検証済み数値・物理仕様もない。
 
-Per POLICY_LOCK and AGENTS, optional theory should not be promoted to implementation without
-explicit requirement, traceability, and acceptance tests.
+POLICY_LOCKとAGENTSに従い、明示的な要件、追跡関係、受入れ試験なしに任意理論を実装へ昇格させない。
 
-## Decision
+## 判断
 
-For `D-002`, smoothing PDE is classified as:
+`D-002` における平滑化PDEを次の状態とする。
 
 - `DEFERRED`
 
-It is not promoted to `docs/REQUIREMENTS.md` in the current phase.
+現段階では `docs/REQUIREMENTS.md` へ要件として追加しない。
 
-## Rationale
+## 理由
 
-1. Smoothing can mask model mismatch and reduce identifiability if introduced too early.
-2. Stable timestep/discretization policy and boundary conditions are not yet standardized.
-3. No current gate requires this feature to preserve operational quality.
+1. 早期の平滑化はモデル不一致を隠し、識別性を下げることがある。
+2. 安定な時間刻み・離散化方針と境界条件が標準化されていない。
+3. 現在の運用品質を保つために必要とする判定条件がない。
 
-## Consequences
+## 影響
 
-1. No runtime postprocess PDE module is added in this decision.
-2. `docs/GAPS.md` keeps smoothing PDE as deferred with reopen triggers.
-3. Future adoption requires new requirement IDs, traceability links, and deterministic tests.
+1. この判断では、実行時の後処理PDE モジュールを追加しない。
+2. `docs/GAPS.md` では、再検討条件とともに平滑化PDEを保留とする。
+3. 将来採用する場合は、新しい要件ID、追跡リンク、決定論的試験が必要である。
 
-## Trigger To Reopen
+## 再検討条件
 
-Reopen when at least one is true:
+次のいずれかを満たしたときに再検討する。
 
-1. Measured morphology smoothing effect cannot be represented by existing model/state/options.
-2. Product requirement explicitly requests PDE-based morphology regularization.
-3. A dedicated ADR defines discretization, stability constraints, and acceptance tests.
+1. 測定された形態平滑化効果を既存モデル、状態、選択肢で表せない。
+2. 製品要件がPDEによる形態正則化を明示的に求める。
+3. 専用ADRが離散化、安定条件、受入れ試験を定義する。

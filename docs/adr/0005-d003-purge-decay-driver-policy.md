@@ -1,43 +1,39 @@
-# ADR 0005: D-003 Purge-Decay Driver Contract Policy
+# ADR 0005: D-003 パージ減衰駆動量の仕様方針
 
-- Date: 2026-02-19
-- Status: Accepted
-- Decision task: `D-003`
+- 日付: 2026-02-19
+- 状態: 採択
+- 判断課題: `D-003`
 
-## Context
+## 背景
 
-`model_explain.md` proposes an explicit purge residual driver (`purge_decay`, e.g. `C(t)=C0*exp(-t/tau)`).
-Current code supports phase execution and scalar overrides, but does not define a standardized
-`purge_decay` input contract or validator-level semantics across ALD workflows.
+`model_explain.md` は、明示的なパージ残留駆動量（`purge_decay`、例: `C(t)=C0*exp(-t/tau)`）を提案している。現在のコードは工程実行とスカラー 上書きに対応するが、ALDワークフロー全体に共通する `purge_decay` 入力仕様や検証部上の意味は定義していない。
 
-Per AGENTS and POLICY_LOCK, model-note proposals cannot be silently implemented without formal
-requirements, traceability mapping, and deterministic acceptance tests.
+AGENTSおよびPOLICY_LOCKに従い、モデル備考の提案を、正式要件、追跡対応、決定論的受入れ試験なしに実装しない。
 
-## Decision
+## 判断
 
-For `D-003`, purge-decay driver standardization is classified as:
+`D-003` におけるパージ減衰駆動量の標準化を次の状態とする。
 
 - `DEFERRED`
 
-No new requirement is added in this decision.
+この判断では新しい要件を追加しない。
 
-## Rationale
+## 理由
 
-1. Existing ALD phase path is stable and does not require immediate contract expansion.
-2. A premature driver contract risks incompatibility across existing YAML and validator rules.
-3. A proper contract needs explicit parameter schema (`tau`, bounds, phase binding, units) and
-   dedicated validation/test gates.
+1. 現在のALD 工程経路は安定しており、直ちに仕様を広げる必要がない。
+2. 駆動量仕様を早期に追加すると、既存YAMLと検証部規則間の互換性を損なうおそれがある。
+3. 適切な仕様には、`tau`、範囲、工程との結合、単位を含むパラメータ スキーマと専用検証判定条件が必要である。
 
-## Consequences
+## 影響
 
-1. No runtime API change is introduced by this decision.
-2. `docs/GAPS.md` tracks purge-decay as deferred with reopen conditions.
-3. Future adoption must start from requirement + traceability + validator/test design.
+1. この判断では実行時APIを変更しない。
+2. `docs/GAPS.md` は、再検討条件とともにパージ減衰を保留項目として追跡する。
+3. 将来採用する場合は、要件、追跡関係、検証部・試験設計から開始する。
 
-## Trigger To Reopen
+## 再検討条件
 
-Reopen this decision when at least one is true:
+次のいずれかを満たしたときに再検討する。
 
-1. ALD purge behavior mismatch is observed and cannot be represented by current phase overrides.
-2. Product requirement asks for explicit purge-time residual dynamics with auditable parameters.
-3. A decision/ADR proposes a concrete schema and acceptance tests for purge-decay semantics.
+1. ALDパージ挙動に、現在の工程 上書きでは表せない不一致が観測される。
+2. 製品要件が、監査可能なパラメータを持つ明示的なパージ時間残留動力学を求める。
+3. 判断またはADRが、具体的なスキーマと受入れ試験を提案する。

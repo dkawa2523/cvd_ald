@@ -1,49 +1,41 @@
-# ADR 0020: Minimal ALD Role-State Assimilation Model
+# ADR 0020: 最小ALD反応役割状態同化モデル
 
-- Date: 2026-04-16
-- Status: Accepted; extended by ADR 0021
-- Scope: ALD role-state model for role-based data assimilation
+- 日付: 2026-04-16
+- 状態: 採択、ADR 0021で拡張
+- 範囲: 反応役割データ同化のためのALD状態モデル
 
-## Context
+## 背景
 
-The product goal is not a radical-species-first elementary reaction mechanism.
-Fluent provides raw species concentration/flux fields, measured wafer thickness
-provides the calibration target, and this code must infer which raw species act
-as effective reaction roles.
+製品目的は、ラジカル化学種を先に固定する素反応機構の構築ではない。Fluentが生の化学種濃度・フラックス場を、実測ウェハー膜厚が較正対象を与え、コードはどの生の化学種が有効な反応役割を担うかを推定する。
 
-The former transient compatibility path proved that input plumbing could run, but it
-was not an ALD product model and has been removed from the public model registry.
+旧過渡互換経路では入力配線を実行できることは確認したが、ALD製品モデルではないため公開モデル 登録表から削除した。
 
-The ALD model should help answer:
+ALDモデルが答えるべき問いは次のとおりである。
 
-- Which raw species should be assigned to the growth-driving role?
-- Is a second role needed to explain condition changes?
-- Is a suppression role actually justified, or only improving the number by
-  adding complexity?
-- Does the same role assignment explain multiple shared tool/recipe/Fluent
-  conditions?
+- どの生の化学種を成膜駆動役割へ割り当てるか。
+- 条件変化を説明するために第2の役割が必要か。
+- 抑制役割は本当に必要か、変数追加によって数値だけを改善していないか。
+- 同じ役割割当てが、共通する装置・レシピ・Fluentの複数条件を説明するか。
 
-## Decision
+## 判断
 
-Add `role_ald_state` as the ALD production candidate. It is a compact latent
-state model for data assimilation, not a detailed ALD chemistry model.
+ALDの運用候補として `role_ald_state` を追加する。詳細なALD化学モデルではなく、データ同化のための小さな潜在状態モデルとする。
 
-The role contract is:
+役割仕様は次のとおりである。
 
-- `A`: effective growth-driving role
-- `B`: optional effective conversion/response-shaping role
-- `I`: optional effective suppression role
-- unused raw species are allowed
+- `A`: 有効成膜駆動役割
+- `B`: 任意の有効変換・応答形状役割
+- `I`: 任意の有効抑制役割
+- 未使用の生の化学種を許容
 
-The minimum state variables are:
+最小状態変数は次のとおりである。
 
-- `theta_A`: stored growth-driving state from role `A`
-- `theta_I`: optional unavailable/suppressed state from role `I`
-- `theta_free = max(1 - theta_A - theta_I, 0)`: remaining finite capacity
-- `h_nm`: film thickness
+- `theta_A`: 役割 `A` から貯蔵された成膜駆動状態
+- `theta_I`: 役割 `I` による任意の利用不能・抑制状態
+- `theta_free = max(1 - theta_A - theta_I, 0)`: 残る有限容量
+- `h_nm`: 膜厚
 
-The minimum equations are extended by ADR 0021 so that optional role `B` can
-actually be tested rather than being structurally required for all growth:
+任意の役割 `B` を全成膜に構造上必須とせず実際に試験できるよう、ADR 0021で最小式を次のように拡張した。
 
 ```text
 d theta_A / dt =
@@ -66,46 +58,33 @@ J_A_surface = Gamma_s * (k_store_A * Cs_A * theta_free
 J_B_surface = Gamma_s * nu_B * R_event
 ```
 
-where `C_A`, `C_B`, and `C_I` are role-mapped Fluent inputs. Parameter names must
-remain role/assimilation names. They must not be renamed into fixed species
-chemistry without a later explicit decision.
+ここで `C_A`、`C_B`、`C_I` は役割へ写像したFluent入力である。パラメータ名は役割・同化名を維持し、後の明示的判断なしに固定化学種名へ変更しない。
 
-`R_event` has units of coverage per second, `alpha_h` is nanometres per unit
-coverage converted, and `Gamma_s` is the site density in kmol m\(^{-2}\). The
-transport closure balances `km * (C_ref - C_s)` against the molar surface fluxes
-above. This dimensional conversion is required whenever absolute transport flux is
-reported; `Gamma_s: 1.0` denotes a normalized site inventory rather than a calibrated
-absolute flux.
+`R_event` の単位は被覆率 s\(^{-1}\)、`alpha_h` は変換被覆率当たりのnm、`Gamma_s` はkmol m\(^{-2}\) のサイト密度である。輸送閉包は `km * (C_ref - C_s)` と上記モル表面フラックスを均衡させる。絶対輸送フラックスを報告する場合、この次元変換が必須である。`Gamma_s: 1.0` は較正した絶対フラックスではなく、正規化サイト量を意味する。
 
-## Production Evaluation
+## 運用評価
 
-Production evaluation should prioritize role interpretability:
+運用評価では、反応役割の解釈可能性を次の順に優先する。
 
-1. measured film-map error across conditions
-2. role summary, role ranking, and next-best gap
-3. role stability across top candidates
-4. exact simpler-role refits and simpler-structure tie breaking
-5. shared-parameter fit before condition-specific escape routes
-6. holdout prediction separated from train-condition scoring
-7. RMSE/MAE/max-error reporting alongside the robust fit loss
-8. optimizer convergence and repeated-seed variability kept separate from role stability
+1. 条件間の測定膜マップ誤差
+2. 役割要約、役割順位、次点との差
+3. 上位候補間の役割安定性
+4. より単純な役割の厳密再当てはめと、同点時の単純構造優先
+5. 条件固有の逃げ道より先に共通パラメータを当てはめる
+6. ホールドアウト予測を学習条件得点から分離する
+7. robustな当てはめ損失関数と併記するRMSE、MAE、最大誤差
+8. 最適化収束と反復乱数種変動を役割安定性から分離する
 
-ALD-specific quantities such as dose response, purge response, and cycle growth
-are diagnostics. They are useful only insofar as they help judge whether a role
-assignment is stable and meaningful across conditions.
+ALD固有のドーズ応答、パージ応答、サイクル成長量は診断値である。条件間で役割割当てが安定し意味を持つかを判断する範囲で利用する。
 
-## Non-Goals
+## 対象外
 
-- Do not add a radical-species-first mechanism.
-- Do not restore a CVD-kernel compatibility alias as an ALD production model.
-- Do not add a separate purge-decay framework in this model.
-- Do not add a broad dataset framework for the first production path.
-- Do not accept a more complex role set unless it improves interpretation enough
-  to justify the added variables.
+- ラジカル化学種を先に固定する機構を追加しない。
+- CVD 計算核の互換別名をALD 運用 モデルとして復活させない。
+- 本モデル内に別のパージ減衰枠組みを追加しない。
+- 最初の運用経路に大規模データセットの枠組みを追加しない。
+- 追加変数に見合う解釈改善がなければ複雑な役割集合を採用しない。
 
-## Consequences
+## 影響
 
-Future ALD work should improve `role_ald_state`, role-ranking outputs, and
-multi-condition adoption criteria. Compatibility benchmarks may remain for
-diagnostics, but reports and user-facing guidance should not present them as the
-main ALD model.
+今後のALD開発は、`role_ald_state`、役割順位出力、複数条件の採用基準を改善する。互換比較試験は診断用に残せるが、報告書と利用案内で主ALDモデルとして提示しない。

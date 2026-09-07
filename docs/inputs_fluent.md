@@ -1,55 +1,52 @@
-# Fluent input specification
+# Fluent入力仕様
 
-## General rule
+## 基本原則
 
-The input contract records what each field physically means before a reaction model is
-selected. A raw species name is an array label, not a reaction role. Concentration
-location, flux semantics, coordinate unit, and time basis must be explicit.
+反応モデルを選ぶ前に、各入力場の物理的意味を記録する。生の化学種名は配列ラベルであり、
+反応役割ではない。濃度位置、フラックスの意味、座標単位、時間基準を明示する。
 
-## Multi-condition steady CSV
+## 多条件定常CSV
 
-The default steady CVD analysis pairs:
+標準の定常CVD解析では、次のファイルを条件ごとに組み合わせる。
 
 ```text
 data/condition_<id>.csv
 data/validation_<id>.csv
 ```
 
-Required condition fields:
+条件ファイルの必須列は次のとおりである。
 
-| Field | Meaning | Unit |
+| 列 | 意味 | 単位 |
 | --- | --- | --- |
-| `x`, `y`, `z` | sampling coordinate | must be declared by dataset owner |
-| `concentration_<species>` | concentration at the supplied Fluent location | kmol m\(^{-3}\) |
+| `x`、`y`、`z` | サンプリング座標 | データ所有者が明示する |
+| `concentration_<species>` | 指定したFluent位置の濃度 | kmol m\(^{-3}\) |
 
-Required validation fields:
+検証ファイルの必須列は次のとおりである。
 
-| Field | Meaning | Unit |
+| 列 | 意味 | 単位 |
 | --- | --- | --- |
-| `x`, `y`, `z` | measurement coordinate aligned with the condition table | same as condition coordinates |
-| `dr_nm_per_sec` | measured deposition rate | nm s\(^{-1}\) |
+| `x`、`y`、`z` | 条件ファイルと対応する測定座標 | 条件座標と同じ |
+| `dr_nm_per_sec` | 測定成膜速度 | nm s\(^{-1}\) |
 
-Optional condition fields are:
+条件ファイルには次の任意列を追加できる。
 
-| Field | Location and meaning | Unit |
+| 列 | 位置と意味 | 単位 |
 | --- | --- | --- |
-| `surface_concentration_<species>` | concentration adjacent to the wafer reaction surface, mapped to the same in-plane coordinates | kmol m\(^{-3}\) |
-| `transport_capacity_flux_<species>` | nonnegative species-supply flux toward the wafer, calculated with a boundary condition independent of the fitted reaction | kmol m\(^{-2}\) s\(^{-1}\) |
-| `realized_reactive_flux_<species>` | actual reacting-wall flux from a coupled calculation; closure observation only | kmol m\(^{-2}\) s\(^{-1}\) |
-| `molef_<species>` | mole fraction used for consistency checks | 1 |
-| `density` | mixture density | kg m\(^{-3}\) |
+| `surface_concentration_<species>` | 同じ面内座標へ対応付けた反応表面直近濃度 | kmol m\(^{-3}\) |
+| `transport_capacity_flux_<species>` | フィット対象反応から独立した境界条件で計算した、ウェハー向きの非負供給フラックス | kmol m\(^{-2}\) s\(^{-1}\) |
+| `realized_reactive_flux_<species>` | 連成計算で得た実反応壁面フラックス。閉包比較専用 | kmol m\(^{-2}\) s\(^{-1}\) |
+| `molef_<species>` | 整合確認用モル分率 | 1 |
+| `density` | 混合気体密度 | kg m\(^{-3}\) |
 
-`sigma_nm_per_sec` may be added to the validation file as pointwise standard
-uncertainty. Every optional species field selected for a fit must exist for every species
-and every condition.
+検証ファイルへ点ごとの標準不確かさ `sigma_nm_per_sec` を追加できる。フィッティングに
+選択した任意の化学種列は、全化学種・全条件に存在しなければならない。
 
-The default filename convention can be replaced by `--conditions-file`, a JSON manifest
-mapping condition IDs to condition and validation paths. Relative paths are resolved
-from that manifest.
+標準ファイル名の代わりに `--conditions-file` を指定できる。これは条件IDと条件・検証
+ファイルを対応付けたJSON 成果物目録であり、相対パスは成果物目録の位置から解決する。
 
-## Simulation NPZ input
+## シミュレーション用NPZ
 
-The general simulator uses YAML to map NPZ keys. A typical Fluent block is:
+一般シミュレーターでは、YAMLでNPZキーを対応付ける。代表的なFluent設定を示す。
 
 ```yaml
 inputs:
@@ -69,22 +66,22 @@ reference_plane:
   z_ref_mm: 1.0
 ```
 
-Expected array shapes are:
+配列形状は次のとおりである。
 
-| Quantity | Steady | Transient |
+| 量 | 定常 | 過渡 |
 | --- | --- | --- |
-| `cref` | `[species, point]` or loader-equivalent documented layout | `[time, species, point]` or loader-equivalent documented layout |
+| `cref` | `[species, point]` または読込み部で定義した等価配置 | `[time, species, point]` または読込み部で定義した等価配置 |
 | `xy` | `[point, 2]` | `[point, 2]` |
-| `time` | absent | strictly increasing `[time]`, seconds |
-| `flux_sink` | species/point field | time/species/point field |
+| `time` | なし | 単調増加する秒単位の `[time]` |
+| `flux_sink` | 化学種／点の場 | 時刻／化学種／点の場 |
 
-The loader and resolved configuration are authoritative for exact array orientation.
-Every time interval must have a concentration frame for a dynamic state model.
+正確な配列方向は読込み部と解決済み設定を正とする。動的状態モデルでは、各時間区間に対応する
+濃度フレームが必要である。
 
-### Optional MvK history observations
+### MvK履歴観測
 
-The MvK simulation stores state and pathway values at the supplied Fluent times. An NPZ
-measurement can add an oxidation-state history to the final film observation:
+MvKシミュレーションは、Fluent時刻ごとの状態と経路量を保存する。NPZ測定へ酸化状態履歴を
+加え、最終膜厚と同時に評価できる。
 
 ```yaml
 measurement:
@@ -99,29 +96,27 @@ measurement:
     oxidized_fraction_history_sigma: oxidized_fraction_sigma
 ```
 
-`time_s` must match the Fluent time array. A configured history has shape
-`[time, *space]` and requires a correspondingly named `_sigma` key. Film uncertainty is
-also required when history observations activate the multi-observation objective. The
-same convention supports the emitted MvK rate, surface-concentration, and surface-flux
-history field names listed in `configs/sim/cvd_mvk_transient_min.yaml`. State and
-thickness values are stored at each supplied time. Rate, surface-concentration, and flux
-values at an interval endpoint use the piecewise-constant Fluent frame applied over the
-preceding interval; the initial entry uses the first frame.
+`time_s` はFluent時間配列と一致させる。履歴の形状は `[time, *space]` とし、対応する
+`_sigma` キーを必須とする。履歴観測により多観測目的関数を使う場合、膜厚不確かさも必要
+である。同じ規約で、`configs/sim/cvd_mvk_transient_min.yaml` に列挙されたMvK速度、
+表面濃度、表面フラックス履歴を扱える。
 
-## Concentration-location capabilities
+状態と膜厚は各入力時刻に保存する。区間終端の速度・表面濃度・フラックスには、直前区間へ
+適用した区分一定のFluentフレームを使い、初期値には最初のフレームを使う。
 
-| Capability | Meaning | Compatible steady transport mode |
+## 濃度位置ごとの入力能力
+
+| 入力 | 意味 | 対応する定常輸送モード |
 | --- | --- | --- |
-| `bulk_concentration` | concentration at a reference/bulk extraction location | `bulk_as_surface` approximation |
-| `surface_concentration` | supplied value adjacent to the reactive wall | `direct_surface` |
-| `transport_capacity_flux` | supply flux toward the wafer under a documented reaction-independent boundary condition | `direct_flux` in the steady census, or used to derive (k_m) in the simulation pipeline |
-| `realized_reactive_flux` | actual reactive wall flux from a coupled CFD solution | comparison/closure observation only |
+| `bulk_concentration` | 参照位置またはバルク抽出位置の濃度 | `bulk_as_surface` 近似 |
+| `surface_concentration` | 反応壁面直近で与えた濃度 | `direct_surface` |
+| `transport_capacity_flux` | 定義済みの反応非依存境界条件におけるウェハー向き供給フラックス | 定常網羅評価の `direct_flux`、またはシミュレーション処理系で \(k_m\) を求める入力 |
+| `realized_reactive_flux` | 連成CFDから得た実反応壁面フラックス | 比較または閉包観測専用 |
 
-A realized reactive flux must not be used to infer (k_m) for the same reaction model.
-Doing so would reuse the reaction response as its own transport boundary.
+同じ反応モデルの \(k_m\) 推定に実反応フラックスを使ってはならない。反応応答を自分自身の
+輸送境界として再利用することになるためである。
 
-The steady analysis selects exactly one input representation before enumerating chemical
-models:
+定常解析では、化学モデルを列挙する前に入力表現を一つだけ選ぶ。
 
 ```bash
 --reaction-input bulk_concentration
@@ -129,42 +124,39 @@ models:
 --reaction-input transport_capacity_flux
 ```
 
-The first uses `concentration_<species>` as a surface proxy, the second uses
-`surface_concentration_<species>`, and the third uses
-`transport_capacity_flux_<species>`. The program does not rank these alternatives as if
-they were competing reaction mechanisms. For all three, the role equation receives the
-dimensionless local driver \(u_j=X_j/X_{j,\mathrm{ref}}\). Flux-driven fitted groups are
-therefore conditional flux-response parameters and must not be reported as concentration
-adsorption constants.
+第1指定は `concentration_<species>` を表面入力の代用とし、第2指定は
+`surface_concentration_<species>`、第3指定は
+`transport_capacity_flux_<species>` を使う。これらを競合する反応機構として自動順位付け
+しない。いずれの場合も、役割式へは無次元局所ドライバー
+\(u_j=X_j/X_{j,\mathrm{ref}}\) を渡す。したがってフラックス駆動で得た係数群を、濃度に
+対する吸着定数として報告してはならない。
 
-The steady workflow assumes a uniform wafer temperature. `--wafer-temperature-k` records
-the scalar temperature when it is known; it does not create or fit a radial temperature
-correction.
+定常ワークフローはウェハー温度一定を仮定する。`--wafer-temperature-k` は既知のスカラー
+温度を記録するだけで、半径方向温度補正を生成またはフィットしない。
 
-## Alignment and quality checks
+## 位置合わせと品質検査
 
-Before fitting, the steady adapter checks:
+フィッティング前に、定常変換部は次を確認する。
 
-1. condition and validation row counts;
-2. finite coordinates, concentrations, and rates;
-3. coordinate equality after six-decimal normalization and the maximum raw difference;
-4. duplicate coordinates;
-5. positive reference concentrations;
-6. mole-fraction sum and concentration/mole-fraction consistency when available;
-7. unique values and minimum positive increments;
-8. within-condition range, between-condition log-span, rank, and species correlation;
-9. holdout values outside the identification range.
+1. 条件ファイルと検証ファイルの行数。
+2. 座標、濃度、速度が有限値であること。
+3. 小数点以下6桁へ正規化した座標の一致と、正規化前の最大差。
+4. 重複座標。
+5. 正の参照濃度。
+6. 利用可能な場合、モル分率和および濃度とモル分率の整合。
+7. 一意値の数と最小正増分。
+8. 条件内範囲、条件間対数幅、ランク、化学種間相関。
+9. ホールドアウトが同定範囲外にある割合。
 
-Passing these checks means the arrays are numerically usable. It does not mean that the
-experimental design distinguishes reaction roles.
+これらへの合格は、配列が数値的に利用可能であることを意味する。実験条件が反応役割を
+区別できることまでは意味しない。
 
-## Current `data/` capability
+## 現在の `data/` で利用できる入力
 
-The current five-condition dataset provides only `bulk_concentration` and measured
-steady deposition rate. It has no time array, coordinate unit, wall concentration,
-transport-capacity flux, temperature series, pressure, measurement uncertainty, or
-replicate maps. The analysis consequently uses `bulk_as_surface` and cannot calculate
-an independently validated wall conversion or absolute flux.
+現在の5条件データには `bulk_concentration` と定常成膜速度だけがある。時間配列、
+座標単位、壁面濃度、輸送容量フラックス、温度系列、圧力、測定不確かさ、反復マップはない。
+したがって解析は `bulk_as_surface` を使い、独立に検証された壁面変換や絶対フラックスを
+計算できない。
 
-See [CURRENT_DATA_EVALUATION.md](CURRENT_DATA_EVALUATION.md) for the quantitative result
-and [transport_km.md](transport_km.md) for transport equations.
+定量結果は [CURRENT_DATA_EVALUATION.md](CURRENT_DATA_EVALUATION.md)、輸送式は
+[transport_km.md](transport_km.md) を参照する。

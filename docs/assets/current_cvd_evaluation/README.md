@@ -1,8 +1,8 @@
-# Figure provenance
+# 図の来歴
 
-These figures were copied without editing from `results/current_cvd_separated/plots/` after the documented current-data run. The source data, split, model set, bootstrap count, reaction-input location, Loss, sampler, and spatial-response setting are recorded in [CURRENT_DATA_EVALUATION.md](../../CURRENT_DATA_EVALUATION.md).
+これらの図は、記録済みの現行データ解析後に `results/current_cvd_separated/plots/` から編集せず複製した。入力データ、分割、モデル集合、ブートストラップ回数、反応入力位置、損失関数、サンプラー、空間応答設定は [CURRENT_DATA_EVALUATION.md](../../CURRENT_DATA_EVALUATION.md) に記録している。
 
-| Figure | SHA-256 |
+| 図 | SHA-256 |
 | --- | --- |
 | `best_model_role_assignments.png` | `732d3d62a1220f819a30b951a13b7c11f5d2e4e7b7ddcb3f93e81026ad6a763e` |
 | `condition_mean_transfer.png` | `0d5dea7668a2f04453f281587455b09ce88d299d8adf70977fb41bc9bdc9804e` |

@@ -1,72 +1,42 @@
-# ADR 0021: Fair Role Selection and Minimal Validation Hardening
+# ADR 0021: 公平な反応役割選択と最小限の検証強化
 
-- Date: 2026-09-02
-- Status: Accepted
-- Scope: CVD/ALD role fitting, ALD role-state semantics, diagnostics, and provenance
+- 日付: 2026-09-02
+- 状態: 採択
+- 範囲: CVD/ALD役割当てはめ、ALD役割状態の意味、診断、来歴
 
-## Context
+## 背景
 
-The first `role_ald_state` implementation made film growth proportional only to
-the `A+B` conversion event. That made role `B` optional in configuration but
-structurally mandatory for nonzero growth, so A/AI versus AB/AIB was not a fair
-data-driven comparison.
+最初の `role_ald_state` 実装は、膜成長を \(A+B\) 変換事象だけに比例させた。そのため設定上の役割 \(B\) は任意でも、非ゼロ成長には構造上必須となり、A/AIとAB/AIBを公平にデータから比較できなかった。
 
-The fit path also ranked candidates mainly with Huber loss plus one configured
-complexity penalty. It did not expose ordinary error units, a held-out condition,
-or whether the winning roles changed when that penalty was rescaled. ALD used a
-bounded explicit substep update while its config still advertised the CVD
-implicit root solver. A clean commit hash alone also could not identify runs
-executed from a dirty worktree.
+当てはめ経路は主にHuber 損失関数と一つの複雑さ罰則項で候補を順位づけていた。通常誤差単位、ホールドアウト条件、罰則項尺度を変えたときの役割変化を示していなかった。ALDは有界陽的小刻みステップを使う一方、設定はCVD用の陰的根探索法を示していた。変更を含まないcommit ハッシュだけでは、変更中ワークツリーから実行した解析を識別できなかった。
 
-## Decision
+## 判断
 
-1. Keep one compact ALD state model, but make `B` genuinely optional:
-   - without `B`, use `R_event = k_convert_A * theta_A`;
-   - with `B`, use `R_event = k_convert_AB * Cs_B * theta_A`;
-   - update `theta_A` and film thickness with the active event only.
-2. Name the ALD numerical method honestly as `explicit_substep_bounded`.
-   CVD compatibility models retain `implicit_euler_bisect`.
-3. Mark CVD root metrics as applicable and ALD root metrics as not applicable.
-   ALD reports bounded-state violation, projection, and substep diagnostics.
-4. Select a strict named MSE, Huber, or L1 data loss independently of RMSE, MAE,
-   and maximum absolute error in nanometer units used for interpretation.
-5. Support `split: train|holdout` on conditions. Holdout conditions are excluded
-   from parameter selection and evaluated only with the shared fitted parameters.
-   Per-condition parameter search is rejected when holdouts are configured, to
-   avoid leakage or undefined holdout offsets.
-6. Keep complexity outside the fitted loss. Predictive error ranks candidates;
-   fewer observable effects and active parameters resolve numerical ties.
-7. Run finite-difference identifiability through the common process dispatcher so
-   it works for both CVD and `role_ald_state`. If the best-fit parameters are
-   degenerate or strongly correlated, label the candidate `review` rather than
-   automatically adopting it.
-8. Record role-stability and parameter-identifiability warnings as separate
-   fields with no ambiguous compatibility alias.
-9. Record measurement nearest-neighbor distance diagnostics and dirty-worktree
-   provenance (`code_dirty`, `code_diff_fingerprint`).
+1. 一つの小さなALD状態モデルを維持し、\(B\) を実質的に任意とする。
+   - \(B\) なしでは `R_event = k_convert_A * theta_A`
+   - \(B\) ありでは `R_event = k_convert_AB * Cs_B * theta_A`
+   - 有効な事象だけで `theta_A` と膜厚を更新する
+2. ALD数値解法を `explicit_substep_bounded` と正確に命名する。CVD互換モデルは `implicit_euler_bisect` を維持する。
+3. CVDの根指標を適用対象、ALDでは非適用とする。ALDは有界状態違反、射影、小刻みステップ診断を報告する。
+4. 厳密に名前づけたMSE、Huber、L1データ損失関数を選択し、解釈用のnm単位RMSE、MAE、最大絶対誤差から分離する。
+5. 条件に `split: train|holdout` を設定できる。ホールドアウト条件はパラメータ選択から除き、共通当てはめパラメータだけで評価する。ホールドアウトがある場合、漏洩または未定義のホールドアウト補正値を避けるため、条件別パラメータ探索を認めない。
+6. 複雑さを当てはめ損失関数の外へ置く。予測誤差で順位づけし、数値的同点は観測可能な効果と有効パラメータが少ない方を選ぶ。
+7. 有限差分識別性を共通プロセス 振分け部経由で実行し、CVDと `role_ald_state` の両方に使えるようにする。最良当てはめパラメータが退化または強相関なら、自動採用せず `review` とする。
+8. 役割安定性警告とパラメータ識別性警告を、曖昧な互換別名なしの別項目として記録する。
+9. 測定最近傍距離診断と、変更中ワークツリーの来歴（`code_dirty`、`code_diff_fingerprint`）を記録する。
 
-## Consequences
+## 影響
 
-September 2026 refinement: condition-refit prediction now takes precedence for
-role selection. Scoring uses original observations, with explicit
-thickness/mean-rate and uncertainty handling; local identifiability spans all
-training conditions and fitted parameters. See `ARCHITECTURE.md` for module
-responsibilities and `CURRENT_DATA_EVALUATION.md` for the empirical analysis and
-selection rule. This supersedes the penalty sweep as an adoption gate when
-condition-refit evidence is available.
+2026年9月の改訂では、条件再当てはめ予測を役割選択で最優先とした。得点は元の観測量を使い、膜厚・平均速度と不確かさを明示的に扱う。局所識別性は、全学習条件と全当てはめパラメータを対象とする。モジュール責務は `ARCHITECTURE.md`、実データ解析と選択規則は `CURRENT_DATA_EVALUATION.md` を参照する。条件再当てはめ根拠が利用できる場合、罰則項 掃引を採用判定条件とした旧方針を置き換える。
 
-- A/AI and AB/AIB now answer a real model-selection question in ALD.
-- A role assignment must be good on train conditions, interpretable in ordinary
-  error units, explicitly reported on holdout, stable across condition refits,
-  and free of unresolved parameter degeneracy before adoption.
-- The change adds no detailed chemistry, new state family, heavy dependency, or
-  dataset framework.
-- Existing compatibility CVD/ALD models remain executable with their existing
-  implicit solver contract.
+- ALDのA/AIとAB/AIBは、実質的なモデル選択問題となる。
+- 役割割当ての採用には、学習条件で良好であること、通常誤差単位で解釈可能なこと、ホールドアウトを明示報告すること、条件再当てはめで安定すること、未解決なパラメータ退化がないことを求める。
+- 詳細化学、新しい状態系、重い依存、大規模データセットの枠組みは追加しない。
+- 既存の互換CVD/ALDモデルは、従来の陰解法仕様で実行可能なままとする。
 
-## Non-Goals
+## 対象外
 
-- No elementary reaction mechanism is inferred.
-- No Bayesian model-selection framework is added.
-- No per-condition holdout escape parameters are fitted.
-- No concentration-unit inference or temperature mechanism is introduced.
+- 素反応機構を推定しない。
+- Bayesianモデル選択枠組みを追加しない。
+- 条件固有のホールドアウト逃げパラメータを当てはめない。
+- 濃度単位の推論や温度機構を導入しない。

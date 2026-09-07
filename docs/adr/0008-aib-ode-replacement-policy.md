@@ -1,40 +1,35 @@
-# ADR 0008: AIB-ODE Replacement Policy
+# ADR 0008: AIB-ODEへの置換方針
 
-- Date: 2026-02-22
-- Status: Superseded in part by ADR 0019
-- Decision Task: D-006
+- 日付: 2026-02-22
+- 状態: ADR 0019により一部改訂
+- 判断課題: D-006
 
-## Context
+## 背景
 
-`model_equation_new.md` defines a unified AIB-ODE model where species roles are constrained to A(required), I(optional <=1), B(optional <=1). The existing runtime is centered on `power_law + root_solve` progression variable routing, which conflicts with the new policy intent.
+`model_equation_new.md` は、化学種役割をA（必須）、I（任意、最大1）、B（任意、最大1）に制約する統一AIB-ODEモデルを定義した。従来実行系は `power_law + root_solve` の進行変数の振分けを中心とし、新方針と競合していた。
 
-## Decision
+## 判断
 
-Adopt full replacement to AIB-ODE for the legacy route retirement stage. ADR
-0019 supersedes the long-term public model contract: future CVD/ALD work should
-treat role-based modeling and role discovery as primary, with `aib_ode` kept as
-a compatibility implementation.
+旧経路を廃止する段階では、AIB-ODEへ全面置換する。長期的な公開モデル仕様についてはADR 0019が本判断を改訂する。以後のCVD/ALD開発では、反応役割モデルと役割探索を主とし、`aib_ode` は互換実装として残す。
 
-1. Runtime public model contract is fixed to `sim.model.name = aib_ode` for
-   this migration stage only.
-2. Role contract is fixed to:
-   - A required, single species
-   - I and B each `null` or one species
-   - A/I/B disjoint
-   - unused species allowed
-3. B-order is fixed by role presence:
-   - B is null => `m_B = 0`
-   - B is set => `m_B = 1`
-4. Order constraint is fixed:
-   - `p_A + p_* + m_B <= 3`
-5. Solver policy:
-   - ODE is primary state engine
-   - `implicit_euler_bisect` for theta in `[0,1]`
-   - non-bracket fallback is clamped explicit update with diagnostics
-6. Legacy route (`power_law`, `lhhw`, `root_solve`) is retired from primary path.
+1. この移行段階に限り、実行系の公開モデル仕様を `sim.model.name = aib_ode` に固定する。
+2. 役割仕様を次のように固定する。
+   - Aは必須の単一化学種
+   - IとBはそれぞれ `null` または一化学種
+   - A/I/Bは重複しない
+   - 未使用化学種を許容
+3. B次数は役割の有無で固定する。
+   - Bが `null` なら `m_B = 0`
+   - Bを設定すれば `m_B = 1`
+4. 次数制約を `p_A + p_* + m_B <= 3` とする。
+5. 解法方針:
+   - ODEを主状態計算器とする
+   - \([0,1]\) の \(\theta\) には `implicit_euler_bisect` を使う
+   - 根を挟まない場合は、有界化した陽的更新へ移り診断値を残す
+6. 旧経路 `power_law`、`lhhw`、`root_solve` を主経路から廃止する。
 
-## Consequences
+## 影響
 
-- Breaking change for legacy YAML model selectors (`kinetics_name`, `mass_transfer_name`, `root_solver_name`).
-- Validation/reporting/optimization contracts are rewritten around AIB roles and A/AI/AB/AIB class comparison.
-- Migration is staged by tasks `P3-001..P3-007` after this ADR.
+- 旧YAMLモデル選択子（`kinetics_name`、`mass_transfer_name`、`root_solver_name`）に対する破壊的変更となる。
+- 検証、報告、最適化仕様をAIB役割とA/AI/AB/AIBクラス比較を中心に書き直す。
+- 本ADR後、課題 `P3-001..P3-007` に分けて移行する。

@@ -1,53 +1,43 @@
-# Domain context and terminology
+# 分野上の前提と用語
 
-## Product question
+## 本コードが扱う問い
 
-The repository asks whether anonymous Fluent species fields can be assigned to a small
-set of transferable surface-reaction roles when predicting measured CVD or ALD film
-maps. A result is valuable when it states both the supported role-level claim and the
-evidence still required.
+本リポジトリでは、Fluentから得た匿名の化学種場を、測定されたCVDまたはALD膜厚
+マップの予測に用いる少数の表面反応役割へ割り当てられるかを調べる。価値のある結果は、
+支持された役割水準の主張と、なお必要な証拠を同時に示すものである。
 
-## Role vocabulary
+## 反応役割
 
-| Role | Operational meaning | Evidence required for adoption |
+| 役割 | 操作上の意味 | 採用に必要な証拠 |
 | --- | --- | --- |
-| (A) | species associated with adsorption, storage, or growth-related supply | independent variation and improvement over the model without (A) |
-| (B) | conversion partner or MvK regeneration species | low-(B) contrast, independent variation, or a time response specific to conversion/regeneration |
-| (I) | species that reduces available sites or capacity | independent inhibitor sweep and consistent benefit over the no-(I) reduction |
-| none | species not used by one candidate | exclusion from one selected model is not proof of inertness |
+| \(A\) | 吸着、蓄積、または成長に関係する供給を担う化学種 | 独立した濃度変化と、Aを除いたモデルに対する改善 |
+| \(B\) | 転化相手、またはMvK機構における表面再生種 | 低B条件、独立した濃度変化、または転化・再生に固有の時間応答 |
+| \(I\) | 利用可能なサイトまたは容量を減少させる化学種 | 独立した阻害種スイープと、Iなし縮約に対する一貫した改善 |
+| なし | その候補式では使用しない化学種 | 一つの選択モデルから除外されても、不活性である証拠にはならない |
 
-Names such as `s0`, `adn_2`, and `n2` remain raw identifiers. Chemical identity,
-stoichiometry, and feed/byproduct status must come from external process knowledge or
-independent measurement.
+`s0`、`adn_2`、`n2` などは入力上の識別子のままとする。化学種の同定、化学量論、
+原料・副生成物の区別には、外部のプロセス知識または独立測定が必要である。
 
-## Spatial and physical locations
+## 空間位置と物理量
 
-`C_ref` denotes the concentration at the Fluent extraction plane. `C_s` denotes the
-concentration adjacent to the reactive wall. They are equal only when a supplied wall
-field is used directly or when the transport drop is deliberately neglected. The
-selected concentration location is part of the fitted candidate and the output
-provenance.
+`C_ref` はFluentの抽出面濃度、`C_s` は反応壁面直近の濃度を表す。壁面場を直接与えた
+場合、または輸送による濃度低下を意図的に無視した場合に限って両者を同一視できる。
+採用した濃度位置は、フィッティング候補と出力の来歴情報に含める。
 
-The measured response is deposition rate in nm s\(^{-1}\) for the current CVD CSV
-workflow and thickness in nm for general simulations. Coordinates must carry a declared
-unit before gradients, wafer radius, or transport length scales are interpreted
-dimensionally.
+現在のCVD CSVワークフローで測定応答は nm s\(^{-1}\) の成膜速度であり、一般の
+シミュレーションでは nm の膜厚である。勾配、ウェハー半径、輸送長さを有次元量として
+解釈する前に、座標単位を明示しなければならない。
 
-## Claim vocabulary
+## 証拠状態
 
-- `improves_baseline`: every evaluated condition has lower MSE than its training-only
-  constant reference.
-- `spatial supported`: centered (R^2>0) on every required condition.
-- `consistent_benefit`: an effect's parent model does not lose to its independently
-  refitted reduction on any condition and improves at least one above roundoff.
-- `distinguished`: alternative raw-species assignments are consistently worse for the
-  same effect structure.
-- `adopt_candidate`: fixed independent prediction meets declared application criteria
-  and role/model ambiguity is absent.
-- `review`: a narrower predictive use may be valid, but one or more role, structure,
-  spatial, or application requirements remain unresolved.
-- `reject_prediction`: independent prediction does not beat its declared baseline.
+- `improves_baseline`: 評価した全条件で、訓練条件のみから求めた定数基準よりMSEが小さい。
+- `spatial supported`: 必須とした全条件で中心化 \(R^2>0\) である。
+- `consistent_benefit`: 追加効果を含む親モデルが、各条件で独立に再フィットした縮約モデルに
+  一度も劣らず、少なくとも一条件で丸め誤差を超えて改善する。
+- `distinguished`: 同じ効果構造に対する別の生の化学種割当てが、一貫して悪い。
+- `adopt_candidate`: 固定した独立予測が用途基準を満たし、役割・モデルの曖昧さが残らない。
+- `review`: 限定した予測用途は成立し得るが、役割、構造、空間、用途条件のいずれかが未解決である。
+- `reject_prediction`: 独立予測が、定義済みの基準モデルを上回らない。
 
-These are evidence states. They do not establish a named chemical species or elementary
-reaction without the mechanism-specific observations described in
-[THEORY.md](THEORY.md).
+これらは証拠の状態を表す。`THEORY.md` に示した機構固有の観測がなければ、名称付きの
+化学種や素反応を確定するものではない。

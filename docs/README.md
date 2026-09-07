@@ -1,55 +1,53 @@
-# Documentation map
+# 文書案内
 
-The documents below describe the current implementation. Relevant design decisions
-remain under `docs/adr/`; they explain why a choice was made but do not override the
-current model and workflow specifications.
+以下の文書は、現在の実装を説明するためのものである。設計判断の経緯は
+`docs/adr/` に残しているが、現行のモデル仕様および評価手順より優先されるものでは
+ない。
 
-| Document | Responsibility |
+| 文書 | 責務 |
 | --- | --- |
-| [TECHNICAL_REPORT.md](TECHNICAL_REPORT.md) | Integrated scientific report and present operational conclusion |
-| [THEORY.md](THEORY.md) | Governing equations, reductions, assumptions, units, and literature |
-| [EVALUATION_WORKFLOW.md](EVALUATION_WORKFLOW.md) | Input-dependent execution, optimization, validation, and decision flow |
-| [VISUALIZATION_GUIDE.md](VISUALIZATION_GUIDE.md) | Example of every steady CVD figure, axis and colour definitions, source artifacts, and valid scientific interpretations |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Code boundaries, model registries, extension points, and output ownership |
-| [CURRENT_DATA_EVALUATION.md](CURRENT_DATA_EVALUATION.md) | Reproducible evaluation of the five steady CVD conditions in `data/` |
-| [CONTEXT.md](CONTEXT.md) | Domain vocabulary and claim levels |
-| [inputs_fluent.md](inputs_fluent.md) | Fluent field meanings, required units, and supported observation capabilities |
-| [transport_km.md](transport_km.md) | Reference-plane to wall transport closures and their limits |
-| [EVAL_PROTOCOL.md](EVAL_PROTOCOL.md) | Commands and acceptance checks for routine evaluation |
-| [GAPS.md](GAPS.md) | Current scientific and software limitations with evidence needed to close them |
-| [REQUIREMENTS.md](REQUIREMENTS.md) | Product-level requirements for role assimilation |
+| [TECHNICAL_REPORT.md](TECHNICAL_REPORT.md) | 科学的根拠、実装、現時点の運用判断をまとめた総合技術報告 |
+| [THEORY.md](THEORY.md) | 支配方程式、縮約、仮定、単位、参考文献 |
+| [EVALUATION_WORKFLOW.md](EVALUATION_WORKFLOW.md) | 入力に応じた実行、最適化、検証、判定の流れ |
+| [VISUALIZATION_GUIDE.md](VISUALIZATION_GUIDE.md) | 定常CVDで生成する全図の例、軸・色の定義、元データ、解釈方法 |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | パッケージ境界、モデル登録、拡張点、出力の所有責務 |
+| [CURRENT_DATA_EVALUATION.md](CURRENT_DATA_EVALUATION.md) | `data/` にある定常CVD 5条件の再現可能な評価 |
+| [CONTEXT.md](CONTEXT.md) | 分野用語と主張できる範囲 |
+| [inputs_fluent.md](inputs_fluent.md) | Fluent場の意味、必要単位、入力から評価できる事項 |
+| [transport_km.md](transport_km.md) | 参照面から壁面までの輸送閉包と適用限界 |
+| [EVAL_PROTOCOL.md](EVAL_PROTOCOL.md) | 日常的な評価コマンドと合否確認 |
+| [GAPS.md](GAPS.md) | ソフトウェア上の限界と、それを解消するために必要な測定 |
+| [REQUIREMENTS.md](REQUIREMENTS.md) | 反応役割同化に関する製品要件 |
 
-For a scientific review, read `TECHNICAL_REPORT.md`, then follow model details in
-`THEORY.md`, execution semantics in `EVALUATION_WORKFLOW.md`, and exact current numbers
-in `CURRENT_DATA_EVALUATION.md`. Use `VISUALIZATION_GUIDE.md` to audit the axes,
-encodings, source tables, and permitted conclusions for each figure. The
-[generated report](../results/current_cvd_separated/report.md)
-for the documented run is a run artifact rather than a general
-specification.
+科学的なレビューでは、まず `TECHNICAL_REPORT.md` を読み、モデルの詳細を
+`THEORY.md`、実行と判定の意味を `EVALUATION_WORKFLOW.md`、今回の正確な数値を
+`CURRENT_DATA_EVALUATION.md` で確認する。図の軸、表現、元データ、図から許される
+結論は `VISUALIZATION_GUIDE.md` にまとめた。
+[生成レポート](../results/current_cvd_separated/report.md)は個別実行の成果物であり、
+一般仕様を定める文書ではない。
 
-## Repository-local Codex skills
+## リポジトリ限定のCodex Skills
 
-The maintained workflow instructions are stored only under `.agents/skills/` in this
-repository. Their responsibilities are deliberately disjoint:
+保守対象の手順は、このリポジトリの `.agents/skills/` にだけ置く。各Skillの責務は
+次のように分離している。
 
-| Skill | Use |
+| Skill | 用途 |
 | --- | --- |
-| `evaluate-steady-cvd-roles` | Run the steady equation census and interpret optimization, roles, mechanisms, wafer maps, spatial response, and figures |
-| `evaluate-transient-ald-roles` | Fit transient ALD storage/conversion roles and assess recipe transfer and fit diagnostics |
-| `run-reaction-role-state-models` | Run specified-parameter CVD AIB, CVD MvK, or ALD state simulations and check states, fluxes, units, and plots |
-| `extend-reaction-role-models` | Change equations, transport, fitting components, evidence artifacts, or scientific visualizations in the existing architecture |
+| `evaluate-steady-cvd-roles` | 定常方程式を網羅評価し、最適化、役割、機構、ウェハーマップ、空間応答、図を解釈する |
+| `evaluate-transient-ald-roles` | 過渡ALDの蓄積・転化役割を当てはめ、レシピ間転用性と適合診断を評価する |
+| `run-reaction-role-state-models` | 指定パラメータのCVD AIB、CVD MvK、ALD状態モデルを実行し、状態、フラックス、単位、図を点検する |
+| `extend-reaction-role-models` | 現行構成の中で、方程式、輸送、フィッティング部品、証拠成果物、科学図を変更する |
 
-Detailed execution and figure guides are supporting references inside the relevant skill,
-so loading one workflow does not pull in unrelated process modes.
+詳細な実行手順と図の読み方は各Skillの参照資料に分けている。ひとつの手順を読み込む
+だけで、無関係なプロセスモードまで文脈に入らない構成である。
 
-## Authority order
+## 仕様の優先順位
 
-For model behavior, the executable implementation is authoritative. `THEORY.md` records
-the implemented equations in readable form. `EVALUATION_WORKFLOW.md` records selection
-and validation semantics. `ARCHITECTURE.md` records file responsibilities. Generated
-`results/*/report.md` files describe one run and must not be used as a general model
-specification.
+モデルの動作については実行可能なコードを正とする。`THEORY.md` は実装済みの式を
+読みやすい形で記述し、`EVALUATION_WORKFLOW.md` は選択・検証の意味、
+`ARCHITECTURE.md` はファイル責務を定める。`results/*/report.md` は一回の実行結果で
+あり、一般的なモデル仕様として扱わない。
 
-When a model meaning, public configuration field, or adoption rule changes, update the
-corresponding current document in the same change. ADR files are retained as history and
-are marked or interpreted as superseded when they conflict with the current documents.
+モデルの意味、公開設定、採用規則を変更した場合は、同じ変更の中で該当する現行文書も
+更新する。ADRは判断履歴として保持するが、現行文書と矛盾する箇所は廃止済みまたは
+置換済みとして解釈する。

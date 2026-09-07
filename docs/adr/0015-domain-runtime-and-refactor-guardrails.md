@@ -1,38 +1,36 @@
-# ADR 0015: Domain runtime alignment and staged refactor guardrails
+# ADR 0015: 領域と実行系の整合、および段階的再構成規則
 
-- Date: 2026-04-01
-- Status: Accepted
-- Scope: sim domain/runtime consistency, legacy phase-out policy, refactor boundaries
+- 日付: 2026-04-01
+- 状態: 採択
+- 範囲: sim 領域/実行系整合、旧機能廃止方針、再構成境界
 
-## Context
+## 背景
 
-Recent improvements require:
+直近の改良には次が必要である。
 
-- runtime support for `wafer_2d_xy` (not schema-only),
-- reduced duplicate output/report plumbing,
-- cleaner path for retiring legacy modules/tests without breaking current users.
+- スキーマ上だけでなく実行系でも `wafer_2d_xy` を扱う
+- 重複した出力・報告書処理を減らす
+- 現利用者を壊さず旧モジュール・試験を廃止する経路を明確にする
 
-## Decision
+## 判断
 
-1. Domain kinds are formally supported as:
+1. 領域種別として次を正式に対応する。
    - `from_fluent_xy`
    - `wafer_2d_xy`
    - `wafer_2d_polar`
    - `wafer_1d_radial`
 
-2. Runtime is domain-aware:
-   - `from_fluent_xy` uses Fluent XY points directly.
-   - structured domains (`wafer_2d_xy`, `wafer_2d_polar`, `wafer_1d_radial`) project Fluent point fields onto target grid points with nearest-neighbor mapping.
+2. 実行系は領域を認識する。
+   - `from_fluent_xy` はFluent XY点を直接使う。
+   - 構造化領域（`wafer_2d_xy`、`wafer_2d_polar`、`wafer_1d_radial`）では、最近傍対応によってFluent点の場を対象格子点へ写像する。
 
-3. Retired APIs, aliases, fixtures, and their tests are removed together after active
-   callers migrate to the role-based pipeline. Public registries contain only executable
-   process models.
+3. 廃止API、別名、試験データ、その試験は、利用側を反応役割処理系へ移行した後に一緒に削除する。公開登録表には実行可能なプロセスモデルだけを含める。
 
-4. Refactor guardrail:
-   - any logic repeated in 3+ call sites should be extracted into shared utility modules unless there is a documented, intentional divergence.
+4. 再構成規則:
+   - 3か所以上で重複する処理は、意図的な相違を文書化した場合を除き、共通補助計算 モジュールへ抽出する。
 
-## Consequences
+## 影響
 
-- Schema, validator, and runtime must be kept in lockstep for domain options.
-- New output/report wiring changes should happen in shared helpers first.
-- Verification covers the actively supported execution paths.
+- 領域 選択肢について、スキーマ、検証部、実行系を常に同期させる。
+- 新しい出力・報告書配線は、まず共通helperで変更する。
+- 検証は、現在正式に対応する実行経路を対象とする。

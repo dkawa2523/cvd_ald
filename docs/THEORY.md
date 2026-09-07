@@ -1,85 +1,68 @@
-# Reaction-role equations and physical interpretation
+# 反応役割方程式と物理的解釈
 
-## Purpose and claim boundary
+## 目的と主張できる範囲
 
-The model set converts Fluent species fields into a small number of testable surface
-roles. Role (A) is a species whose arrival or storage is associated with growth;
-(B) is a gas-phase or adsorbed conversion/regeneration partner; and (I) is a
-competitive blocker. These symbols are hypotheses attached to raw species columns. They
-are not chemical identities.
+本モデル群は、Fluentの化学種場を、検証可能な少数の表面反応役割へ変換する。役割 \(A\) は、その到達または表面貯蔵が成膜に関係する化学種、\(B\) は気相または吸着状態で変換・再生に関わる相手、\(I\) は競争阻害種を表す。これらの記号は生の化学種列に割り当てる仮説であり、化学種の同定名ではない。
 
-The steady equations are observable reductions. Their fitted parameters describe the
-shape and scale of the measured deposition-rate response under the supplied conditions.
-They become elementary kinetic constants only if surface concentration, site density,
-stoichiometry, temperature dependence, and the assumed elementary steps are independently
-established.
+定常方程式は観測可能な縮約モデルである。当てはめパラメータが表すのは、与えた条件下における成膜速度応答の形状と尺度である。表面濃度、サイト密度、量論、温度依存性、仮定した素過程が独立に確立された場合に限り、素反応速度定数として解釈できる。
 
-## Notation and units
+## 記号と単位
 
-| Symbol | Meaning | Unit in the implementation |
+| 記号 | 意味 | 実装上の単位 |
 | --- | --- | --- |
-| (C_{j,\mathrm{ref}}) | Fluent concentration at the stated reference plane | kmol m\(^{-3}\) |
-| (C_{j,s}) | concentration adjacent to the reactive wall | kmol m\(^{-3}\) |
-| (k_{m,j}) | film mass-transfer coefficient | m s\(^{-1}\) |
-| (J_j) | wall-normal molar flux | kmol m\(^{-2}\) s\(^{-1}\) |
-| \(X_j\) | explicitly selected steady reaction driver: \(C_{j,\mathrm{ref}}\), \(C_{j,s}\), or independent \(J_{j,\mathrm{cap}}\) | concentration or flux unit declared by the input mode |
-| \(X_{j,0}\) | positive reference driver estimated from identification data | same as \(X_j\) |
-| \(u_j=X_j/X_{j,0}\) | normalized steady reaction driver | 1 |
-| \(\theta_j\) | occupied fraction of the modeled site or capacity pool | 1 |
-| \(\theta_*\) | free-site fraction | 1 |
-| \(\chi\) | oxidized fraction of a Mars-van Krevelen capacity pool | 1 |
-| \(\Gamma_s\) | surface site or redox-capacity density | kmol m\(^{-2}\) |
-| \(r\) | event rate per modeled site/capacity | s\(^{-1}\) |
-| \(v\) | deposition rate | nm s\(^{-1}\) |
-| \(h\) | film thickness | nm |
-| \(R\) | profiled deposition-rate scale of a steady reduction | nm s\(^{-1}\) |
+| \(C_{j,\mathrm{ref}}\) | 指定した参照面におけるFluent濃度 | kmol m\(^{-3}\) |
+| \(C_{j,s}\) | 反応壁面に隣接する濃度 | kmol m\(^{-3}\) |
+| \(k_{m,j}\) | 膜物質移動係数 | m s\(^{-1}\) |
+| \(J_j\) | 壁面法線方向モルフラックス | kmol m\(^{-2}\) s\(^{-1}\) |
+| \(X_j\) | 明示的に選んだ定常反応駆動量：\(C_{j,\mathrm{ref}}\)、\(C_{j,s}\)、または独立な \(J_{j,\mathrm{cap}}\) | 入力modeが宣言する濃度またはフラックス単位 |
+| \(X_{j,0}\) | 同定データから推定する正の基準駆動量 | \(X_j\) と同じ |
+| \(u_j=X_j/X_{j,0}\) | 正規化した定常反応駆動量 | 1 |
+| \(\theta_j\) | モデル化したサイトまたは容量プールの占有率 | 1 |
+| \(\theta_*\) | 空サイト率 | 1 |
+| \(\chi\) | Mars–van Krevelen型容量プールの酸化状態率 | 1 |
+| \(\Gamma_s\) | 表面サイトまたは酸化還元容量密度 | kmol m\(^{-2}\) |
+| \(r\) | モデル化したサイト・容量当たりの事象速度 | s\(^{-1}\) |
+| \(v\) | 成膜速度 | nm s\(^{-1}\) |
+| \(h\) | 膜厚 | nm |
+| \(R\) | 定常縮約式でプロファイル消去する成膜速度尺度 | nm s\(^{-1}\) |
 
-Concentrations in the current CSV census are bulk/reference-plane concentrations. The
-same steady equations can use supplied wall concentrations through `direct_surface` or
-an independently calculated wafer supply flux through `direct_flux`. One input mode is
-fixed before chemical-model enumeration. Flux-response groups and concentration-response
-groups are separate interpretations even when their normalized algebra is identical.
+現在のCSV網羅比較に含まれる濃度は、バルクまたは参照面濃度である。同じ定常式に、`direct_surface` で与えた壁面濃度、または `direct_flux` で独立に計算したウェハー供給フラックスを入力できる。化学モデルを列挙する前に、一つの入力modeへ固定する。正規化後の代数形が同じでも、フラックス応答群と濃度応答群は異なる物理解釈を持つ。
 
-## Model inventory
+## モデル一覧
 
-### Surface reaction and state models
+### 表面反応・状態モデル
 
-| Implemented model | Core response | Physical question and assumed reaction | Suitable observations and use | Advantages | Limitations | Principal references |
+| 実装モデル | 中心となる応答 | 物理的な問いと仮定する反応 | 適した観測量と用途 | 利点 | 限界 | 主な文献 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Constant baseline | (v=R) | Can one condition-independent rate explain all maps? No species role is assumed. | Required reference for every steady census. | Prevents an elaborate model being credited for a trend that a constant already explains. | Has no chemistry and no spatial response. | Statistical baseline; no kinetic attribution. |
-| Total-concentration nuisance baseline | \(v=R(C_{\mathrm{tot}}/C_{\mathrm{tot},0})^n\) | Does a common concentration scale explain transfer without choosing any species role? | Steady concentration/rate datasets with changing total concentration; evaluated beside the constant baseline. | Detects improvement caused only by overall dilution or pressure scaling and prevents attributing it to a role equation. | Has no species or mechanism meaning; a fitted exponent can absorb several operating changes. | Empirical dimensional-analysis baseline; no kinetic attribution. |
-| Single-(A) / (AI) saturation | (v=R u_A/[u_A+\lambda(1+\kappa u_I)]) | Does one adsorbing or storing species give a saturating response, optionally suppressed by a blocker? | Steady CVD with independent (A) variation through low-response and saturation regimes; (I) must also be varied for the (AI) form. | Smallest interpretable saturation model; exact no-(I) reduction. | Cannot represent a required co-reactant or distinguish adsorption from another saturating bottleneck. | Langmuir [1]. |
-| Sequential `aib_qss` | (v=R u_A b u_B/[u_A+(\delta+b u_B)(1+\kappa u_I)]) | (A) occupies the surface, gas-phase (B) converts adsorbed (A), and (I) blocks the free-site pool: a Langmuir-Rideal-type hypothesis. | Default steady CVD comparison when (A/B) conditions include a low-(B) regime and the response is quasi-steady. | Represents saturation, sequential dependence, optional inhibition, and an exact finite-loss reduction with few parameters. | A no-(I) steady response is invariant to exchange of the two raw species after reparameterization; fitted groups are not elementary constants. | Langmuir [1]; Eley and Rideal [2]. |
-| Parallel `parallel_a_ab_qss` | (v=R u_A(c+b u_B)/[u_A+(\delta+c+b u_B)(1+\kappa u_I)]) | Adsorbed (A) can convert through an (A)-only channel and an additional gas-(B) channel. | CVD when nonzero growth is plausible as (B\rightarrow0), with conditions spanning that limit and a (B)-responsive regime. | Separates the fractions assigned to (A)-only and (A+B) pathways. | (c) and (b u_B) are confounded when (B) changes little; the steady family has no independent dynamic state implementation. | Langmuir [1]; Eley and Rideal [2]. |
-| `langmuir_hinshelwood_qss` | (v=R(a u_A)(b u_B)/(1+a u_A+b u_B+\kappa u_I)^2) | Both (A) and (B) adsorb competitively on one site pool and react as adsorbates. | Exploratory steady CVD comparison when both reactants independently traverse low coverage and saturation, or when adsorption/retention evidence for (B) exists. | Tests a physically different denominator and explicitly reports θA, θB, θI, and free sites. | Symmetric under (A/B) exchange with adsorption-parameter exchange; one film-rate map cannot establish coadsorption. | Langmuir [1]; standard Langmuir-Hinshelwood kinetics [3]. |
-| Dynamic `role_cvd_aib` | (d\theta_A/dt=r_{\mathrm{ads}}-r_{\mathrm{des}}-\nu_A r_{\mathrm{event}}) | Does a continuously renewed adsorbed-(A) state and optional (B)-assisted conversion reproduce transient CVD behavior? | Time-resolved Fluent concentration histories and thickness or rate observations. | Couples surface coverage to independent (A/B) transport closures and exposes surface/transport flux consistency. | One stored state cannot represent multiple site types, reconstruction, nucleation, or detailed product networks. | Langmuir [1]; Eley and Rideal [2]. |
-| Dynamic `role_cvd_mvk` | (d\chi/dt=r_{\mathrm{reg}}-r_{\mathrm{red}}) | Does (A) consume an oxidized surface/lattice reservoir while (B) regenerates it? | A/B switching, pulse or step response, preferably with an oxidation-state observable. | Encodes reservoir memory and separately reports reduction, regeneration, and relaxation time. | At steady state its two-reactant response collapses to the sequential no-loss form; steady film rate alone cannot identify the reservoir. | Mars and van Krevelen [4]. |
-| Dynamic `role_ald_state` | (d\theta_A/dt=r_{\mathrm{store}}-r_{\mathrm{release}}-r_{\mathrm{convert}}), (d\theta_I/dt=r_{I,\mathrm{store}}-r_{I,\mathrm{release}}) | Do dose, purge, and co-reactant exposure act through stored precursor and inhibitor states? | Transient ALD dose/purge/cycle data with final thickness or GPC; state-sensitive observations improve identifiability. | Represents self-limiting storage, purge memory, conversion, and inhibition without introducing a species-first mechanism. | Explicit bounded substeps can require a small time step; final thickness alone poorly separates storage, release, and conversion rates. | Puurunen [5]; George [6]. |
+| 定数基準 | \(v=R\) | 全マップを条件に依存しない一速度で説明できるか。化学種の役割は仮定しない。 | すべての定常比較に必要な基準。 | 複雑なモデルが、定数でも説明できる傾向によって評価されることを防ぐ。 | 化学的意味も空間応答も持たない。 | 統計基準であり、速度論的帰属はない。 |
+| 全濃度補助基準 | \(v=R(C_{\mathrm{tot}}/C_{\mathrm{tot},0})^n\) | 化学種を選ばず、共通濃度尺度だけで条件間転移を説明できるか。 | 全濃度が変化する定常濃度・速度データ。定数基準と併記する。 | 希釈または圧力尺度だけによる改善を検出し、反応役割への誤帰属を防ぐ。 | 化学種・機構の意味を持たず、指数が複数の操作変化を吸収し得る。 | 経験的な次元解析基準であり、速度論的帰属はない。 |
+| 単一 \(A\) / \(AI\) 飽和 | \(v=R u_A/[u_A+\lambda(1+\kappa u_I)]\) | 一つの吸着・貯蔵種が飽和応答を与え、阻害種が任意に抑制するか。 | \(A\) を低応答域から飽和域まで独立に変えた定常CVD。\(AI\) 形では \(I\) の変動も必要。 | 最小の解釈可能な飽和モデルであり、阻害なしの厳密縮約を持つ。 | 必須共反応物を表せず、吸着と別の飽和律速を識別できない。 | Langmuir [1]。 |
+| 逐次 `aib_qss` | \(v=R u_A b u_B/[u_A+(\delta+b u_B)(1+\kappa u_I)]\) | \(A\) が表面を占有し、気相 \(B\) が吸着 \(A\) を変換し、\(I\) が空サイトプールを阻害するLangmuir–Rideal型仮説。 | \(A/B\) 条件が低 \(B\) 域を含み、応答が準定常である場合の既定CVD比較。 | 飽和、逐次依存、任意の阻害、有限損失の厳密縮約を少数パラメータで表す。 | 阻害のない定常応答は、再パラメータ化後に二つの生の化学種を交換しても不変。当てはめ群は素反応定数ではない。 | Langmuir [1]、Eley and Rideal [2]。 |
+| 並列 `parallel_a_ab_qss` | \(v=R u_A(c+b u_B)/[u_A+(\delta+c+b u_B)(1+\kappa u_I)]\) | 吸着 \(A\) が、\(A\) 単独経路と気相 \(B\) を伴う追加経路の二つで変換される。 | \(B\to0\) でも成膜が残り得て、かつ \(B\) 応答域を含むCVD。 | \(A\) 単独経路と \(A+B\) 経路に割り当てた分率を分離して出力する。 | \(B\) の変化が小さいと \(c\) と \(b u_B\) は交絡する。対応する独立の動的状態実装はない。 | Langmuir [1]、Eley and Rideal [2]。 |
+| `langmuir_hinshelwood_qss` | \(v=R(a u_A)(b u_B)/(1+a u_A+b u_B+\kappa u_I)^2\) | \(A\) と \(B\) が一つのサイトプールへ競争吸着し、吸着種同士で反応する。 | 両反応物を低被覆率から飽和まで独立に変えた探索的定常CVD比較、または \(B\) の吸着・保持根拠がある場合。 | 異なる分母形を試し、\(\theta_A,\theta_B,\theta_I\)、空サイトを明示する。 | 吸着パラメータも交換すると \(A/B\) 交換に対称。一つの膜速度マップだけでは共吸着を確立できない。 | Langmuir [1]、標準的Langmuir–Hinshelwood速度論 [3]。 |
+| 動的 `role_cvd_aib` | \(d\theta_A/dt=r_{\mathrm{ads}}-r_{\mathrm{des}}-\nu_A r_{\mathrm{event}}\) | 継続的に更新される吸着 \(A\) 状態と任意の \(B\) 補助変換で過渡CVD挙動を再現できるか。 | 時間分解したFluent濃度履歴と膜厚または速度観測。 | 表面被覆率を独立な \(A/B\) 輸送閉包と結合し、表面・輸送フラックスの整合を示す。 | 一つの貯蔵状態では、複数サイト、再構成、核生成、詳細生成物ネットワークを表せない。 | Langmuir [1]、Eley and Rideal [2]。 |
+| 動的 `role_cvd_mvk` | \(d\chi/dt=r_{\mathrm{reg}}-r_{\mathrm{red}}\) | \(A\) が酸化された表面・格子リザーバーを消費し、\(B\) が再生するか。 | A/B切替え、パルスまたはステップ応答。酸化状態観測があることが望ましい。 | リザーバーの履歴効果を表し、還元、再生、緩和時間を分けて出力する。 | 定常では二反応物応答が逐次無損失形に縮退する。定常膜速度だけではリザーバーを同定できない。 | Mars and van Krevelen [4]。 |
+| 動的 `role_ald_state` | \(d\theta_A/dt=r_{\mathrm{store}}-r_{\mathrm{release}}-r_{\mathrm{convert}}\)、\(d\theta_I/dt=r_{I,\mathrm{store}}-r_{I,\mathrm{release}}\) | ドーズ、パージ、共反応物曝露が、貯蔵前駆体と阻害状態を介して作用するか。 | 過渡ALDドーズ・パージ・サイクルデータと最終膜厚またはGPC。状態感度を持つ観測で識別性が高まる。 | 化学種名を先に固定した機構を導入せず、自己制限貯蔵、パージ履歴、変換、阻害を表す。 | 有界陽的小刻みステップには小さい時間刻みを要する場合がある。最終膜厚だけでは貯蔵、脱離、変換速度を分けにくい。 | Puurunen [5]、George [6]。 |
 
-The term “production” in output tables means that a family participates in the routine
-steady comparison. It is not evidence that the corresponding chemical mechanism is true.
-The Langmuir-Hinshelwood family remains exploratory but is included by `--models all`.
+出力表の “運用” は、通常の定常比較にその方程式系が参加することを意味する。対応する化学機構が真であるという根拠ではない。Langmuir–Hinshelwood系は探索的位置づけだが、`--models all` に含める。
 
-### Transport and net-film layers
+### 輸送層と正味膜成長層
 
-| Layer | Implemented form | Appropriate use | Benefit | Limitation |
+| 層 | 実装式 | 適切な用途 | 利点 | 限界 |
 | --- | --- | --- | --- | --- |
-| `direct_surface` | (C_s) supplied directly, equivalent to (k_m\rightarrow\infty) within the local film closure | Fluent wall or near-wall concentration already represents the kinetic boundary | Avoids fitting a transport coefficient | Does not calculate an absolute flux unless a compatible flux field is also supplied |
-| Steady `direct_flux` input | \(u_j=J_{j,\mathrm{cap}}/J_{j,0}\) | Fluent supplies a nonnegative arrival or transport-capacity flux calculated independently of the fitted wall reaction | Preserves condition-specific wafer delivery directly and avoids inventing a concentration-to-flux conversion | Fitted groups are conditional flux-response parameters; a realized reactive flux would be circular input |
-| `fit_scalar` | (J=k_m(C_{\mathrm{ref}}-C_s)), with scalar or supplied (k_m) field | Reference-plane concentrations with an independently chosen or fitted film coefficient | Simple coupling and useful transport-sensitivity study | Reaction and transport can be confounded; a fitted (k_m) is conditional on the film approximation |
-| `from_cfd_flux_sink` | (k_{m,\mathrm{CFD}}=J_{\mathrm{cap}}/(C_{\mathrm{ref}}-C_b)), (k_m=\gamma k_{m,\mathrm{CFD}}) | CFD provides a transport-capacity flux under a documented boundary condition | Retains spatial CFD transport structure while allowing calibration by \(\gamma\) | A realized reactive flux must not be reused as transport capacity; units and sign must be known |
-| Stagnant-film utility | (k_m=D_{\mathrm{eff}}/\delta_{\mathrm{eff}}) | Known diffusion coefficient and effective film thickness | Transparent limiting estimate | δeff is a model quantity, and scalar Fick diffusion omits multicomponent coupling |
-| Rotating-disk utility | (k_m=C_kD^{2/3}\omega^{1/2}\nu^{-1/6}) | Laminar rotating-disk scaling with known diffusivity and viscosity | Links rotation to a physically interpretable transport scale | Geometry and flow assumptions may not match a reactor; ω=0 requires an explicit fallback |
-| Bosanquet diffusivity option | (D_{\mathrm{eff}}^{-1}=D_m^{-1}+D_K^{-1}) | Molecular and Knudsen resistances act in series | Useful reduced pore-transport estimate | Does not replace a Maxwell-Stefan multicomponent wall model |
-| `deposition_only` | (v_{\mathrm{net}}=v_{\mathrm{dep}}) | No observed etch or loss channel | Clear sign convention | Cannot explain net removal |
-| `dep_etch_loss` | (v_{\mathrm{net}}=v_{\mathrm{dep}}-v_{\mathrm{etch}}-v_{\mathrm{loss}}) | Independent etch/loss rates or justified fractions are available | Keeps film accounting separate from surface mechanism selection | Fractions without independent observations are bookkeeping parameters, not identified pathways |
+| `direct_surface` | \(C_s\) を直接与える。局所膜閉包では \(k_m\to\infty\) に相当 | Fluentの壁面または壁面近傍濃度が速度論境界を表す場合 | 輸送係数の当てはめを避ける | 整合するフラックス場もなければ絶対フラックスは求まらない |
+| 定常 `direct_flux` 入力 | \(u_j=J_{j,\mathrm{cap}}/J_{j,0}\) | Fluentが、当てはめる壁面反応と独立に計算した非負の到達・輸送容量フラックスを与える場合 | 条件固有のウェハー供給分布を直接保持し、濃度からフラックスへの恣意的変換を避ける | 当てはめ群はフラックス応答に条件づけられる。実現反応フラックスを入れると循環論になる |
+| `fit_scalar` | \(J=k_m(C_{\mathrm{ref}}-C_s)\)。\(k_m\) はスカラーまたは与えた場 | 参照面濃度と、独立に選択または当てはめる膜係数がある場合 | 単純な結合で、輸送感度の検討に使える | 反応と輸送が交絡し得る。当てはめ \(k_m\) は膜近似に条件づけられる |
+| `from_cfd_flux_sink` | \(k_{m,\mathrm{CFD}}=J_{\mathrm{cap}}/(C_{\mathrm{ref}}-C_b)\)、\(k_m=\gamma k_{m,\mathrm{CFD}}\) | 境界条件を明記したCFD輸送容量フラックスがある場合 | CFDの空間輸送構造を保ち、\(\gamma\) で較正できる | 実現反応フラックスを輸送容量として再利用してはならない。単位と符号が必要 |
+| 停滞膜補助計算 | \(k_m=D_{\mathrm{eff}}/\delta_{\mathrm{eff}}\) | 拡散係数と有効膜厚が既知 | 透明性の高い限界推定 | \(\delta_{\mathrm{eff}}\) はモデル量。スカラー Fick拡散は多成分連成を省く |
+| 回転円板補助計算 | \(k_m=C_kD^{2/3}\omega^{1/2}\nu^{-1/6}\) | 拡散係数・動粘度が既知の層流回転円板尺度 | 回転数を物理的な輸送尺度へ結びつける | 形状・流れの仮定が反応器に合わない場合がある。\(\omega=0\) には明示的代替処理が必要 |
+| Bosanquet拡散選択肢 | \(D_{\mathrm{eff}}^{-1}=D_m^{-1}+D_K^{-1}\) | 分子拡散抵抗とKnudsen抵抗が直列に働く場合 | 細孔輸送の有用な縮約推定 | Maxwell–Stefan多成分壁面モデルを代替しない |
+| `deposition_only` | \(v_{\mathrm{net}}=v_{\mathrm{dep}}\) | エッチングまたは損失経路の観測がない場合 | 符号規約が明確 | 正味除去を説明できない |
+| `dep_etch_loss` | \(v_{\mathrm{net}}=v_{\mathrm{dep}}-v_{\mathrm{etch}}-v_{\mathrm{loss}}\) | 独立したエッチング・損失速度、または根拠のある分率がある場合 | 膜収支を表面機構選択から分離する | 独立観測のない分率は帳尻合わせであり、同定した経路ではない |
 
-The transport utilities calculate candidate (k_m) fields. The active role pipeline
-accepts `direct_surface`, `fit_scalar`, and `from_cfd_flux_sink`. Full Maxwell-Stefan
-diffusion and Stefan-flow coupling are not implemented; multicomponent diffusion is a
-known extension when dilute independent-film transport is inadequate [7,8].
+輸送補助計算は候補 \(k_m\) 場を計算する。実際の反応役割処理系は `direct_surface`、`fit_scalar`、`from_cfd_flux_sink` を受け付ける。完全なMaxwell–Stefan拡散とStefan流の結合は未実装であり、希薄な独立膜輸送が不十分な場合の既知の拡張課題である [7,8]。
 
-For a (B)-consuming AIB event, the implemented transport-demand ratio is
+\(B\) を消費するAIB事象について、実装した輸送要求比は
 
 \[
 \phi_B=
@@ -87,20 +70,16 @@ For a (B)-consuming AIB event, the implemented transport-demand ratio is
 \theta_A^{p_A}\theta_*^{p_*}}
 {C_{B,\mathrm{scale}}k_{m,B}},
 \qquad
-\frac{C_{B,s}}{C_{B,\mathrm{ref}}}=\frac{1}{1+\phi_B}.
+\frac{C_{B,s}}{C_{B,\mathrm{ref}}}=\frac{1}{1+\phi_B}
 \]
 
-Thus (\phi_B\ll1) indicates weak depletion across the scalar film and
-(\phi_B\gg1) indicates strong transport demand within this closure. It is a local
-dimensionless balance, not the fraction of the inlet feed that reacts. The inhibitor
-availability
+である。\(\phi_B\ll1\) はスカラー膜をまたぐ枯渇が小さいことを、\(\phi_B\gg1\) はこの閉包内で輸送要求が大きいことを示す。入口供給のうち反応した分率ではなく、局所の無次元収支である。阻害種の利用可能率
 
 \[
 f_I=\frac{1}{1+K_I C_{I,\mathrm{ref}}}
 \]
 
-reports the free-site suppression assumed by the AIB model. Surface and transport
-fluxes are emitted separately:
+は、AIBモデルが仮定する空サイト抑制を表す。表面フラックスと輸送フラックスは分けて出力する。
 
 \[
 J_{j,\mathrm{transport}}=k_{m,j}(C_{j,\mathrm{ref}}-C_{j,s}),
@@ -108,33 +87,26 @@ J_{j,\mathrm{transport}}=k_{m,j}(C_{j,\mathrm{ref}}-C_{j,s}),
 J_{j,\mathrm{surface}}=\Gamma_s\nu_j r_j.
 \]
 
-Their agreement checks the local closure. Neither quantity can be inferred from the
-present steady CSV data because that path has no calibrated (k_m), site density, or
-wall concentration.
+両者の一致は局所閉包の検査になる。現在の定常CSV経路には較正済み \(k_m\)、サイト密度、壁面濃度がないため、どちらも推定できない。
 
-## Steady observable reductions
+## 定常の観測可能な縮約式
 
-### Normalization and amplitude profiling
+### 正規化と振幅のプロファイル消去
 
-For every species (j), the identification set defines a reference for the explicitly
-selected local driver
+各化学種 \(j\) について、同定集合から明示的に選んだ局所駆動量の基準を
 
 \[
 X_{j,0}=\operatorname{median}_{n\in\mathcal T} X_{j,n},
-\qquad u_{j,n}=\frac{X_{j,n}}{X_{j,0}}.
+\qquad u_{j,n}=\frac{X_{j,n}}{X_{j,0}}
 \]
 
-This normalization removes arbitrary input scale from the nonlinear shape parameters.
-For concentration input, \(X=C\); for independent wafer supply flux, \(X=J_{\mathrm{cap}}\).
-A steady candidate has
+と定める。この正規化により、非線形形状パラメータから入力尺度の任意性を除く。濃度入力では \(X=C\)、独立なウェハー供給フラックスでは \(X=J_{\mathrm{cap}}\) である。定常候補は
 
 \[
-\hat v_n=R f(\mathbf u_n;\boldsymbol\phi),
+\hat v_n=R f(\mathbf u_n;\boldsymbol\phi)
 \]
 
-where (R\ge0) has units nm s\(^{-1}\), and φ contains positive dimensionless
-shape parameters. For fixed φ, the weighted least-squares optimum is calculated
-analytically:
+と書ける。\(R\ge0\) はnm s\(^{-1}\) の単位を持ち、\(\boldsymbol\phi\) は正の無次元形状パラメータである。\(\boldsymbol\phi\) を固定したとき、重み付き最小二乗の最適値を解析的に求める。
 
 \[
 R^*(\boldsymbol\phi)=\max\left[
@@ -142,36 +114,30 @@ R^*(\boldsymbol\phi)=\max\left[
 \right].
 \]
 
-Profiling (R) reduces the nonlinear search dimension and gives an exact conditional
-optimum. It also means that (R) absorbs site density, film conversion, and any rate
-constant scale not independently measured.
+\(R\) のプロファイル消去により非線形探索を一次元減らし、条件付き最適値を厳密に得る。一方で \(R\) は、独立に測定していないサイト密度、膜変換係数、速度定数尺度を吸収する。
 
-Two nuisance responses bound the value of role assignment. The constant baseline uses
-\(f=1\). The total-concentration baseline uses
+二つの補助応答により、役割割当ての価値に下限を置く。定数基準は \(f=1\) である。全濃度基準は
 
 \[
 f_{\mathrm{tot}}=
 \left(\frac{C_{\mathrm{tot}}}{C_{\mathrm{tot},0}}\right)^n,
-\qquad 0.01\le n\le10.
+\qquad 0.01\le n\le10
 \]
 
-It is invariant to composition changes at fixed total concentration. Improvement by a
-role equation over this baseline therefore cannot be explained only by a shared total-
-concentration trend. The exponent is an empirical nuisance parameter and is never
-reported as a reaction order of an elementary step.
+とする。全濃度一定の組成変化には不変なので、役割方程式がこの基準より改善した部分は、共通の全濃度傾向だけでは説明できない。指数は経験的補助パラメータであり、素過程の反応次数として報告しない。
 
-### Single-species saturation and competitive inhibition
+### 単一化学種の飽和と競争阻害
 
-The smallest adsorbed-(A) balance is
+最小の吸着 \(A\) 収支は
 
 \[
 \frac{d\theta_A}{dt}=k_{\mathrm{ads}}C_{A,s}\theta_*
 -k_{\mathrm{loss}}\theta_A,
 \qquad
-\theta_*+\theta_A+\theta_I=1.
+\theta_*+\theta_A+\theta_I=1
 \]
 
-Assuming a rapidly equilibrated blocker,
+である。阻害種が速やかに平衡化すると仮定すると、
 
 \[
 \theta_I=K_I C_{I,s}\theta_*,
@@ -179,20 +145,17 @@ Assuming a rapidly equilibrated blocker,
 \theta_*=\frac{1-\theta_A}{1+K_I C_{I,s}}.
 \]
 
-With (d\theta_A/dt=0), a growth rate proportional to θA reduces to
+\(d\theta_A/dt=0\) とし、成膜速度が \(\theta_A\) に比例すると、
 
 \[
-v=R\frac{u_A}{u_A+\lambda(1+\kappa u_I)},
+v=R\frac{u_A}{u_A+\lambda(1+\kappa u_I)}
 \]
 
-where λ is an effective half-saturation/loss ratio and
-κ scales inhibitor coverage. Setting κ=0 gives the exact single-(A) reduction.
-An apparent inhibitor effect is accepted only when the parent model improves its
-no-(I) reduction across condition refits.
+へ縮約される。\(\lambda\) は有効半飽和・損失比、\(\kappa\) は阻害被覆率の尺度である。\(\kappa=0\) が単一 \(A\) の厳密縮約となる。阻害効果は、親モデルが条件再当てはめ全体で阻害なし縮約より改善する場合だけ採用する。
 
-### Sequential AIB quasi-steady model
+### 逐次AIB準定常モデル
 
-For first-order adsorption and an adsorbed-(A)/gas-(B) event,
+一次吸着と、吸着 \(A\)・気相 \(B\) 間の事象について、
 
 \[
 \begin{aligned}
@@ -203,7 +166,7 @@ r_{AB} &= k_{\mathrm{rxn}}\theta_A\frac{C_{B,s}}{C_{B,\mathrm{scale}}},\\
 \end{aligned}
 \]
 
-Using the blocker relation above and imposing quasi-steady coverage yields
+上の阻害種関係を使い、被覆率を準定常とすると、
 
 \[
 \theta_A=
@@ -213,66 +176,56 @@ Using the blocker relation above and imposing quasi-steady coverage yields
 (1+K_I C_{I,s})}
 \]
 
-where the compact executable form is more transparently written as
+を得る。実行する簡潔な形は
 
 \[
 v=R\frac{u_A b u_B}
-{u_A+(\delta+b u_B)(1+\kappa u_I)}.
+{u_A+(\delta+b u_B)(1+\kappa u_I)}
 \]
 
-The line above is the implemented definition. Its dimensionless groups correspond to
+であり、この式を実装上の定義とする。無次元群のおおよその対応は
 
 \[
 \delta\sim\frac{k_{\mathrm{des}}}{k_{\mathrm{ads}}C_{A,0}},\qquad
 b\sim\frac{\nu_A k_{\mathrm{rxn}}C_{B,0}}
 {k_{\mathrm{ads}}C_{A,0}C_{B,\mathrm{scale}}},\qquad
-\kappa\sim K_I C_{I,0},
+\kappa\sim K_I C_{I,0}
 \]
 
-while (R) absorbs the remaining scale. The correspondence is conditional because the
-steady fitter estimates (R,\delta,b,\kappa) directly and does not know
-(\Gamma_s,\alpha_h,\nu_A), or the surface concentrations.
+で、残る尺度を \(R\) が吸収する。定常当てはめ処理は \(R,\delta,b,\kappa\) を直接推定し、\(\Gamma_s,\alpha_h,\nu_A\) や表面濃度を知らないため、この対応は条件付きである。
 
-The `no_desorption` reduction sets δ=0. In the report this is described as removal
-of a finite nonproductive-loss group. A performance difference does not identify the
-loss physically as desorption; irreversible loss, deactivation, or an omitted pathway
-can produce the same steady effect.
+`no_desorption` 縮約では \(\delta=0\) とする。報告書では、有限な非生産損失群を除いたモデルと記述する。性能差だけから、その損失を物理的な脱離と同定することはできない。不可逆損失、失活、欠落した経路でも同じ定常効果を生じ得る。
 
-For the no-inhibitor AB form, exchange of (u_A) and (u_B), followed by a scale and
-parameter transformation, leaves the response family unchanged. The code therefore
-reports the pair as undirected unless an inhibitor, transient state, or external chemical
-information breaks the symmetry.
+阻害のないAB形では、\(u_A\) と \(u_B\) の交換に尺度・パラメータ変換を組み合わせると応答族が変わらない。そのため、阻害種、過渡状態、外部化学情報のいずれかが対称性を破らない限り、コードはこの組を無向として報告する。
 
-### Parallel A and A+B model
+### 並列AおよびA+Bモデル
 
-Let adsorbed (A) convert by two channels,
+吸着 \(A\) が二経路で変換されるとする。
 
 \[
 r_A=k_A\theta_A,\qquad
 r_{AB}=k_{AB}\theta_A C_{B,s}/C_{B,\mathrm{scale}}.
 \]
 
-The normalized quasi-steady response is
+正規化した準定常応答は
 
 \[
 v=R\frac{u_A(c+b u_B)}
-{u_A+(\delta+c+b u_B)(1+\kappa u_I)}.
+{u_A+(\delta+c+b u_B)(1+\kappa u_I)}
 \]
 
-The pathway fractions reported by the code are
+である。コードが出力する経路分率は
 
 \[
 f_A=\frac{c}{c+b u_B},\qquad
-f_{AB}=\frac{b u_B}{c+b u_B},\qquad f_A+f_{AB}=1.
+f_{AB}=\frac{b u_B}{c+b u_B},\qquad f_A+f_{AB}=1
 \]
 
-The exact reductions test δ=0, (c=0), removal of (B), and removal of (I) where
-applicable. Evidence for an (A)-only path requires data near (u_B=0); otherwise
-(c) and (b u_B) have nearly the same effect and cannot be separated reliably.
+となる。厳密縮約は、適用可能な場合に \(\delta=0\)、\(c=0\)、\(B\) の除去、\(I\) の除去を試験する。\(A\) 単独経路の根拠には \(u_B=0\) 近傍のデータが必要である。そうでなければ、\(c\) と \(b u_B\) の効果がほぼ同じになり、信頼して分離できない。
 
-### Two-adsorbate Langmuir-Hinshelwood model
+### 二吸着種Langmuir–Hinshelwoodモデル
 
-Assume competitive adsorption on one uniform site pool:
+一様な一サイトプールへの競争吸着を仮定する。
 
 \[
 \theta_A=K_A C_{A,s}\theta_*,\quad
@@ -280,48 +233,43 @@ Assume competitive adsorption on one uniform site pool:
 \theta_I=K_I C_{I,s}\theta_*.
 \]
 
-The site balance gives
+サイト収支から
 
 \[
-\theta_*=\frac{1}{1+K_A C_{A,s}+K_B C_{B,s}+K_I C_{I,s}}.
+\theta_*=\frac{1}{1+K_A C_{A,s}+K_B C_{B,s}+K_I C_{I,s}}
 \]
 
-For a bimolecular surface event (r_{AB}=k\theta_A\theta_B), normalization produces
+となる。二分子表面反応 \(r_{AB}=k\theta_A\theta_B\) を正規化すると、
 
 \[
 v=R\frac{(a u_A)(b u_B)}
-{(1+a u_A+b u_B+\kappa u_I)^2}.
+{(1+a u_A+b u_B+\kappa u_I)^2}
 \]
 
-The squared denominator is a direct consequence of multiplying two coverages that share
-the same free-site denominator. The model assumes adsorption equilibrium, one class of
-sites, no lateral interaction, and a rate-controlling surface event. Different adsorption
-stoichiometry or multiple site pools would change the powers and denominator. The
-implemented model should therefore be called evidence for this response form, not proof
-of a microscopic Langmuir-Hinshelwood mechanism.
+を得る。分母の二乗は、同じ空サイト分母を持つ二被覆率を掛けることから直接生じる。本モデルは、吸着平衡、一種類のサイト、横方向相互作用なし、表面反応律速を仮定する。吸着量論や複数サイトプールが異なれば、指数と分母も変わる。したがって、実装モデルが示すのはこの応答形に対する根拠であり、微視的Langmuir–Hinshelwood機構の証明ではない。
 
-## Dynamic CVD models
+## 動的CVDモデル
 
-### AIB coverage model with transport closure
+### 輸送閉包を持つAIB被覆率モデル
 
-The dynamic CVD model retains θA and integrates
+動的CVDモデルは \(\theta_A\) を状態として保持し、
 
 \[
 \frac{d\theta_A}{dt}=
 k_{\mathrm{ads}}C_{A,s}\theta_*^{m}
 -k_{\mathrm{des}}\theta_A
 -\nu_A k_{\mathrm{rxn}}\theta_A^{p_A}\theta_*^{p_*}
-\left(\frac{C_{B,s}}{C_{B,\mathrm{scale}}}\right)^{\mathbb 1_B},
+\left(\frac{C_{B,s}}{C_{B,\mathrm{scale}}}\right)^{\mathbb 1_B}
 \]
 
-with
+を積分する。ただし、
 
 \[
 \theta_*=\frac{1-\theta_A}{1+K_I C_{I,\mathrm{ref}}},\qquad
 \frac{dh}{dt}=\alpha_h\Gamma_s r_{\mathrm{event}}.
 \]
 
-The local film balances are solved algebraically:
+局所膜収支は代数的に
 
 \[
 C_{A,s}=
@@ -333,15 +281,14 @@ C_{A,s}=
 C_{B,s}=
 \frac{C_{B,\mathrm{ref}}}
 {1+\Gamma_s\nu_B k_{\mathrm{rxn}}\theta_A^{p_A}\theta_*^{p_*}/
-(C_{B,\mathrm{scale}}k_{m,B})}.
+(C_{B,\mathrm{scale}}k_{m,B})}
 \]
 
-These expressions enforce (k_m(C_{\mathrm{ref}}-C_s)) against the modeled net wall
-demand. They do not implement a multicomponent Stefan-Maxwell boundary layer.
+として解く。これらは、モデル化した正味壁面要求と \(k_m(C_{\mathrm{ref}}-C_s)\) を整合させる。多成分Stefan–Maxwell境界層は実装していない。
 
-### Mars-van Krevelen redox reservoir
+### Mars–van Krevelen酸化還元リザーバー
 
-The state χ is the fraction of modeled redox capacity available for reduction by (A):
+状態 \(\chi\) は、\(A\) による還元に利用できるモデル化酸化還元容量の分率である。
 
 \[
 r_{\mathrm{red}}=k_{\mathrm{red}}C_{A,s}\chi,\qquad
@@ -353,38 +300,36 @@ r_{\mathrm{reg}}=k_{\mathrm{reg}}C_{B,s}(1-\chi),
 \frac{dh}{dt}=\alpha_h\Gamma_s r_{\mathrm{red}}.
 \]
 
-The independent film closures are
+独立な膜閉包は
 
 \[
 C_{A,s}=\frac{C_{A,\mathrm{ref}}}
 {1+\Gamma_s k_{\mathrm{red}}\chi/k_{m,A}},
 \qquad
 C_{B,s}=\frac{C_{B,\mathrm{ref}}}
-{1+\Gamma_s\nu_B k_{\mathrm{reg}}(1-\chi)/k_{m,B}}.
+{1+\Gamma_s\nu_B k_{\mathrm{reg}}(1-\chi)/k_{m,B}}
 \]
 
-At kinetic steady state and with fixed surface concentrations,
+である。表面濃度を固定して速度論的定常状態をとると、
 
 \[
 r_{\mathrm{red}}=r_{\mathrm{reg}}
 =\frac{k_{\mathrm{red}}C_{A,s}\,k_{\mathrm{reg}}C_{B,s}}
-{k_{\mathrm{red}}C_{A,s}+k_{\mathrm{reg}}C_{B,s}}.
+{k_{\mathrm{red}}C_{A,s}+k_{\mathrm{reg}}C_{B,s}}
 \]
 
-After normalization this is the same functional family as sequential AB with δ=0.
-The steady census therefore gives it one representative rather than an additional model
-selection vote. MvK discrimination requires a transient where the reservoir memory
+となる。正規化後は \(\delta=0\) の逐次ABと同じ関数族なので、定常網羅比較では追加の一票を与えず、一つの代表モデルとして扱う。MvKを識別するには、
 
 \[
 \tau_{\mathrm{redox}}=
 \left(k_{\mathrm{red}}C_{A,s}+k_{\mathrm{reg}}C_{B,s}\right)^{-1}
 \]
 
-changes the response, or an independent measurement of χ.
+で表されるリザーバー履歴が応答を変える過渡条件、または \(\chi\) の独立測定が必要である。
 
-## Dynamic ALD storage model
+## 動的ALD貯蔵モデル
 
-The ALD model uses
+ALDモデルは
 
 \[
 \theta_*=1-\theta_A-\theta_I,
@@ -399,106 +344,86 @@ k_{\mathrm{store},A}C_{A,s}\theta_*
 \[
 \frac{d\theta_I}{dt}=
 k_{\mathrm{store},I}C_{I,s}\theta_*
--k_{\mathrm{release},I}\theta_I.
+-k_{\mathrm{release},I}\theta_I
 \]
 
-The conversion channel is selected by the presence of (B):
+を用いる。変換経路は \(B\) の有無で選ぶ。
 
 \[
 r_{\mathrm{conv}}=
 \begin{cases}
-k_{\mathrm{convert},A}\theta_A, & B\text{ absent},\\
-k_{\mathrm{convert},AB}C_{B,s}\theta_A, & B\text{ present}.
+k_{\mathrm{convert},A}\theta_A, & B\text{ なし},\\
+k_{\mathrm{convert},AB}C_{B,s}\theta_A, & B\text{ あり}.
 \end{cases}
 \qquad
 \frac{dh}{dt}=\alpha_h r_{\mathrm{conv}}.
 \]
 
-Here \(r_{\mathrm{conv}}\) has units of coverage per second and \(\alpha_h\) has
-units of nanometres per unit coverage converted. With site density
-\(\Gamma_s\,[\mathrm{kmol\,m^{-2}}]\), the absolute role fluxes are
+ここで \(r_{\mathrm{conv}}\) は被覆率 s\(^{-1}\)、\(\alpha_h\) は変換被覆率当たりのnmを単位とする。サイト密度 \(\Gamma_s\,[\mathrm{kmol\,m^{-2}}]\) を用いると、絶対的な役割フラックスは
 
 \[
 J_{A,s}=\Gamma_s\left(
 k_{\mathrm{store},A}C_{A,s}\theta_*
 -k_{\mathrm{release},A}\theta_A\right),
 \qquad
-J_{B,s}=\Gamma_s\nu_B r_{\mathrm{conv}}.
+J_{B,s}=\Gamma_s\nu_B r_{\mathrm{conv}}
 \]
 
-Storage and release enter the (A) film closure without double-counting conversion:
+となる。貯蔵と脱離は、変換を二重計上せずに \(A\) の膜閉包へ入る。
 
 \[
 C_{A,s}=
 \frac{k_{m,A}C_{A,\mathrm{ref}}+
 \Gamma_s k_{\mathrm{release},A}\theta_A}
-{k_{m,A}+\Gamma_s k_{\mathrm{store},A}\theta_*},
+{k_{m,A}+\Gamma_s k_{\mathrm{store},A}\theta_*}.
 \]
 
-and the (B) sink gives
+\(B\) の吸込みは
 
 \[
 C_{B,s}=
 \frac{k_{m,B}C_{B,\mathrm{ref}}}
-{k_{m,B}+\Gamma_s\nu_Bk_{\mathrm{convert},AB}\theta_A}.
+{k_{m,B}+\Gamma_s\nu_Bk_{\mathrm{convert},AB}\theta_A}
 \]
 
-These expressions enforce \(k_m(C_{\mathrm{ref}}-C_s)=J_s\) in
-\(\mathrm{kmol\,m^{-2}\,s^{-1}}\). The explicit \(\Gamma_s\) factor prevents a
-coverage rate from being compared directly with a molar transport flux. Setting
-\(\Gamma_s=1\) is permitted for normalized studies, but the resulting flux magnitude
-is then normalized rather than absolute.
+を与える。これらは \(k_m(C_{\mathrm{ref}}-C_s)=J_s\) を \(\mathrm{kmol\,m^{-2}\,s^{-1}}\) で満たす。明示的な \(\Gamma_s\) により、被覆率速度をモル輸送フラックスと直接比較する誤りを防ぐ。正規化検討では \(\Gamma_s=1\) を許容するが、その場合のフラックス絶対値は正規化値である。
 
-This is a minimal latent-state model for role assimilation. It describes storage,
-release, and conversion but makes no claim about a named ligand-exchange sequence or
-specific surface termination.
+これは反応役割同化のための最小潜在状態モデルである。貯蔵、脱離、変換を記述するが、固有名を持つ配位子交換系列や特定の表面終端を主張しない。
 
-## Estimation, discrimination, and visualization quantities
+## 推定・識別・可視化に用いる量
 
-### Whole-wafer Loss functions
+### ウェハー全体の損失関数
 
-Let condition \(k\) contain observations \(y_{ki}\), predictions
-\(\hat y_{ki}\), and nonnegative point weights \(q_{ki}\). The implementation first
-normalizes weights within every wafer,
+条件 \(k\) が観測 \(y_{ki}\)、予測 \(\hat y_{ki}\)、非負の点重み \(q_{ki}\) を含むとする。実装では、まず各ウェハー内で
 
 \[
 w_{ki}=\frac{q_{ki}}{\sum_iq_{ki}},
-\qquad \sum_iw_{ki}=1,
+\qquad \sum_iw_{ki}=1
 \]
 
-and then averages the condition Loss values. Thus every identification wafer receives
-one vote even when maps contain different point counts. The fitted coefficients are
-shared by all identification wafers; the code does not fit an independent kinetic
-equation to each wafer.
+と重みを正規化し、その後で条件損失関数を平均する。したがって、マップの点数が異なっても、同定に使う各ウェハーは一票ずつ持つ。当てはめ係数は同定ウェハー全体で共通であり、ウェハーごとに独立した運動論式を当てはめない。
 
-| CLI name | Condition Loss \(L_k\) | Use | Main limitation |
+| CLI名 | 条件損失関数 \(L_k\) | 用途 | 主な限界 |
 | --- | --- | --- | --- |
-| `mse` | \(\sum_iw_{ki}(\hat y_{ki}-y_{ki})^2\) | Dimensional linear-rate fit; preserves the physical cost of an absolute deposition-rate error | High-rate conditions can dominate the numerical scale |
-| `wafer_normalized_mse` | \(\sum_iw_{ki}(\hat y_{ki}-y_{ki})^2/s_k^2\), \(s_k^2=\sum_iw_{ki}y_{ki}^2\) | Gives low- and high-rate wafers comparable relative influence | Treats equal fractional errors as equally costly and loses nm\(^2\) s\(^{-2}\) units |
-| `wafer_normalized_mae` | \(\sum_iw_{ki}|\hat y_{ki}-y_{ki}|/s_k\) | Relative, less sensitive to isolated residuals | Nondifferentiable at zero and can underweight systematic small residual structure |
-| `symmetric_normalized_mse` | \(2\sum_iw_{ki}(\hat y_{ki}-y_{ki})^2/\sum_iw_{ki}(y_{ki}^2+\hat y_{ki}^2)\) | Symmetric scaling when neither magnitude should define the denominator alone | Its scale depends on the prediction and is less direct physically |
+| `mse` | \(\sum_iw_{ki}(\hat y_{ki}-y_{ki})^2\) | 次元を持つ線形速度の当てはめ。成膜速度絶対誤差の物理的費用を保つ | 高成膜速度条件が数値尺度を支配し得る |
+| `wafer_normalized_mse` | \(\sum_iw_{ki}(\hat y_{ki}-y_{ki})^2/s_k^2\)、\(s_k^2=\sum_iw_{ki}y_{ki}^2\) | 低速・高速ウェハーに同程度の相対的影響を持たせる | 同じ比率誤差を同じ費用とし、nm\(^2\) s\(^{-2}\) の単位を失う |
+| `wafer_normalized_mae` | \(\sum_iw_{ki}|\hat y_{ki}-y_{ki}|/s_k\) | 相対尺度で、孤立残差の影響を抑える | 0で微分不能で、系統的な小残差構造を軽視し得る |
+| `symmetric_normalized_mse` | \(2\sum_iw_{ki}(\hat y_{ki}-y_{ki})^2/\sum_iw_{ki}(y_{ki}^2+\hat y_{ki}^2)\) | 観測値・予測値の一方だけを分母尺度にしたくない場合 | 尺度が予測に依存し、物理的な直接性が弱い |
 
-The total objective is \(L=K^{-1}\sum_k L_k\). An optional radial uncertainty model
-multiplies the point weights through the declared center-to-edge standard-uncertainty
-ratio. It is evidence-based weighting only when uncertainty or replicate variance
-supports it; otherwise it is a sensitivity analysis. Objective values from different
-Loss definitions are not compared directly. Candidate and optimizer comparisons return
-to dimensional condition-CV and heldout RMSE.
+全目的関数は \(L=K^{-1}\sum_k L_k\) である。任意の半径方向不確かさモデルは、宣言した中心対エッジの標準不確かさ比を通して点重みに掛かる。不確かさまたは反復分散が根拠を与えるときだけ、根拠に基づく重みづけになる。それ以外は感度解析として扱う。異なる損失関数定義の目的関数値を直接比較しない。候補と最適化器の比較は、次元を持つ条件交差検証RMSEとホールドアウトRMSEへ戻して行う。
 
-### Prediction and wafer-shape metrics
+### 予測指標とウェハー形状指標
 
-For one heldout wafer with \(N\) points, define residual
-\(e_i=\hat y_i-y_i\), observed mean \(\bar y\), and predicted mean
-\(\bar{\hat y}\). The ordinary rate metrics are
+\(N\) 点の一つのホールドアウトウェハーについて、残差を \(e_i=\hat y_i-y_i\)、観測平均を \(\bar y\)、予測平均を \(\bar{\hat y}\) とする。通常の速度指標は
 
 \[
 \operatorname{RMSE}=\sqrt{\frac1N\sum_i e_i^2},\qquad
 \operatorname{bias}=\frac1N\sum_i e_i,
 \qquad
-\operatorname{relative\ RMSE}=\frac{\operatorname{RMSE}}{|\bar y|}.
+\operatorname{relative\ RMSE}=\frac{\operatorname{RMSE}}{|\bar y|}
 \]
 
-Condition-mean transfer and wafer shape are separated by centering:
+である。条件平均の転移とウェハー形状を、中心化によって分離する。
 
 \[
 e_i^{\circ}=(\hat y_i-\bar{\hat y})-(y_i-\bar y),
@@ -512,18 +437,11 @@ R^2_{\mathrm{centered}}=
 1-\frac{\sum_i(e_i^{\circ})^2}{\sum_i(y_i-\bar y)^2}.
 \]
 
-A negative centered \(R^2\) means that the predicted pattern is worse than assigning
-the correct measured mean to every point. It is compatible with a small ordinary RMSE
-when the condition mean is predicted well but the in-plane amplitude or pattern is not.
-Spatial correlation measures phase agreement after centering, while the ratio of
-predicted to observed range measures amplitude capture; neither replaces centered
-error.
+面内中心化 \(R^2\) が負なら、予測分布は、正しい測定平均を全点へ一様に割り当てる予測より悪い。条件平均だけがよく合い、面内振幅または位相が合わない場合、通常RMSEが小さくても負になり得る。空間相関は中心化後の位相一致を、予測・観測範囲比は振幅捕捉を測る。いずれも中心化誤差の代わりにはならない。
 
-### Role importance and assignment stability
+### 反応役割の重要度と割当て安定性
 
-For assigned role \(j\), let \(\hat y_i\) be the selected-model prediction and
-\(\hat y_i^{(-j)}\) the prediction after replacing that role's local input by its
-identification reference \(X_{j,0}\). The code condition-balances the squared difference:
+割当て役割 \(j\) について、選択モデルの予測を \(\hat y_i\)、その役割の局所入力を同定基準 \(X_{j,0}\) に置き換えた予測を \(\hat y_i^{(-j)}\) とする。コードは二乗差を条件均衡化する。
 
 \[
 S_j=\left[
@@ -532,80 +450,54 @@ S_j=\left[
 \right]^{1/2}.
 \]
 
-This is a one-at-a-time prediction sensitivity. Nonlinear interaction means that the
-\(S_j\) values do not sum to the deposition rate or to one. Let \(f_j\) be the fraction
-of outer condition refits selecting the same raw species in role \(j\), and let \(E\)
-be the selected model's fixed-heldout RMSE. The dimensionless scale comparison
+これは一度に一役割だけを変える予測感度である。非線形相互作用があるため、\(S_j\) を足しても成膜速度や1にはならない。役割 \(j\) に同じ生の化学種が選ばれた外側条件再当てはめの割合を \(f_j\)、選択モデルの固定ホールドアウトRMSEを \(E\) とする。無次元尺度
 
 \[
 Q_j=\frac{S_j}{E}
 \]
 
-separates two practically different forms of non-identification. Low \(f_j\) with
-\(Q_j\ll1\) is unstable but predictively negligible in the tested range. Low \(f_j\)
-with \(Q_j\gtrsim1\) is an influential unresolved assignment. \(Q_j=1\) is a visual
-reference, not a universal statistical rejection threshold.
+によって、実務上異なる二種類の非同定を分ける。低い \(f_j\) と \(Q_j\ll1\) の組合せは、不安定だが試験範囲では予測への影響が小さい。低い \(f_j\) と \(Q_j\gtrsim1\) は、影響が大きい未解決割当てである。\(Q_j=1\) は図上の目安であり、普遍的な統計棄却閾値ではない。
 
-### Alternative-family prediction difference
+### 代替方程式系の予測差
 
-Let \(\hat y_{m,i}\) be the heldout prediction from the best candidate in family \(m\)
-and \(\hat y_{\star,i}\) the selected-family prediction at the same coordinates. The
-model-conditional prediction separation is
+方程式系 \(m\) の最良候補によるホールドアウト予測を \(\hat y_{m,i}\)、同じ座標における選択系予測を \(\hat y_{\star,i}\) とする。モデル条件付き予測分離は
 
 \[
 D_m=\sqrt{\frac1N\sum_i
 (\hat y_{m,i}-\hat y_{\star,i})^2},
-\qquad H_m=\frac{D_m}{E}.
+\qquad H_m=\frac{D_m}{E}
 \]
 
-Small \(H_m\) means that the fitted reaction interpretation changes with little
-consequence for the tested prediction. Large \(H_m\) means that family ambiguity is
-also a prediction risk. These quantities do not assign mechanism probabilities; they
-show the consequence of choosing among the fitted observable equations.
+である。\(H_m\) が小さければ、当てはめた反応解釈が変わっても試験予測への影響は小さい。大きければ、方程式系の曖昧さが予測リスクにもなる。これは機構確率を与えず、当てはめた観測可能式から一つを選ぶ影響を示す。
 
-### Local kinetic-ratio sensitivity and partial Loss slices
+### 運動論比の局所感度と部分損失関数断面
 
-For positive fitted shape parameter \(p_j\), the local logarithmic sensitivity at data
-point \(i\) is
+正の当てはめ形状パラメータ \(p_j\) について、点 \(i\) における局所対数感度を
 
 \[
-g_{ij}=\frac{\partial\ln \hat y_i}{\partial\ln p_j}.
+g_{ij}=\frac{\partial\ln \hat y_i}{\partial\ln p_j}
 \]
 
-The implementation reports
+とする。実装は
 
 \[
 G_j=\sqrt{\frac1N\sum_i g_{ij}^2}
 \]
 
-and the Pearson correlation between centered columns \(g_{·j}\) and
-\(g_{·\ell}\). A small \(G_j\) identifies a locally inactive direction. A
-correlation magnitude near one indicates that two directions create almost the same
-spatial response after sign and scaling, so their separate values are practically weak.
-This derivative design diagnoses local information; it does not by itself provide a
-global uncertainty interval [12,14].
+と、中心化した列 \(g_{\cdot j}\)、\(g_{\cdot\ell}\) 間のPearson相関を出力する。小さい \(G_j\) は局所的に不活性な方向を示す。相関絶対値が1に近ければ、二方向が符号と尺度を除いてほぼ同じ空間応答を作るため、個別値の実用的情報が弱い。この微分設計は局所情報の診断であり、それだけで大域的不確かさ区間は得られない [12,14]。
 
-For a plotted Loss slice, one parameter \(p_j\) is fixed on a logarithmic grid, the
-other shape parameters remain at their fitted values, and only the separable nonnegative
-rate scale \(R\) is reprofiled:
+図示する損失関数断面では、一つのパラメータ \(p_j\) を対数格子上で固定し、他の形状パラメータを当てはめ値に保ち、分離可能な非負速度尺度 \(R\) だけを再プロファイルする。
 
 \[
 \widetilde L_j(p)=\min_{R\ge0}
 L\{R f(\mathbf u;p,\hat{\boldsymbol\phi}_{-j})\}.
 \]
 
-A broad flat slice is direct evidence that the current observations scarcely constrain
-that direction under the selected equation. It is a partial slice rather than a full
-profile likelihood, because \(\boldsymbol\phi_{-j}\) is not reoptimized. Formal
-likelihood intervals require a noise model and joint reprofiling [14].
+広く平坦な断面は、選択式の下で現在の観測がその方向をほとんど制約しない直接的根拠となる。\(\boldsymbol\phi_{-j}\) を再最適化しないため、これは完全なプロファイル尤度ではなく部分断面である。正式な尤度区間には、ノイズモデルと同時再プロファイルが必要である [14]。
 
-### Post-selection spatial residual response
+### 選択後の空間残差応答
 
-The optional spatial stage begins only after the chemical model and its coefficients
-are frozen. Let \(\rho_i\) be normalized wafer radius and let the basis contain
-\(\rho^2\), or \((\rho^2,\rho^4)\). Every basis column is centered within each
-identification condition, producing \(\Phi_{ki}\). The fitted target is the centered
-log residual:
+任意の空間段は、化学モデルと係数を固定した後にだけ開始する。\(\rho_i\) を正規化ウェハー半径とし、基底に \(\rho^2\)、または \((\rho^2,\rho^4)\) を用いる。各基底列を同定条件内で中心化して \(\Phi_{ki}\) とする。当てはめ対象は中心化対数残差である。
 
 \[
 d_{ki}=\{\ln y_{ki}-\overline{\ln y}_k\}
@@ -620,8 +512,7 @@ d_{ki}=\{\ln y_{ki}-\overline{\ln y}_k\}
 \sum_{i\in k}(d_{ki}-\Phi_{ki}\boldsymbol\beta)^2.
 \]
 
-The raw factor is \(g_i=\exp(\Phi_i\hat{\boldsymbol\beta})\). On each application
-wafer it is rescaled so that
+生の補正係数は \(g_i=\exp(\Phi_i\hat{\boldsymbol\beta})\) である。適用する各ウェハー上で
 
 \[
 \hat y_i^{\mathrm{corr}}=
@@ -630,52 +521,38 @@ wafer it is rescaled so that
 {\overline{\hat y^{\mathrm{chem}}g}},
 \qquad
 \overline{\hat y^{\mathrm{corr}}}
-=\overline{\hat y^{\mathrm{chem}}}.
+=\overline{\hat y^{\mathrm{chem}}}
 \]
 
-The spatial response therefore cannot repair the chemical condition mean and cannot
-change role or family selection. Its coefficients describe a transferable radial
-residual basis. They do not identify temperature, transport, chamber geometry, or
-another physical cause without a corresponding measured field. Treating model
-discrepancy separately from calibration parameters is also necessary to avoid assigning
-omitted spatial physics to kinetics [15].
+となるよう再尺度化する。したがって、空間応答は化学モデルの条件平均を修復できず、役割や方程式系の選択も変えられない。係数が表すのは転移可能な半径残差基底である。対応する測定場がなければ、温度、輸送、チャンバー形状、その他の物理原因は同定しない。欠落した空間物理を速度論へ誤帰属しないためにも、モデル不一致を較正パラメータから分離する必要がある [15]。
 
-### Figures as evidence views
+### 根拠を示す図
 
-| Figure class | Primary numerical source | Valid conclusion |
+| 図の分類 | 主な数値出典 | 図から支持できる結論 |
 | --- | --- | --- |
-| Optimization convergence | `optimization_history.csv` | Numerical progress for each best family candidate |
-| Equation comparison and reaction path | `role_ranking.csv`, family registry | Transfer error, selection stability, and assumed topology |
-| Alternative-model agreement | `reaction_model_predictions.csv` | Prediction consequence of family ambiguity |
-| Role stability and importance | `role_stability.csv`, `role_importance_and_stability.csv` | Whether assignment uncertainty is harmless or influential |
-| State and pathway fractions | `reaction_model_states.csv`, `reaction_state_summary.csv` | Model-conditional occupation and rate allocation |
-| Parameter sensitivity and Loss slices | `parameter_sensitivity_correlations.csv`, `parameter_loss_slices.csv` | Local weak and coupled parameter directions |
-| Heldout maps and radial profiles | `test_predictions.csv` | Mean transfer, spatial phase, amplitude, and residual structure |
-| Spatial-response figures | `spatial_response_summary.csv`, `spatial_response_coefficients.csv` | Predictive benefit of the separate residual basis |
+| 最適化収束 | `optimization_history.csv` | 方程式系ごとの最良候補の数値的進展 |
+| 方程式比較と反応経路 | `role_ranking.csv`、方程式系登録表 | 条件間転移誤差、選択安定性、仮定した反応構造 |
+| 代替モデル間の一致 | `reaction_model_predictions.csv` | 方程式系の曖昧さが予測へ与える影響 |
+| 役割の安定性と重要度 | `role_stability.csv`、`role_importance_and_stability.csv` | 割当て不確かさが予測上軽微か重大か |
+| 状態・経路分率 | `reaction_model_states.csv`、`reaction_state_summary.csv` | 選択モデルに条件づけた占有率と速度配分 |
+| パラメータ感度と損失関数断面 | `parameter_sensitivity_correlations.csv`、`parameter_loss_slices.csv` | 局所的に弱い方向と連成した方向 |
+| ホールドアウトマップと半径分布 | `test_predictions.csv` | 平均の転移、空間位相、振幅、残差構造 |
+| 空間応答図 | `spatial_response_summary.csv`、`spatial_response_coefficients.csv` | 分離した残差基底の予測上の効果 |
 
-The reaction-path arrows, fitted fractions, and spatial basis are explanatory views of
-declared equations. They are not independent surface measurements. Figures therefore
-remain subordinate to the split, source artifact, units, and observation semantics.
+反応経路の矢印、当てはめ分率、空間基底は、宣言した方程式を説明する図である。独立な表面測定ではない。したがって、図の解釈は、データ分割、出典成果物、単位、観測量の意味に従う。
 
-## Approximation hierarchy and interpretation
+## 近似階層と解釈
 
-The implemented models occupy different levels and should not be ranked in one flat
-list without compatible observations:
+実装モデルは異なる階層にあり、整合する観測量なしに一列の順位へ並べてはならない。
 
-1. The steady equation census compares observable film-rate response shapes.
-2. Dynamic CVD and ALD models compare state memory against time-resolved observations.
-3. Transport closures determine how the supplied Fluent location is connected to the
-   surface.
-4. Net-film models combine independently supported deposition, etch, and loss rates.
+1. 定常方程式の網羅比較は、観測可能な膜速度応答形状を比較する。
+2. 動的CVD・ALDモデルは、時間分解観測に対して状態履歴を比較する。
+3. 輸送閉包は、Fluentで与えた位置を表面へどう結ぶかを決める。
+4. 正味膜モデルは、独立に支持された堆積、エッチング、損失速度を結合する。
 
-Several different physical mechanisms can share one steady algebraic form. Conversely,
-the same chemistry can appear to follow different apparent equations when transport,
-temperature, or unobserved surface state changes. A low CV error therefore establishes
-predictive compatibility within the tested domain. Mechanism adoption additionally
-requires role stability, exact-reduction evidence, adequate input contrast, and a
-mechanism-specific observable.
+異なる物理機構が同じ定常代数形を共有することがある。逆に、同じ化学でも、輸送、温度、未観測表面状態が変われば、見かけ上異なる式に従うことがある。小さい交差検証誤差が確立するのは、試験領域内での予測適合性である。機構を採用するには、さらに役割安定性、厳密縮約の根拠、十分な入力変動、機構固有の観測量が必要である。
 
-## References
+## 参考文献
 
 1. I. Langmuir, “The Adsorption of Gases on Plane Surfaces of Glass, Mica and Platinum,” *Journal of the American Chemical Society* **40** (1918) 1361–1403. [doi:10.1021/ja02242a004](https://doi.org/10.1021/ja02242a004).
 2. D. D. Eley and E. K. Rideal, “The Catalysis of the Parahydrogen Conversion by Tungsten,” *Proceedings of the Royal Society A* **178** (1941) 429–451. [doi:10.1098/rspa.1941.0066](https://doi.org/10.1098/rspa.1941.0066).
